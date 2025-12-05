@@ -40,10 +40,6 @@ if(NOT ${deal.II_FOUND})
   )
 endif()
 
-<<<<<<< HEAD
-add_link_options("-fuse-ld=lld")
-=======
->>>>>>> 47eaf8c (h-mg)
 
 deal_ii_initialize_cached_variables()
 project(${TARGET})

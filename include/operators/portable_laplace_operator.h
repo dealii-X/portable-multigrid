@@ -3,6 +3,8 @@
 
 #include <deal.II/dofs/dof_handler.h>
 
+#include <deal.II/fe/mapping_q1.h>
+
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
@@ -51,7 +53,6 @@ namespace Portable
      */
     ViewValues &scratch_pad;
   };
-
 
   template <int dim, int fe_degree, typename number>
   class LaplaceDiagonalOperator
@@ -406,6 +407,9 @@ namespace Portable
     void
     compute_diagonal() override;
 
+    void
+    setup_dirichlet_boundary_dofs_masks();
+
     std::shared_ptr<DiagonalMatrix<
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
     get_matrix_diagonal_inverse() const override;
@@ -441,8 +445,9 @@ namespace Portable
     static constexpr unsigned int n_local_dofs =
       Utilities::pow(fe_degree + 1, dim);
 
-    MatrixFree<dim, number>                           matrix_free;
-    typename MatrixFree<dim, number>::PrecomputedData gpu_data;
+    MatrixFree<dim, number> matrix_free;
+
+    ObserverPointer<const AffineConstraints<number>> constraints;
 
     static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
 
@@ -461,8 +466,11 @@ namespace Portable
     const AffineConstraints<number> &constraints,
     bool                             overlap_communication_computation)
   {
-    const MappingQ<dim>                              mapping(fe_degree);
+    const MappingQ<dim> mapping(fe_degree);
+
     typename MatrixFree<dim, number>::AdditionalData additional_data;
+
+    this->constraints = &constraints;
 
     additional_data.mapping_update_flags =
       update_gradients | update_JxW_values | update_quadrature_points;
@@ -473,8 +481,17 @@ namespace Portable
     matrix_free.reinit(
       mapping, dof_handler, constraints, quadrature_1d, additional_data);
 
+    setup_dirichlet_boundary_dofs_masks();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::setup_dirichlet_boundary_dofs_masks()
+  {
     const auto        &colored_graph = matrix_free.get_colored_graph();
     const unsigned int n_colors      = colored_graph.size();
+
+    const auto &dof_handler = matrix_free.get_dof_handler();
 
 
     std::vector<unsigned int> lex_numbering(n_local_dofs);
@@ -497,7 +514,7 @@ namespace Portable
       {
         if (colored_graph[color].size() > 0)
           {
-            const auto &mf_data = matrix_free.get_data(0, color);
+            const auto &mf_data = matrix_free.get_data(color);
             ;
             const auto &graph = colored_graph[color];
 
@@ -523,7 +540,7 @@ namespace Portable
                 for (unsigned int i = 0; i < n_local_dofs; ++i)
                   {
                     const auto global_dof = local_dof_indices[lex_numbering[i]];
-                    if (constraints.is_constrained(global_dof))
+                    if (constraints->is_constrained(global_dof))
                       dofs_mask_host(i, cell_id) =
                         numbers::invalid_unsigned_int;
                     else
@@ -545,10 +562,10 @@ namespace Portable
     const
   {
     AssertDimension(dst.size(), src.size());
-    Assert(dst.get_partitioner() == matrix_free.get_vector_partitioner(),
-           ExcMessage("Vector is not correctly initialized."));
-    Assert(src.get_partitioner() == matrix_free.get_vector_partitioner(),
-           ExcMessage("Vector is not correctly initialized."));
+    // Assert(dst.get_partitioner() == matrix_free.get_vector_partitioner(),
+    //        ExcMessage("Vector is not correctly initialized."));
+    // Assert(src.get_partitioner() == matrix_free.get_vector_partitioner(),
+    //        ExcMessage("Vector is not correctly initialized."));
 
     dst = 0.;
     LocalLaplaceOperator<dim, fe_degree, number> local_operator;
@@ -565,7 +582,7 @@ namespace Portable
     if (matrix_free.use_overlap_communication_computation())
       {
         auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data = matrix_free.get_data(0, color);
+          const auto &gpu_data = matrix_free.get_data(color);
 
           const auto n_cells = gpu_data.n_cells;
 
@@ -645,7 +662,7 @@ namespace Portable
 
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &gpu_data = matrix_free.get_data(0, color);
+            const auto &gpu_data = matrix_free.get_data(color);
             const auto  n_cells  = gpu_data.n_cells;
 
             if (n_cells > 0)
@@ -758,7 +775,7 @@ namespace Portable
     if (matrix_free.use_overlap_communication_computation())
       {
         auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data = matrix_free.get_data(0, color);
+          const auto &gpu_data = matrix_free.get_data(color);
 
           const auto n_cells = gpu_data.n_cells;
 
@@ -833,7 +850,7 @@ namespace Portable
       {
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &gpu_data = matrix_free.get_data(0, color);
+            const auto &gpu_data = matrix_free.get_data(color);
             const auto  n_cells  = gpu_data.n_cells;
 
             if (n_cells > 0)

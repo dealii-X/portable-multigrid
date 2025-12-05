@@ -79,7 +79,11 @@ private:
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     system_rhs_device;
 
+<<<<<<< HEAD
   MGLevelObject<std::unique_ptr<Portable::PolynomialTransferBase<dim, double>>>
+=======
+  MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, double>>>
+>>>>>>> 47eaf8c (h-mg)
     mg_transfers;
 
   bool               overlap_communication_computation;
@@ -340,9 +344,14 @@ LaplaceProblem<dim, fe_degree, mg_levels>::solve()
       mg_smoothers[level].initialize(*mg_matrices[level], smoother_data);
     }
 
+<<<<<<< HEAD
   Portable::
     VCycleMultigrid<dim, double, Portable::PolynomialTransferBase<dim, double>>
       mg_preconditioner(mg_matrices, mg_transfers, mg_smoothers, 2, 2);
+=======
+  Portable::VCycleMultigrid<dim, double, Portable::MGTransferBase<dim, double>>
+    mg_preconditioner(mg_matrices, mg_transfers, mg_smoothers, 2, 2);
+>>>>>>> 47eaf8c (h-mg)
 
   SolverControl solver_control(system_rhs_device.size(),
                                1e-12 * system_rhs_device.l2_norm());
