@@ -1,0 +1,596 @@
+#ifndef portable_laplace_operator_h
+#define portable_laplace_operator_h
+
+#include <deal.II/dofs/dof_handler.h>
+
+#include <memory>
+
+#include "base/portable_laplace_operator_base.h"
+
+DEAL_II_NAMESPACE_OPEN
+
+namespace Portable
+{
+  template <int dim, typename number>
+  struct CellData
+  {
+    Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::
+      member_type team_member;
+
+    const unsigned int n_q_points;
+    const int          cell_index;
+
+    const typename MatrixFree<dim, number>::PrecomputedData &precomputed_data;
+    SharedData<dim, number>                                 &shared_data;
+  };
+
+  template <int dim, int fe_degree, typename number>
+  class LaplaceOperatorQuad
+  {
+  public:
+    DEAL_II_HOST_DEVICE void
+    operator()(
+      Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number> *fe_eval,
+      const int q_point) const;
+
+    static const unsigned int n_q_points =
+      dealii::Utilities::pow(fe_degree + 1, dim);
+  };
+
+  template <int dim, int fe_degree, typename number>
+  DEAL_II_HOST_DEVICE void
+  LaplaceOperatorQuad<dim, fe_degree, number>::operator()(
+    Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number> *fe_eval,
+    const int q_point) const
+  {
+    fe_eval->submit_gradient(fe_eval->get_gradient(q_point), q_point);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  class LocalLaplaceOperator
+  {
+  public:
+    static constexpr unsigned int n_local_dofs =
+      Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_q_points =
+      Utilities::pow(fe_degree + 1, dim);
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const CellData<dim, number> *data,
+               const DeviceVector<number>  &src,
+               DeviceVector<number>        &dst) const;
+  };
+
+  template <int dim, int fe_degree, typename number>
+  DEAL_II_HOST_DEVICE void
+  LocalLaplaceOperator<dim, fe_degree, number>::operator()(
+    const CellData<dim, number> *data,
+    const DeviceVector<number>  &src,
+    DeviceVector<number>        &dst) const
+  {
+    const auto &precomputed_data = data->precomputed_data;
+    const auto &shared_data      = data->shared_data;
+    const int   cell_id          = data->cell_index;
+    const auto &team_member      = data->team_member;
+
+    // read dof values
+    {
+      Kokkos::parallel_for(
+        Kokkos::TeamThreadRange(data->team_member, n_local_dofs),
+        [&](const int &i) {
+          for (unsigned int comp = 0; comp < 1; ++comp)
+            shared_data.values(i, comp) =
+              src[precomputed_data.local_to_global(i + n_local_dofs * comp,
+                                                   cell_id)];
+        });
+
+      data->team_member.team_barrier();
+    }
+
+    // evaluate gradients using sum factorization
+    {
+      constexpr int scratch_size = Utilities::pow(fe_degree + 1, dim);
+      auto          scratch_for_eval =
+        Kokkos::subview(shared_data.scratch_pad,
+                        Kokkos::make_pair(0, scratch_size));
+
+      internal::EvaluatorTensorProduct<
+        internal::EvaluatorVariant::evaluate_general,
+        dim,
+        fe_degree + 1,
+        fe_degree + 1,
+        number>
+        eval(team_member,
+             precomputed_data.shape_values,
+             precomputed_data.shape_gradients,
+             precomputed_data.co_shape_gradients,
+             scratch_for_eval);
+
+      for (unsigned int c = 0; c < 1; ++c)
+        {
+          auto u = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
+          auto grad_u =
+            Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
+
+          eval.template values<0, true, false, true>(u, u);
+          if constexpr (dim > 1)
+            eval.template values<1, true, false, true>(u, u);
+          if constexpr (dim > 2)
+            eval.template values<2, true, false, true>(u, u);
+
+          // evaluate gradients
+          eval.template co_gradients<0, true, false, false>(
+            u, Kokkos::subview(grad_u, Kokkos::ALL, 0));
+          if constexpr (dim > 1)
+            eval.template co_gradients<1, true, false, false>(
+              u, Kokkos::subview(grad_u, Kokkos::ALL, 1));
+          if constexpr (dim > 2)
+            eval.template co_gradients<2, true, false, false>(
+              u, Kokkos::subview(grad_u, Kokkos::ALL, 2));
+        }
+      team_member.team_barrier();
+    }
+
+    // compute Laplace kernel at each quadrature point
+    {
+      Kokkos::parallel_for(
+        Kokkos::TeamThreadRange(team_member, n_q_points),
+        [&](const int &q_point) {
+          // get gradient
+          Tensor<1, dim, number> grad;
+          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+            {
+              number tmp = 0.;
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                tmp +=
+                  precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
+                  shared_data.gradients(q_point, d_2, 0);
+              grad[d_1] = tmp;
+            }
+
+          // submit gradient
+          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+            {
+              number tmp = 0.;
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                tmp +=
+                  precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) *
+                  grad[d_2];
+              shared_data.gradients(q_point, d_1, 0) =
+                tmp * precomputed_data.JxW(q_point, cell_id);
+            }
+        });
+
+      team_member.team_barrier();
+    }
+
+    // integrate using time factorization
+    {
+      constexpr int scratch_size = Utilities::pow(fe_degree + 1, dim);
+      auto          scratch_for_eval =
+        Kokkos::subview(shared_data.scratch_pad,
+                        Kokkos::make_pair(0, scratch_size));
+
+      internal::EvaluatorTensorProduct<
+        internal::EvaluatorVariant::evaluate_general,
+        dim,
+        fe_degree + 1,
+        fe_degree + 1,
+        number>
+        eval(team_member,
+             precomputed_data.shape_values,
+             precomputed_data.shape_gradients,
+             precomputed_data.co_shape_gradients,
+             scratch_for_eval);
+
+      for (unsigned int c = 0; c < 1; ++c)
+        {
+          auto u = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
+          auto grad_u =
+            Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
+
+          // apply derivatives in collocation space
+          if constexpr (dim == 1)
+            eval.template co_gradients<2, false, false, false>(
+              Kokkos::subview(grad_u, Kokkos::ALL, 2), u);
+          else if constexpr (dim == 2)
+            {
+              eval.template co_gradients<1, false, false, false>(
+                Kokkos::subview(grad_u, Kokkos::ALL, 1), u);
+              eval.template co_gradients<0, false, true, false>(
+                Kokkos::subview(grad_u, Kokkos::ALL, 0), u);
+            }
+          else if constexpr (dim == 3)
+            {
+              eval.template co_gradients<2, false, false, false>(
+                Kokkos::subview(grad_u, Kokkos::ALL, 2), u);
+              eval.template co_gradients<1, false, true, false>(
+                Kokkos::subview(grad_u, Kokkos::ALL, 1), u);
+              eval.template co_gradients<0, false, true, false>(
+                Kokkos::subview(grad_u, Kokkos::ALL, 0), u);
+            }
+
+          // transform back to the original space
+          if constexpr (dim > 2)
+            eval.template values<2, false, false, true>(u, u);
+          if constexpr (dim > 1)
+            eval.template values<1, false, false, true>(u, u);
+          eval.template values<0, false, false, true>(u, u);
+        }
+      team_member.team_barrier();
+    }
+
+    // distribute dofs
+    {
+      if (precomputed_data.use_coloring)
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
+                             [&](const int &i) {
+                               for (unsigned int comp = 0; comp < 1; ++comp)
+                                 dst[precomputed_data.local_to_global(
+                                   i + n_local_dofs * comp, cell_id)] +=
+                                   shared_data.values(i, comp);
+                             });
+      else
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
+                             [&](const int &i) {
+                               for (unsigned int comp = 0; comp < 1; ++comp)
+                                 Kokkos::atomic_add(
+                                   &dst[precomputed_data.local_to_global(
+                                     i + n_local_dofs * comp, cell_id)],
+                                   shared_data.values(i, comp));
+                             });
+    }
+  }
+
+  template <int dim, int fe_degree, typename number>
+  class LaplaceOperator : public LaplaceOperatorBase<dim, number>
+  {
+  public:
+    LaplaceOperator(const DoFHandler<dim>           &dof_handler,
+                    const AffineConstraints<number> &constraints,
+                    bool overlap_communication_computation);
+
+    void
+    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+            &src) const override;
+
+    void
+    Tvmult(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const override;
+
+    void
+    initialize_dof_vector(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec)
+      const override;
+
+    void
+    compute_diagonal() override;
+
+    std::shared_ptr<DiagonalMatrix<
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
+    get_matrix_diagonal_inverse() const override;
+
+    types::global_dof_index
+    m() const override;
+
+    types::global_dof_index
+    n() const override;
+
+    number
+    el(const types::global_dof_index row,
+       const types::global_dof_index col) const override;
+
+    const MatrixFree<dim, number> &
+    get_matrix_free() const override;
+
+    const std::shared_ptr<const Utilities::MPI::Partitioner> &
+    get_vector_partitioner() const override;
+
+  private:
+    using TeamHandle = Kokkos::TeamPolicy<
+      MemorySpace::Default::kokkos_space::execution_space>::member_type;
+    using SharedViewValues = Kokkos::View<
+      number **,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    using SharedViewGradients = Kokkos::View<
+      number ***,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    using SharedViewScratchPad = Kokkos::View<
+      number *,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+    MatrixFree<dim, number>                           matrix_free;
+    typename MatrixFree<dim, number>::PrecomputedData gpu_data;
+
+    static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
+
+    std::shared_ptr<DiagonalMatrix<
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
+      inverse_diagonal_entries;
+  };
+
+  template <int dim, int fe_degree, typename number>
+  LaplaceOperator<dim, fe_degree, number>::LaplaceOperator(
+    const DoFHandler<dim>           &dof_handler,
+    const AffineConstraints<number> &constraints,
+    bool                             overlap_communication_computation)
+  {
+    const MappingQ<dim>                              mapping(fe_degree);
+    typename MatrixFree<dim, number>::AdditionalData additional_data;
+
+    additional_data.mapping_update_flags =
+      update_gradients | update_JxW_values | update_quadrature_points;
+    additional_data.overlap_communication_computation =
+      overlap_communication_computation;
+
+    const QGauss<1> quadrature_1d(fe_degree + 1);
+    matrix_free.reinit(
+      mapping, dof_handler, constraints, quadrature_1d, additional_data);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+    const
+  {
+    AssertDimension(dst.size(), src.size());
+    Assert(dst.get_partitioner() == matrix_free.get_vector_partitioner(),
+           ExcMessage("Vector is not correctly initialized."));
+    Assert(src.get_partitioner() == matrix_free.get_vector_partitioner(),
+           ExcMessage("Vector is not correctly initialized."));
+
+    dst = 0.;
+    LocalLaplaceOperator<dim, fe_degree, number> local_operator;
+
+    // copy vectors to the kokkos views
+    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size());
+    DeviceVector<number> dst_device(dst.get_values(), dst.locally_owned_size());
+
+    MemorySpace::Default::kokkos_space::execution_space exec;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    if (matrix_free.use_overlap_communication_computation())
+      {
+        auto do_color = [&](const unsigned int color) {
+          const auto &gpu_data = matrix_free.get_data(0, color);
+
+          const auto n_cells = gpu_data.n_cells;
+
+          Kokkos::TeamPolicy<
+            MemorySpace::Default::kokkos_space::execution_space>
+            team_policy(exec, n_cells, Kokkos::AUTO);
+
+          // ssize: shape values (n_components x n_q_points)
+          // + shape_gtradients (n_components x dim x n_q_points)
+          // +  scratch_pad
+          std::size_t shmem_size =
+            SharedViewValues::shmem_size(n_q_points, gpu_data.n_components) +
+            SharedViewGradients::shmem_size(n_q_points,
+                                            dim,
+                                            gpu_data.n_components) +
+            SharedViewScratchPad::shmem_size(gpu_data.scratch_pad_size);
+          team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+          Kokkos::parallel_for(
+            "laplace_operator_cell_loop_" + std::to_string(color),
+            team_policy,
+            KOKKOS_LAMBDA(TeamHandle team_member) {
+              // get the cell index from the block id
+              const int cell_index = team_member.league_rank();
+
+              SharedData<dim, number> shared_data;
+              shared_data.reinit(team_member, n_q_points, gpu_data);
+
+              // prepare CellData for the local operator evaluation
+              CellData<dim, number> cell_data{
+                team_member, n_q_points, cell_index, gpu_data, shared_data};
+
+              // evaluate local quad operator on the cell
+              DeviceVector<number> nonconst_dst = dst_device;
+              local_operator(&cell_data, src_device, nonconst_dst);
+            });
+        };
+
+        src.update_ghost_values_start(0);
+
+        if (n_colors > 0 && colored_graph[0].size() > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        if (n_colors > 1 && colored_graph[1].size() > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+
+        if (n_colors > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            const auto &gpu_data = matrix_free.get_data(0, color);
+            const auto  n_cells  = gpu_data.n_cells;
+
+            if (n_cells > 0)
+              {
+                Kokkos::TeamPolicy<
+                  MemorySpace::Default::kokkos_space::execution_space>
+                  team_policy(exec, n_cells, Kokkos::AUTO);
+
+                // ssize: shape values (n_components x n_q_points)
+                // + shape_gtradients (n_components x dim x n_q_points)
+                // +  scratch_pad
+                std::size_t shmem_size =
+                  SharedViewValues::shmem_size(n_q_points,
+                                               gpu_data.n_components) +
+                  SharedViewGradients::shmem_size(n_q_points,
+                                                  dim,
+                                                  gpu_data.n_components) +
+                  SharedViewScratchPad::shmem_size(gpu_data.scratch_pad_size);
+                team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+                Kokkos::parallel_for(
+                  "laplace_operator_cell_loop_" + std::to_string(color),
+                  team_policy,
+                  KOKKOS_LAMBDA(TeamHandle team_member) {
+                    const int cell_index = team_member.league_rank();
+
+                    // Allocate the scratch memory
+                    SharedData<dim, number> shared_data;
+                    shared_data.reinit(team_member, n_q_points, gpu_data);
+
+                    CellData<dim, number> cell_data{team_member,
+                                                    n_q_points,
+                                                    cell_index,
+                                                    gpu_data,
+                                                    shared_data};
+
+                    // evaluate quad operator on the cell
+                    DeviceVector<number> nonconst_dst = dst_device;
+                    local_operator(&cell_data, src_device, nonconst_dst);
+                  });
+              }
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::Tvmult(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+    const
+  {
+    AssertDimension(dst.size(), src.size());
+    Assert(dst.get_partitioner() == matrix_free.get_vector_partitioner(),
+           ExcMessage("Vector is not correctly initialized."));
+    Assert(src.get_partitioner() == matrix_free.get_vector_partitioner(),
+           ExcMessage("Vector is not correctly initialized."));
+
+    vmult(dst, src);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::initialize_dof_vector(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const
+  {
+    matrix_free.initialize_dof_vector(vec);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  const MatrixFree<dim, number> &
+  LaplaceOperator<dim, fe_degree, number>::get_matrix_free() const
+  {
+    return matrix_free;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::compute_diagonal()
+  {
+    this->inverse_diagonal_entries.reset(
+      new DiagonalMatrix<
+        LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>());
+
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+      &inverse_diagonal = inverse_diagonal_entries->get_vector();
+    initialize_dof_vector(inverse_diagonal);
+
+    LaplaceOperatorQuad<dim, fe_degree, number> operator_quad;
+
+    MatrixFreeTools::compute_diagonal<dim, fe_degree, fe_degree + 1, 1, number>(
+      matrix_free,
+      inverse_diagonal,
+      operator_quad,
+      EvaluationFlags::gradients,
+      EvaluationFlags::gradients);
+
+    number *raw_diagonal = inverse_diagonal.get_values();
+
+    Kokkos::parallel_for(
+      inverse_diagonal.locally_owned_size(), KOKKOS_LAMBDA(int i) {
+        Assert(raw_diagonal[i] > 0.,
+               ExcMessage("No diagonal entry in a positive definite operator "
+                          "should be zero"));
+        raw_diagonal[i] = 1. / raw_diagonal[i];
+      });
+  }
+
+  template <int dim, int fe_degree, typename number>
+  std::shared_ptr<DiagonalMatrix<
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
+  LaplaceOperator<dim, fe_degree, number>::get_matrix_diagonal_inverse() const
+  {
+    return inverse_diagonal_entries;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  types::global_dof_index
+  LaplaceOperator<dim, fe_degree, number>::m() const
+  {
+    return matrix_free.get_vector_partitioner()->size();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  types::global_dof_index
+  LaplaceOperator<dim, fe_degree, number>::n() const
+  {
+    return matrix_free.get_vector_partitioner()->size();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  number
+  LaplaceOperator<dim, fe_degree, number>::el(
+    const types::global_dof_index row,
+    const types::global_dof_index col) const
+  {
+    (void)col;
+    Assert(row == col, ExcNotImplemented());
+    Assert(inverse_diagonal_entries.get() != nullptr &&
+             inverse_diagonal_entries->m() > 0,
+           ExcNotInitialized());
+
+    return 1.0 / (*inverse_diagonal_entries)(row, row);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  const std::shared_ptr<const Utilities::MPI::Partitioner> &
+  LaplaceOperator<dim, fe_degree, number>::get_vector_partitioner() const
+  {
+    return matrix_free.get_vector_partitioner();
+  }
+
+} // namespace Portable
+
+DEAL_II_NAMESPACE_CLOSE
+
+#endif
