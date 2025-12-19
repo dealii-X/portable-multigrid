@@ -14,14 +14,42 @@ namespace Portable
   template <int dim, typename number>
   struct CellData
   {
-    Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::
-      member_type team_member;
+    using TeamHandle = Kokkos::TeamPolicy<
+      MemorySpace::Default::kokkos_space::execution_space>::member_type;
+
+    using ViewValues = Kokkos::View<
+      number *,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    using ViewGradients = Kokkos::View<
+      number **,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+    TeamHandle team_member;
 
     const unsigned int n_q_points;
     const int          cell_index;
 
     const typename MatrixFree<dim, number>::PrecomputedData &precomputed_data;
-    SharedData<dim, number>                                 &shared_data;
+
+    const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+      &dirichlet_boundary_dofs_mask;
+
+    /**
+     * Memory for dof and quad values.
+     */
+    ViewValues &values;
+
+    /**
+     * Memory for computed gradients in reference coordinate system.
+     */
+    ViewGradients &gradients;
+
+    /**
+     * Memory for temporary arrays required by evaluation and integration.
+     */
+    ViewValues &scratch_pad;
   };
 
   template <int dim, int fe_degree, typename number>
@@ -69,176 +97,151 @@ namespace Portable
     DeviceVector<number>        &dst) const
   {
     const auto &precomputed_data = data->precomputed_data;
-    const auto &shared_data      = data->shared_data;
     const int   cell_id          = data->cell_index;
     const auto &team_member      = data->team_member;
+
+    const auto &dirichlet_boundary_dofs_mask =
+      data->dirichlet_boundary_dofs_mask;
+
+    auto &values      = data->values;
+    auto &gradients   = data->gradients;
+    auto &scratch_pad = data->scratch_pad;
 
     // read dof values
     {
       Kokkos::parallel_for(
         Kokkos::TeamThreadRange(data->team_member, n_local_dofs),
         [&](const int &i) {
-          for (unsigned int comp = 0; comp < 1; ++comp)
-            shared_data.values(i, comp) =
-              src[precomputed_data.local_to_global(i + n_local_dofs * comp,
-                                                   cell_id)];
+          if (dirichlet_boundary_dofs_mask(i, cell_id) ==
+              numbers::invalid_unsigned_int)
+            values(i) = 0.;
+          else
+            values(i) = src[precomputed_data.local_to_global(i, cell_id)];
         });
 
       data->team_member.team_barrier();
     }
 
-    // evaluate gradients using sum factorization
-    {
-      constexpr int scratch_size = Utilities::pow(fe_degree + 1, dim);
-      auto          scratch_for_eval =
-        Kokkos::subview(shared_data.scratch_pad,
-                        Kokkos::make_pair(0, scratch_size));
 
-      internal::EvaluatorTensorProduct<
-        internal::EvaluatorVariant::evaluate_general,
-        dim,
-        fe_degree + 1,
-        fe_degree + 1,
-        number>
-        eval(team_member,
-             precomputed_data.shape_values,
-             precomputed_data.shape_gradients,
-             precomputed_data.co_shape_gradients,
-             scratch_for_eval);
+    // define scratch pad for the evaluation
+    constexpr int scratch_size = Utilities::pow(fe_degree + 1, dim);
+    auto          scratch_for_eval =
+      Kokkos::subview(scratch_pad, Kokkos::make_pair(0, scratch_size));
 
-      for (unsigned int c = 0; c < 1; ++c)
-        {
-          auto u = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
-          auto grad_u =
-            Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
+    // initialize tensor-product kernel
+    internal::EvaluatorTensorProduct<
+      internal::EvaluatorVariant::evaluate_general,
+      dim,
+      fe_degree + 1,
+      fe_degree + 1,
+      number>
+      eval(team_member,
+           precomputed_data.shape_values,
+           precomputed_data.shape_gradients,
+           precomputed_data.co_shape_gradients,
+           scratch_for_eval);
 
-          eval.template values<0, true, false, true>(u, u);
-          if constexpr (dim > 1)
-            eval.template values<1, true, false, true>(u, u);
-          if constexpr (dim > 2)
-            eval.template values<2, true, false, true>(u, u);
+    // evaluate the kernel using sum factorization
 
-          // evaluate gradients
-          eval.template co_gradients<0, true, false, false>(
-            u, Kokkos::subview(grad_u, Kokkos::ALL, 0));
-          if constexpr (dim > 1)
-            eval.template co_gradients<1, true, false, false>(
-              u, Kokkos::subview(grad_u, Kokkos::ALL, 1));
-          if constexpr (dim > 2)
-            eval.template co_gradients<2, true, false, false>(
-              u, Kokkos::subview(grad_u, Kokkos::ALL, 2));
-        }
-      team_member.team_barrier();
-    }
+    // 1.transform to the collocation space
+    eval.template values<0, true, false, true>(values, values);
+    if constexpr (dim > 1)
+      eval.template values<1, true, false, true>(values, values);
+    if constexpr (dim > 2)
+      eval.template values<2, true, false, true>(values, values);
 
-    // compute Laplace kernel at each quadrature point
-    {
-      Kokkos::parallel_for(
-        Kokkos::TeamThreadRange(team_member, n_q_points),
-        [&](const int &q_point) {
-          // get gradient
-          Tensor<1, dim, number> grad;
-          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-            {
-              number tmp = 0.;
-              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                tmp +=
-                  precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
-                  shared_data.gradients(q_point, d_2, 0);
-              grad[d_1] = tmp;
-            }
+    // 2. evaluate gradients in the colloction space
+    eval.template co_gradients<0, true, false, false>(
+      values, Kokkos::subview(gradients, Kokkos::ALL, 0));
+    if constexpr (dim > 1)
+      eval.template co_gradients<1, true, false, false>(
+        values, Kokkos::subview(gradients, Kokkos::ALL, 1));
+    if constexpr (dim > 2)
+      eval.template co_gradients<2, true, false, false>(
+        values, Kokkos::subview(gradients, Kokkos::ALL, 2));
 
-          // submit gradient
-          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-            {
-              number tmp = 0.;
-              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                tmp +=
-                  precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) *
-                  grad[d_2];
-              shared_data.gradients(q_point, d_1, 0) =
-                tmp * precomputed_data.JxW(q_point, cell_id);
-            }
-        });
+    team_member.team_barrier();
 
-      team_member.team_barrier();
-    }
+    // 3.compute Laplace kernel at each quadrature point
+    Kokkos::parallel_for(
+      Kokkos::TeamThreadRange(team_member, n_q_points),
+      [&](const int &q_point) {
+        // 3a. get gradient
+        Tensor<1, dim, number> grad;
+        for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+          {
+            number tmp = 0.;
+            for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+              tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
+                     gradients(q_point, d_2);
+            grad[d_1] = tmp;
+          }
+
+        // 3b.submit gradient
+        for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+          {
+            number tmp = 0.;
+            for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+              tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) *
+                     grad[d_2];
+            gradients(q_point, d_1) =
+              tmp * precomputed_data.JxW(q_point, cell_id);
+          }
+      });
+
+    team_member.team_barrier();
 
     // integrate using time factorization
-    {
-      constexpr int scratch_size = Utilities::pow(fe_degree + 1, dim);
-      auto          scratch_for_eval =
-        Kokkos::subview(shared_data.scratch_pad,
-                        Kokkos::make_pair(0, scratch_size));
 
-      internal::EvaluatorTensorProduct<
-        internal::EvaluatorVariant::evaluate_general,
-        dim,
-        fe_degree + 1,
-        fe_degree + 1,
-        number>
-        eval(team_member,
-             precomputed_data.shape_values,
-             precomputed_data.shape_gradients,
-             precomputed_data.co_shape_gradients,
-             scratch_for_eval);
+    // 4. apply derivatives in collocation space
+    if constexpr (dim == 1)
+      eval.template co_gradients<0, false, false, false>(
+        Kokkos::subview(gradients, Kokkos::ALL, 2), values);
+    else if constexpr (dim == 2)
+      {
+        eval.template co_gradients<1, false, false, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 1), values);
+        eval.template co_gradients<0, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 0), values);
+      }
+    else if constexpr (dim == 3)
+      {
+        eval.template co_gradients<2, false, false, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 2), values);
+        eval.template co_gradients<1, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 1), values);
+        eval.template co_gradients<0, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 0), values);
+      }
 
-      for (unsigned int c = 0; c < 1; ++c)
-        {
-          auto u = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
-          auto grad_u =
-            Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
+    // 5. transform back to the original space
+    if constexpr (dim > 2)
+      eval.template values<2, false, false, true>(values, values);
+    if constexpr (dim > 1)
+      eval.template values<1, false, false, true>(values, values);
+    eval.template values<0, false, false, true>(values, values);
 
-          // apply derivatives in collocation space
-          if constexpr (dim == 1)
-            eval.template co_gradients<2, false, false, false>(
-              Kokkos::subview(grad_u, Kokkos::ALL, 2), u);
-          else if constexpr (dim == 2)
-            {
-              eval.template co_gradients<1, false, false, false>(
-                Kokkos::subview(grad_u, Kokkos::ALL, 1), u);
-              eval.template co_gradients<0, false, true, false>(
-                Kokkos::subview(grad_u, Kokkos::ALL, 0), u);
-            }
-          else if constexpr (dim == 3)
-            {
-              eval.template co_gradients<2, false, false, false>(
-                Kokkos::subview(grad_u, Kokkos::ALL, 2), u);
-              eval.template co_gradients<1, false, true, false>(
-                Kokkos::subview(grad_u, Kokkos::ALL, 1), u);
-              eval.template co_gradients<0, false, true, false>(
-                Kokkos::subview(grad_u, Kokkos::ALL, 0), u);
-            }
-
-          // transform back to the original space
-          if constexpr (dim > 2)
-            eval.template values<2, false, false, true>(u, u);
-          if constexpr (dim > 1)
-            eval.template values<1, false, false, true>(u, u);
-          eval.template values<0, false, false, true>(u, u);
-        }
-      team_member.team_barrier();
-    }
+    team_member.team_barrier();
 
     // distribute dofs
     {
       if (precomputed_data.use_coloring)
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
-                             [&](const int &i) {
-                               for (unsigned int comp = 0; comp < 1; ++comp)
-                                 dst[precomputed_data.local_to_global(
-                                   i + n_local_dofs * comp, cell_id)] +=
-                                   shared_data.values(i, comp);
-                             });
+        Kokkos::parallel_for(
+          Kokkos::TeamThreadRange(team_member, n_local_dofs),
+          [&](const int &i) {
+            if (dirichlet_boundary_dofs_mask(i, cell_id) !=
+                numbers::invalid_unsigned_int)
+              dst[precomputed_data.local_to_global(i, cell_id)] += values(i);
+          });
       else
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
-                             [&](const int &i) {
-                               for (unsigned int comp = 0; comp < 1; ++comp)
-                                 Kokkos::atomic_add(
-                                   &dst[precomputed_data.local_to_global(
-                                     i + n_local_dofs * comp, cell_id)],
-                                   shared_data.values(i, comp));
-                             });
+        Kokkos::parallel_for(
+          Kokkos::TeamThreadRange(team_member, n_local_dofs),
+          [&](const int &i) {
+            if (dirichlet_boundary_dofs_mask(i, cell_id) !=
+                numbers::invalid_unsigned_int)
+              Kokkos::atomic_add(
+                &dst[precomputed_data.local_to_global(i, cell_id)], values(i));
+          });
     }
   }
 
@@ -292,18 +295,17 @@ namespace Portable
   private:
     using TeamHandle = Kokkos::TeamPolicy<
       MemorySpace::Default::kokkos_space::execution_space>::member_type;
-    using SharedViewValues = Kokkos::View<
-      number **,
-      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
-      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
-    using SharedViewGradients = Kokkos::View<
-      number ***,
-      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
-      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
-    using SharedViewScratchPad = Kokkos::View<
+    using ViewValues = Kokkos::View<
       number *,
       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    using ViewGradients = Kokkos::View<
+      number **,
+      MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+    static constexpr unsigned int n_local_dofs =
+      Utilities::pow(fe_degree + 1, dim);
 
     MatrixFree<dim, number>                           matrix_free;
     typename MatrixFree<dim, number>::PrecomputedData gpu_data;
@@ -313,6 +315,10 @@ namespace Portable
     std::shared_ptr<DiagonalMatrix<
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
       inverse_diagonal_entries;
+
+    std::vector<
+      Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      dirichlet_boundary_dofs_mask_fine;
   };
 
   template <int dim, int fe_degree, typename number>
@@ -332,6 +338,69 @@ namespace Portable
     const QGauss<1> quadrature_1d(fe_degree + 1);
     matrix_free.reinit(
       mapping, dof_handler, constraints, quadrature_1d, additional_data);
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+
+    std::vector<unsigned int> lex_numbering(n_local_dofs);
+
+    {
+      const Quadrature<1> dummy_quadrature(
+        std::vector<Point<1>>(1, Point<1>()));
+      dealii::internal::MatrixFreeFunctions::ShapeInfo<double> shape_info;
+
+
+      shape_info.reinit(dummy_quadrature, dof_handler.get_fe(), 0);
+      lex_numbering = shape_info.lexicographic_numbering;
+    }
+
+    dirichlet_boundary_dofs_mask_fine.clear();
+    dirichlet_boundary_dofs_mask_fine.resize(n_colors);
+
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        if (colored_graph[color].size() > 0)
+          {
+            const auto &mf_data = matrix_free.get_data(0, color);
+            ;
+            const auto &graph = colored_graph[color];
+
+            this->dirichlet_boundary_dofs_mask_fine[color] =
+              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+                Kokkos::view_alloc("dirichlet_boundary_dofs_" +
+                                     std::to_string(color),
+                                   Kokkos::WithoutInitializing),
+                n_local_dofs,
+                mf_data.n_cells);
+
+            auto dofs_mask_host = Kokkos::create_mirror_view(
+              this->dirichlet_boundary_dofs_mask_fine[color]);
+
+            auto cell = graph.cbegin(), end_cell = graph.cend();
+
+            std::vector<types::global_dof_index> local_dof_indices(
+              n_local_dofs);
+            for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
+              {
+                (*cell)->get_dof_indices(local_dof_indices);
+
+                for (unsigned int i = 0; i < n_local_dofs; ++i)
+                  {
+                    const auto global_dof = local_dof_indices[lex_numbering[i]];
+                    if (constraints.is_constrained(global_dof))
+                      dofs_mask_host(i, cell_id) =
+                        numbers::invalid_unsigned_int;
+                    else
+                      dofs_mask_host(i, cell_id) = global_dof;
+                  }
+              }
+            Kokkos::deep_copy(this->dirichlet_boundary_dofs_mask_fine[color],
+                              dofs_mask_host);
+            Kokkos::fence();
+          }
+      }
   }
 
   template <int dim, int fe_degree, typename number>
@@ -374,11 +443,10 @@ namespace Portable
           // + shape_gtradients (n_components x dim x n_q_points)
           // +  scratch_pad
           std::size_t shmem_size =
-            SharedViewValues::shmem_size(n_q_points, gpu_data.n_components) +
-            SharedViewGradients::shmem_size(n_q_points,
-                                            dim,
-                                            gpu_data.n_components) +
-            SharedViewScratchPad::shmem_size(gpu_data.scratch_pad_size);
+            ViewValues::shmem_size(n_q_points) +
+            ViewGradients::shmem_size(n_q_points, dim) +
+            ViewValues::shmem_size(gpu_data.scratch_pad_size);
+
           team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
           Kokkos::parallel_for(
@@ -388,12 +456,24 @@ namespace Portable
               // get the cell index from the block id
               const int cell_index = team_member.league_rank();
 
-              SharedData<dim, number> shared_data;
-              shared_data.reinit(team_member, n_q_points, gpu_data);
+              // Allocate the scratch memory
+              ViewValues    values(team_member.team_shmem(), n_q_points);
+              ViewGradients gradients(team_member.team_shmem(),
+                                      n_q_points,
+                                      dim);
+              ViewValues    scratch_pad(team_member.team_shmem(),
+                                     gpu_data.scratch_pad_size);
 
               // prepare CellData for the local operator evaluation
               CellData<dim, number> cell_data{
-                team_member, n_q_points, cell_index, gpu_data, shared_data};
+                team_member,
+                n_q_points,
+                cell_index,
+                gpu_data,
+                dirichlet_boundary_dofs_mask_fine[color],
+                values,
+                gradients,
+                scratch_pad};
 
               // evaluate local quad operator on the cell
               DeviceVector<number> nonconst_dst = dst_device;
@@ -444,12 +524,9 @@ namespace Portable
                 // + shape_gtradients (n_components x dim x n_q_points)
                 // +  scratch_pad
                 std::size_t shmem_size =
-                  SharedViewValues::shmem_size(n_q_points,
-                                               gpu_data.n_components) +
-                  SharedViewGradients::shmem_size(n_q_points,
-                                                  dim,
-                                                  gpu_data.n_components) +
-                  SharedViewScratchPad::shmem_size(gpu_data.scratch_pad_size);
+                  ViewValues::shmem_size(n_q_points) +
+                  ViewGradients::shmem_size(n_q_points, dim) +
+                  ViewValues::shmem_size(gpu_data.scratch_pad_size);
                 team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
                 Kokkos::parallel_for(
@@ -459,14 +536,22 @@ namespace Portable
                     const int cell_index = team_member.league_rank();
 
                     // Allocate the scratch memory
-                    SharedData<dim, number> shared_data;
-                    shared_data.reinit(team_member, n_q_points, gpu_data);
+                    ViewValues    values(team_member.team_shmem(), n_q_points);
+                    ViewGradients gradients(team_member.team_shmem(),
+                                            n_q_points,
+                                            dim);
+                    ViewValues    scratch_pad(team_member.team_shmem(),
+                                           gpu_data.scratch_pad_size);
 
-                    CellData<dim, number> cell_data{team_member,
-                                                    n_q_points,
-                                                    cell_index,
-                                                    gpu_data,
-                                                    shared_data};
+                    CellData<dim, number> cell_data{
+                      team_member,
+                      n_q_points,
+                      cell_index,
+                      gpu_data,
+                      dirichlet_boundary_dofs_mask_fine[color],
+                      values,
+                      gradients,
+                      scratch_pad};
 
                     // evaluate quad operator on the cell
                     DeviceVector<number> nonconst_dst = dst_device;

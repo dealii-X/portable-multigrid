@@ -333,7 +333,7 @@ LaplaceProblem<dim, fe_degree, mg_levels>::solve()
           smoother_data.degree          = numbers::invalid_unsigned_int;
           smoother_data.smoothing_range = mg_matrices[0]->m();
         }
-      smoother_data.constraints.copy_from(constraints_collection[level]);
+      // smoother_data.constraints.copy_from(constraints_collection[level]);
       mg_matrices[level]->compute_diagonal();
       smoother_data.preconditioner =
         mg_matrices[level]->get_matrix_diagonal_inverse();
@@ -343,7 +343,7 @@ LaplaceProblem<dim, fe_degree, mg_levels>::solve()
 
   Portable::
     VCycleMultigrid<dim, double, Portable::PolynomialTransferBase<dim, double>>
-      mg_preconditioner(mg_matrices, mg_transfers, mg_smoothers, 3, 3);
+      mg_preconditioner(mg_matrices, mg_transfers, mg_smoothers, 2, 2);
 
   SolverControl solver_control(system_rhs_device.size(),
                                1e-12 * system_rhs_device.l2_norm());
