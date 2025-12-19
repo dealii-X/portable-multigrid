@@ -147,15 +147,9 @@ namespace Portable
 
       if (level == mg_matrices.min_level())
         {
-          // Solve directly on the coarsest level
-          LevelMatrixType     &coarse_matrix = *mg_matrices[level];
-          SolverControl        solver_control(coarse_matrix.m(),
-                                       1e-12 * src.l2_norm());
-          SolverCG<VectorType> cg(solver_control);
-
-          dst = 0;
-          cg.solve(coarse_matrix, dst, src, mg_smoothers[level]);
-
+          // Accuracy on coarsest level should be comparable to overall level
+          // accuracy (~1e-3)
+          smooth(dst, src, mg_matrices.min_level());
           return;
         }
 

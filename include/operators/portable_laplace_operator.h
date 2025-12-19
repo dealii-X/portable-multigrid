@@ -52,27 +52,6 @@ namespace Portable
     ViewValues &scratch_pad;
   };
 
-  // template <int dim, int fe_degree, typename number>
-  // class LaplaceOperatorQuad
-  // {
-  // public:
-  //   DEAL_II_HOST_DEVICE void
-  //   operator()(
-  //     Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number>
-  //     *fe_eval, const int q_point) const;
-
-  //   static const unsigned int n_q_points =
-  //     dealii::Utilities::pow(fe_degree + 1, dim);
-  // };
-
-  // template <int dim, int fe_degree, typename number>
-  // DEAL_II_HOST_DEVICE void
-  // LaplaceOperatorQuad<dim, fe_degree, number>::operator()(
-  //   Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number>
-  //   *fe_eval, const int q_point) const
-  // {
-  //   fe_eval->submit_gradient(fe_eval->get_gradient(q_point), q_point);
-  // }
 
   template <int dim, int fe_degree, typename number>
   class LaplaceDiagonalOperator
@@ -764,16 +743,6 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
       &inverse_diagonal = inverse_diagonal_entries->get_vector();
     initialize_dof_vector(inverse_diagonal);
-
-    // LaplaceOperatorQuad<dim, fe_degree, number> operator_quad;
-
-    // MatrixFreeTools::compute_diagonal<dim, fe_degree, fe_degree + 1, 1,
-    // number>(
-    //   matrix_free,
-    //   inverse_diagonal,
-    //   operator_quad,
-    //   EvaluationFlags::gradients,
-    //   EvaluationFlags::gradients);
 
     LaplaceDiagonalOperator<dim, fe_degree, number> diagonal_operator;
 
