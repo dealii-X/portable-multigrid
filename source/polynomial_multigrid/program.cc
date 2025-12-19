@@ -329,11 +329,10 @@ LaplaceProblem<dim, fe_degree, mg_levels>::solve()
         }
       else
         {
-          smoother_data.smoothing_range = 1e-3;
-          smoother_data.degree          = numbers::invalid_unsigned_int;
-          smoother_data.smoothing_range = mg_matrices[0]->m();
+          smoother_data.smoothing_range     = 1e-3;
+          smoother_data.degree              = numbers::invalid_unsigned_int;
+          smoother_data.eig_cg_n_iterations = mg_matrices[0]->m();
         }
-      // smoother_data.constraints.copy_from(constraints_collection[level]);
       mg_matrices[level]->compute_diagonal();
       smoother_data.preconditioner =
         mg_matrices[level]->get_matrix_diagonal_inverse();
