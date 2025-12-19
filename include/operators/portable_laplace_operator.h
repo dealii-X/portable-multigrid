@@ -33,6 +33,9 @@ namespace Portable
 
     const typename MatrixFree<dim, number>::PrecomputedData &precomputed_data;
 
+    const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+      &dirichlet_boundary_dofs_mask;
+
     /**
      * Memory for dof and quad values.
      */
@@ -97,6 +100,9 @@ namespace Portable
     const int   cell_id          = data->cell_index;
     const auto &team_member      = data->team_member;
 
+    const auto &dirichlet_boundary_dofs_mask =
+      data->dirichlet_boundary_dofs_mask;
+
     auto &values      = data->values;
     auto &gradients   = data->gradients;
     auto &scratch_pad = data->scratch_pad;
@@ -106,7 +112,11 @@ namespace Portable
       Kokkos::parallel_for(
         Kokkos::TeamThreadRange(data->team_member, n_local_dofs),
         [&](const int &i) {
-          values(i) = src[precomputed_data.local_to_global(i, cell_id)];
+          if (dirichlet_boundary_dofs_mask(i, cell_id) ==
+              numbers::invalid_unsigned_int)
+            values(i) = 0.;
+          else
+            values(i) = src[precomputed_data.local_to_global(i, cell_id)];
         });
 
       data->team_member.team_barrier();
@@ -185,7 +195,7 @@ namespace Portable
 
     // 4. apply derivatives in collocation space
     if constexpr (dim == 1)
-      eval.template co_gradients<2, false, false, false>(
+      eval.template co_gradients<0, false, false, false>(
         Kokkos::subview(gradients, Kokkos::ALL, 2), values);
     else if constexpr (dim == 2)
       {
@@ -219,14 +229,18 @@ namespace Portable
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs),
           [&](const int &i) {
-            dst[precomputed_data.local_to_global(i, cell_id)] += values(i);
+            if (dirichlet_boundary_dofs_mask(i, cell_id) !=
+                numbers::invalid_unsigned_int)
+              dst[precomputed_data.local_to_global(i, cell_id)] += values(i);
           });
       else
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs),
           [&](const int &i) {
-            Kokkos::atomic_add(
-              &dst[precomputed_data.local_to_global(i, cell_id)], values(i));
+            if (dirichlet_boundary_dofs_mask(i, cell_id) !=
+                numbers::invalid_unsigned_int)
+              Kokkos::atomic_add(
+                &dst[precomputed_data.local_to_global(i, cell_id)], values(i));
           });
     }
   }
@@ -290,6 +304,9 @@ namespace Portable
       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
+    static constexpr unsigned int n_local_dofs =
+      Utilities::pow(fe_degree + 1, dim);
+
     MatrixFree<dim, number>                           matrix_free;
     typename MatrixFree<dim, number>::PrecomputedData gpu_data;
 
@@ -298,6 +315,10 @@ namespace Portable
     std::shared_ptr<DiagonalMatrix<
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
       inverse_diagonal_entries;
+
+    std::vector<
+      Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      dirichlet_boundary_dofs_mask_fine;
   };
 
   template <int dim, int fe_degree, typename number>
@@ -317,6 +338,69 @@ namespace Portable
     const QGauss<1> quadrature_1d(fe_degree + 1);
     matrix_free.reinit(
       mapping, dof_handler, constraints, quadrature_1d, additional_data);
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+
+    std::vector<unsigned int> lex_numbering(n_local_dofs);
+
+    {
+      const Quadrature<1> dummy_quadrature(
+        std::vector<Point<1>>(1, Point<1>()));
+      dealii::internal::MatrixFreeFunctions::ShapeInfo<double> shape_info;
+
+
+      shape_info.reinit(dummy_quadrature, dof_handler.get_fe(), 0);
+      lex_numbering = shape_info.lexicographic_numbering;
+    }
+
+    dirichlet_boundary_dofs_mask_fine.clear();
+    dirichlet_boundary_dofs_mask_fine.resize(n_colors);
+
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        if (colored_graph[color].size() > 0)
+          {
+            const auto &mf_data = matrix_free.get_data(0, color);
+            ;
+            const auto &graph = colored_graph[color];
+
+            this->dirichlet_boundary_dofs_mask_fine[color] =
+              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+                Kokkos::view_alloc("dirichlet_boundary_dofs_" +
+                                     std::to_string(color),
+                                   Kokkos::WithoutInitializing),
+                n_local_dofs,
+                mf_data.n_cells);
+
+            auto dofs_mask_host = Kokkos::create_mirror_view(
+              this->dirichlet_boundary_dofs_mask_fine[color]);
+
+            auto cell = graph.cbegin(), end_cell = graph.cend();
+
+            std::vector<types::global_dof_index> local_dof_indices(
+              n_local_dofs);
+            for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
+              {
+                (*cell)->get_dof_indices(local_dof_indices);
+
+                for (unsigned int i = 0; i < n_local_dofs; ++i)
+                  {
+                    const auto global_dof = local_dof_indices[lex_numbering[i]];
+                    if (constraints.is_constrained(global_dof))
+                      dofs_mask_host(i, cell_id) =
+                        numbers::invalid_unsigned_int;
+                    else
+                      dofs_mask_host(i, cell_id) = global_dof;
+                  }
+              }
+            Kokkos::deep_copy(this->dirichlet_boundary_dofs_mask_fine[color],
+                              dofs_mask_host);
+            Kokkos::fence();
+          }
+      }
   }
 
   template <int dim, int fe_degree, typename number>
@@ -381,13 +465,15 @@ namespace Portable
                                      gpu_data.scratch_pad_size);
 
               // prepare CellData for the local operator evaluation
-              CellData<dim, number> cell_data{team_member,
-                                              n_q_points,
-                                              cell_index,
-                                              gpu_data,
-                                              values,
-                                              gradients,
-                                              scratch_pad};
+              CellData<dim, number> cell_data{
+                team_member,
+                n_q_points,
+                cell_index,
+                gpu_data,
+                dirichlet_boundary_dofs_mask_fine[color],
+                values,
+                gradients,
+                scratch_pad};
 
               // evaluate local quad operator on the cell
               DeviceVector<number> nonconst_dst = dst_device;
@@ -457,13 +543,15 @@ namespace Portable
                     ViewValues    scratch_pad(team_member.team_shmem(),
                                            gpu_data.scratch_pad_size);
 
-                    CellData<dim, number> cell_data{team_member,
-                                                    n_q_points,
-                                                    cell_index,
-                                                    gpu_data,
-                                                    values,
-                                                    gradients,
-                                                    scratch_pad};
+                    CellData<dim, number> cell_data{
+                      team_member,
+                      n_q_points,
+                      cell_index,
+                      gpu_data,
+                      dirichlet_boundary_dofs_mask_fine[color],
+                      values,
+                      gradients,
+                      scratch_pad};
 
                     // evaluate quad operator on the cell
                     DeviceVector<number> nonconst_dst = dst_device;
