@@ -58,8 +58,7 @@ namespace Portable
     std::size_t
     team_shmem_size(int team_size) const;
 
-    DEAL_II_HOST_DEVICE
-    void
+    DEAL_II_HOST_DEVICE void
     operator()(const TeamHandle &team_member) const;
 
     static const unsigned int n_local_dofs_coarse =
@@ -98,9 +97,8 @@ namespace Portable
     );
   }
 
-  DEAL_II_HOST_DEVICE
   template <int dim, int p_coarse, int p_fine, typename number>
-  void
+  DEAL_II_HOST_DEVICE void
   CellProlongationKernel<dim, p_coarse, p_fine, number>::operator()(
     const TeamHandle &team_member) const
   {
@@ -356,8 +354,7 @@ namespace Portable
     std::size_t
     team_shmem_size(int team_size) const;
 
-    DEAL_II_HOST_DEVICE
-    void
+    DEAL_II_HOST_DEVICE void
     operator()(const TeamHandle &team_member) const;
 
     static const unsigned int n_local_dofs_coarse =
@@ -396,9 +393,8 @@ namespace Portable
     );
   }
 
-  DEAL_II_HOST_DEVICE
   template <int dim, int p_coarse, int p_fine, typename number>
-  void
+  DEAL_II_HOST_DEVICE void
   CellRestrictionKernel<dim, p_coarse, p_fine, number>::operator()(
     const TeamHandle &team_member) const
   {
@@ -707,8 +703,8 @@ namespace Portable
     if (matrix_free_fine->use_overlap_communication_computation())
       {
         auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data_coarse = matrix_free_coarse->get_data(0, color);
-          const auto &gpu_data_fine   = matrix_free_fine->get_data(0, color);
+          const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
+          const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
 
           const auto n_cells = gpu_data_fine.n_cells;
 
@@ -762,9 +758,8 @@ namespace Portable
 
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &gpu_data_coarse =
-              matrix_free_coarse->get_data(0, color);
-            const auto &gpu_data_fine = matrix_free_fine->get_data(0, color);
+            const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
+            const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
 
             const auto n_cells = gpu_data_fine.n_cells;
 
@@ -823,8 +818,8 @@ namespace Portable
     if (matrix_free_fine->use_overlap_communication_computation())
       {
         auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data_coarse = matrix_free_coarse->get_data(0, color);
-          const auto &gpu_data_fine   = matrix_free_fine->get_data(0, color);
+          const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
+          const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
 
           const auto n_cells = gpu_data_fine.n_cells;
 
@@ -878,9 +873,8 @@ namespace Portable
 
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &gpu_data_coarse =
-              matrix_free_coarse->get_data(0, color);
-            const auto &gpu_data_fine = matrix_free_fine->get_data(0, color);
+            const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
+            const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
 
             const auto n_cells = gpu_data_fine.n_cells;
 
@@ -1151,7 +1145,7 @@ namespace Portable
       {
         if (colored_graph_fine[color].size() > 0)
           {
-            const auto &mf_data_fine = matrix_free_fine->get_data(0, color);
+            const auto &mf_data_fine = matrix_free_fine->get_data(color);
             const auto &graph        = colored_graph_fine[color];
 
             weights_view_kokkos[color] =
@@ -1194,7 +1188,7 @@ namespace Portable
       {
         if (colored_graph_fine[color].size() > 0)
           {
-            const auto &mf_data_coarse = matrix_free_coarse->get_data(0, color);
+            const auto &mf_data_coarse = matrix_free_coarse->get_data(color);
             ;
             const auto &graph = colored_graph_coarse[color];
 
@@ -1239,7 +1233,7 @@ namespace Portable
       {
         if (colored_graph_fine[color].size() > 0)
           {
-            const auto &mf_data_fine = matrix_free_fine->get_data(0, color);
+            const auto &mf_data_fine = matrix_free_fine->get_data(color);
             ;
             const auto &graph = colored_graph_fine[color];
 
