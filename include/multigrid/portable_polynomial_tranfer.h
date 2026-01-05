@@ -8,7 +8,7 @@
 
 #include <Kokkos_Core.hpp>
 
-#include "base/portable_transfer_base.h"
+#include "base/portable_mg_transfer_base.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -627,7 +627,7 @@ namespace Portable
   }
 
   template <int dim, int p_coarse, int p_fine, typename number>
-  class PolynomialTransfer : public PolynomialTransferBase<dim, number>
+  class PolynomialTransfer : public MGTransferBase<dim, number>
   {
   public:
     PolynomialTransfer();
