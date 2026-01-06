@@ -31,10 +31,13 @@ namespace Portable
         &src) const = 0;
 
     virtual void
-    reinit(const MatrixFree<dim, number>   &mf_coarse,
-           const MatrixFree<dim, number>   &mf_fine,
-           const AffineConstraints<number> &constraints_coarse,
-           const AffineConstraints<number> &constraints_fine) = 0;
+    reinit(
+      const MatrixFree<dim, number>   &mf_coarse,
+      const MatrixFree<dim, number>   &mf_fine,
+      const AffineConstraints<number> &constraints_coarse,
+      const AffineConstraints<number> &constraints_fine,
+      const unsigned int mg_level_coarse = numbers::invalid_unsigned_int,
+      const unsigned int mg_level_fine   = numbers::invalid_unsigned_int) = 0;
   };
 
 
