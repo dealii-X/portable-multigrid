@@ -648,10 +648,7 @@ namespace Portable
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,
            const AffineConstraints<number> &constraints_coarse,
-           const AffineConstraints<number> &constraints_fine,
-           const unsigned int mg_level_coarse = numbers::invalid_unsigned_int,
-           const unsigned int mg_level_fine =
-             numbers::invalid_unsigned_int) override;
+           const AffineConstraints<number> &constraints_fine) override;
 
   private:
     void
@@ -920,13 +917,8 @@ namespace Portable
     const MatrixFree<dim, number>   &mf_coarse,
     const MatrixFree<dim, number>   &mf_fine,
     const AffineConstraints<number> &constraints_coarse,
-    const AffineConstraints<number> &constraints_fine,
-    const unsigned int               mg_level_coarse,
-    const unsigned int               mg_level_fine)
+    const AffineConstraints<number> &constraints_fine)
   {
-    (void)mg_level_coarse;
-    (void)mg_level_fine;
-
     this->matrix_free_coarse = &mf_coarse;
     this->matrix_free_fine   = &mf_fine;
 

@@ -39,9 +39,7 @@ namespace Portable
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,
            const AffineConstraints<number> &constraints_coarse,
-           const AffineConstraints<number> &constraints_fine,
-           const unsigned int               mg_level_coarse,
-           const unsigned int               mg_level_fine) override;
+           const AffineConstraints<number> &constraints_fine) override;
 
   private:
     void
@@ -49,10 +47,10 @@ namespace Portable
 
     /**
      * A multigrid transfer scheme. A multrigrid transfer class can have
-     * different transfer schemes to enable p-adaptivity (one transfer scheme
-     * per polynomial degree pair) and to enable global coarsening (one transfer
-     * scheme for transfer between children and parent cells, as well as, one
-     * transfer scheme for cells that are not refined).
+     * different transfer transfer_schemes to enable p-adaptivity (one transfer
+     * scheme per polynomial degree pair) and to enable global coarsening (one
+     * transfer scheme for transfer between children and parent cells, as well
+     * as, one transfer scheme for cells that are not refined).
      */
     struct MGTransferScheme
     {
@@ -108,7 +106,7 @@ namespace Portable
         shape_info_coarse;
     };
 
-    std::vector<MGTransferScheme> schemes;
+    std::vector<MGTransferScheme> transfer_schemes;
 
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
@@ -154,6 +152,7 @@ namespace Portable
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
     const
   {
+    
     return;
   }
 
@@ -173,18 +172,33 @@ namespace Portable
     const MatrixFree<dim, number>   &mf_coarse,
     const MatrixFree<dim, number>   &mf_fine,
     const AffineConstraints<number> &constraints_coarse,
-    const AffineConstraints<number> &constraints_fine,
-    const unsigned int               mg_level_coarse,
-    const unsigned int               mg_level_fine)
+    const AffineConstraints<number> &constraints_fine)
   {
+    const unsigned int mg_level_coarse = mf_coarse.get_mg_level();
+    const unsigned int mg_level_fine   = mf_fine.get_mg_level();
+
+
+    Assert((mg_level_fine == numbers::invalid_unsigned_int &&
+            mg_level_coarse == numbers::invalid_unsigned_int) ||
+             (mg_level_coarse + 1 == mg_level_fine),
+           ExcNotImplemented());
+
     this->matrix_free_coarse = &mf_coarse;
     this->matrix_free_fine   = &mf_fine;
 
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
 
-    const auto dof_handler_coarse = &mf_coarse.get_dof_handler();
-    const auto dof_handler_fine   = &mf_fine.get_dof_handler();
+
+
+    const auto &dof_handler_coarse = mf_coarse.get_dof_handler();
+    const auto &dof_handler_fine   = mf_fine.get_dof_handler();
+
+    Assert(
+      dof_handler_coarse.get_mpi_communicator() ==
+        dof_handler_fine.get_mpi_communicator(),
+      ExcMessage(
+        "Coarse and fine DoFHandler must have the same MPI communicator."));
 
 
     std::unique_ptr<dealii::internal::FineDoFHandlerViewBase<dim>>
@@ -192,12 +206,14 @@ namespace Portable
         dealii::internal::GlobalCoarseningFineDoFHandlerView<dim>>(
         dof_handler_fine, dof_handler_coarse, mg_level_fine, mg_level_coarse);
 
-
     const auto reference_cell = dof_handler_fine.get_fe().reference_cell();
-    // set up mg-schemes
+
+    // set up mg-transfer_schemes
     //   (0) no refinement -> identity
     //   (1) h-refinement
-    schemes.resize(2);
+    //   (2) - other
+    transfer_schemes.resize(
+      1 + reference_cell.n_isotropic_refinement_choices()); // size=2
 
 
     const auto &fe_fine   = dof_handler_fine.get_fe();
@@ -249,7 +265,7 @@ namespace Portable
     // check if FE is the same
     AssertDimension(fe_coarse.n_dofs_per_cell(), fe_fine.n_dofs_per_cell());
 
-    for (auto &scheme : schemes)
+    for (auto &scheme : transfer_schemes)
       {
         // number of dofs on coarse and fine cells
         scheme.n_dofs_per_cell_coarse = fe_coarse.n_dofs_per_cell();
@@ -265,8 +281,8 @@ namespace Portable
       }
 
     // correct for first scheme
-    schemes[0].n_dofs_per_cell_fine = fe_coarse.n_dofs_per_cell();
-    schemes[0].degree_fine          = fe_coarse.degree;
+    transfer_schemes[0].n_dofs_per_cell_fine = fe_coarse.n_dofs_per_cell();
+    transfer_schemes[0].degree_fine          = fe_coarse.degree;
 
     std::uint8_t current_refinement_case = static_cast<std::uint8_t>(-1);
 
@@ -274,7 +290,7 @@ namespace Portable
     {
       // count by looping over all coarse cells
       process_cells([&](const auto &,
-                        const auto &) { schemes[0].n_coarse_cells++; },
+                        const auto &) { transfer_schemes[0].n_coarse_cells++; },
                     [&](const auto &, const auto &cell_fine, const auto c) {
                       std::uint8_t refinement_case =
                         cell_fine.refinement_case();
@@ -288,7 +304,7 @@ namespace Portable
 
                       if (c == 0)
                         {
-                          schemes[refinement_case].n_coarse_cells++;
+                          transfer_schemes[refinement_case].n_coarse_cells++;
 
                           current_refinement_case = refinement_case;
                         }
@@ -302,20 +318,23 @@ namespace Portable
 
     const auto cell_local_children_indices =
       dealii::internal::get_child_offsets<dim>(
-        schemes[0].n_dofs_per_cell_coarse, fe_fine.degree, fe_fine.degree);
+        transfer_schemes[0].n_dofs_per_cell_coarse,
+        fe_fine.degree,
+        fe_fine.degree);
 
-    std::vector<unsigned int> n_dof_indices_fine(schemes.size() + 1);
-    std::vector<unsigned int> n_dof_indices_coarse(schemes.size() + 1);
+    std::vector<unsigned int> n_dof_indices_fine(transfer_schemes.size() + 1);
+    std::vector<unsigned int> n_dof_indices_coarse(transfer_schemes.size() + 1);
 
-    for (unsigned int i = 0; i < schemes.size(); ++i)
+    for (unsigned int i = 0; i < transfer_schemes.size(); ++i)
       {
-        n_dof_indices_fine[i + 1] =
-          schemes[i].n_dofs_per_cell_fine * schemes[i].n_coarse_cells;
+        n_dof_indices_fine[i + 1] = transfer_schemes[i].n_dofs_per_cell_fine *
+                                    transfer_schemes[i].n_coarse_cells;
         n_dof_indices_coarse[i + 1] =
-          schemes[i].n_dofs_per_cell_coarse * schemes[i].n_coarse_cells;
+          transfer_schemes[i].n_dofs_per_cell_coarse *
+          transfer_schemes[i].n_coarse_cells;
       }
 
-    for (unsigned int i = 0; i < schemes.size(); ++i)
+    for (unsigned int i = 0; i < transfer_schemes.size(); ++i)
       {
         n_dof_indices_fine[i + 1] += n_dof_indices_fine[i];
         n_dof_indices_coarse[i + 1] += n_dof_indices_coarse[i];
@@ -327,7 +346,7 @@ namespace Portable
 
     {
       std::vector<types::global_dof_index> local_dof_indices(
-        schemes[0].n_dofs_per_cell_coarse);
+        transfer_schemes[0].n_dofs_per_cell_coarse);
 
       // ---------------------- lexicographic_numbering ----------------------
       std::vector<unsigned int> lexicographic_numbering_fine;
@@ -337,23 +356,24 @@ namespace Portable
           std::vector<Point<1>>(1, Point<1>()));
 
         dealii::internal::MatrixFreeFunctions::ShapeInfo<number> shape_info;
-        shape_info.reinit(dummy_quadrature, fe_fine, 0);
 
+        shape_info.reinit(dummy_quadrature, fe_fine, 0);
         lexicographic_numbering_fine = shape_info.lexicographic_numbering;
+
         shape_info.reinit(dummy_quadrature, fe_coarse, 0);
         lexicographic_numbering_coarse = shape_info.lexicographic_numbering;
       }
 
       // ------------------------------ indices ------------------------------
       std::vector<types::global_dof_index> level_dof_indices_coarse(
-        schemes[0].n_dofs_per_cell_fine);
+        transfer_schemes[0].n_dofs_per_cell_fine);
 
       std::vector<types::global_dof_index> level_dof_indices_fine(
-        schemes[1].n_dofs_per_cell_fine);
+        transfer_schemes[1].n_dofs_per_cell_fine);
 
       unsigned int n_coarse_cells_total = 0;
 
-      for (const auto &scheme : schemes)
+      for (const auto &scheme : transfer_schemes)
         n_coarse_cells_total += scheme.n_coarse_cells;
 
       this->constraint_info_coarse.reinit(dof_handler_coarse,
@@ -374,9 +394,9 @@ namespace Portable
           dof_handler_fine.locally_owned_mg_dofs(mg_level_fine));
 
 
-      std::vector<unsigned int> cell_no(schemes.size(), 0);
-      for (unsigned int i = 1; i < schemes.size(); ++i)
-        cell_no[i] = cell_no[i - 1] + schemes[i - 1].n_coarse_cells;
+      std::vector<unsigned int> cell_no(transfer_schemes.size(), 0);
+      for (unsigned int i = 1; i < transfer_schemes.size(); ++i)
+        cell_no[i] = cell_no[i - 1] + transfer_schemes[i - 1].n_coarse_cells;
 
       process_cells(
         [&](const auto &cell_coarse, const auto &cell_fine) {
@@ -390,7 +410,9 @@ namespace Portable
           // child
           {
             cell_fine.get_dof_indices(local_dof_indices);
-            for (unsigned int i = 0; i < schemes[0].n_dofs_per_cell_coarse; i++)
+            for (unsigned int i = 0;
+                 i < transfer_schemes[0].n_dofs_per_cell_coarse;
+                 i++)
               level_dof_indices_coarse[i] =
                 local_dof_indices[lexicographic_numbering_fine[i]];
 
@@ -424,7 +446,7 @@ namespace Portable
           {
             cell_fine.get_dof_indices(local_dof_indices);
             for (unsigned int i = 0;
-                 i < schemes[refinement_case].n_dofs_per_cell_coarse;
+                 i < transfer_schemes[refinement_case].n_dofs_per_cell_coarse;
                  ++i)
               {
                 const auto index =
@@ -488,64 +510,71 @@ namespace Portable
                        "32 bit integers."));
             }
         }
-
-      // ------------- prolongation matrix (0) -> identity matrix --------------
-
-      // nothing to do since for identity prolongation matrices a short-cut
-      // code path is used during prolongation/restriction
-
-      // -------------------prolongation matrix (i = 1 ... n)-------------------
-      {
-        AssertDimension(fe_fine.n_base_elements(), 1);
-
-
-
-        for (unsigned int transfer_scheme_index = 1;
-             transfer_scheme_index < schemes.size();
-             ++transfer_scheme_index)
-          {
-            // const auto fe= create_1D_fe(fe_fine.base_element(0));
-            const auto fe = FE_Q<1>(fe_fine.degree);
-
-
-            std::vector<unsigned int> renumbering(fe.n_dofs_per_cell());
-            {
-              AssertIndexRange(fe.n_dofs_per_vertex(), 2);
-              renumbering[0] = 0;
-              for (unsigned int i = 0; i < fe.dofs_per_line; ++i)
-                renumbering[i + fe.n_dofs_per_vertex()] =
-                  GeometryInfo<1>::vertices_per_cell * fe.n_dofs_per_vertex() +
-                  i;
-              if (fe.n_dofs_per_vertex() > 0)
-                renumbering[fe.n_dofs_per_cell() - fe.n_dofs_per_vertex()] =
-                  fe.n_dofs_per_vertex();
-            }
-
-            // TODO: data structures are saved in form of DG data structures
-            // here
-            const unsigned int shift =
-              fe.n_dofs_per_cell() - fe.n_dofs_per_vertex();
-            const unsigned int n_child_dofs_1d =
-              fe.n_dofs_per_cell() * 2 - fe.n_dofs_per_vertex();
-
-            {
-              schemes[transfer_scheme_index].prolongation_matrix.resize(
-                fe.n_dofs_per_cell() * n_child_dofs_1d);
-              for (unsigned int c = 0;
-                   c < GeometryInfo<1>::max_children_per_cell;
-                   ++c)
-                for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i)
-                  for (unsigned int j = 0; j < fe.n_dofs_per_cell(); ++j)
-                    schemes[transfer_scheme_index]
-                      .prolongation_matrix[i * n_child_dofs_1d + j +
-                                           c * shift] =
-                      fe.get_prolongation_matrix(c)(renumbering[j],
-                                                    renumbering[i]);
-            }
-          }
-      }
     }
 
+    // ------------- prolongation matrix (0) -> identity matrix --------------
+
+    // nothing to do since for identity prolongation matrices a short-cut
+    // code path is used during prolongation/restriction
+
+    // -------------------prolongation matrix (i = 1 ... n)-------------------
+    {
+      AssertDimension(fe_fine.n_base_elements(), 1);
+
+      for (unsigned int transfer_scheme_index = 1;
+           transfer_scheme_index < transfer_schemes.size();
+           ++transfer_scheme_index)
+        {
+          // const auto fe = create_1D_fe(fe_fine.base_element(0));
+          const auto fe = FE_Q<1>(fe_fine.degree);
+
+          std::vector<unsigned int> renumbering(fe.n_dofs_per_cell());
+          {
+            AssertIndexRange(fe.n_dofs_per_vertex(), 2);
+            renumbering[0] = 0;
+            for (unsigned int i = 0; i < fe.dofs_per_line; ++i)
+              renumbering[i + fe.n_dofs_per_vertex()] =
+                GeometryInfo<1>::vertices_per_cell * fe.n_dofs_per_vertex() + i;
+            if (fe.n_dofs_per_vertex() > 0)
+              renumbering[fe.n_dofs_per_cell() - fe.n_dofs_per_vertex()] =
+                fe.n_dofs_per_vertex();
+          }
+
+          // TODO: data structures are saved in form of DG data structures
+          // here
+          const unsigned int shift =
+            fe.n_dofs_per_cell() - fe.n_dofs_per_vertex();
+          const unsigned int n_child_dofs_1d =
+            fe.n_dofs_per_cell() * 2 - fe.n_dofs_per_vertex();
+
+          {
+            transfer_schemes[transfer_scheme_index].prolongation_matrix.resize(
+              fe.n_dofs_per_cell() * n_child_dofs_1d);
+            for (unsigned int c = 0; c < GeometryInfo<1>::max_children_per_cell;
+                 ++c)
+              for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i)
+                for (unsigned int j = 0; j < fe.n_dofs_per_cell(); ++j)
+                  transfer_schemes[transfer_scheme_index]
+                    .prolongation_matrix[i * n_child_dofs_1d + j + c * shift] =
+                    fe.get_prolongation_matrix(c)(renumbering[j],
+                                                  renumbering[i]);
+          }
+        }
+    }
+
+
+
+    for (int count = 1; count < transfer_schemes.size(); ++count)
+      {
+        std::cout << "Prolongation matrix scheme " << count << " : \n";
+        for (unsigned int i = 0;
+             i < transfer_schemes[count].prolongation_matrix.size();
+             ++i)
+          {
+            std::cout << transfer_schemes[count].prolongation_matrix[i] << " ";
+            std::cout << "\n";
+          }
+      }
 
 
     // auto &colored_graph_coarse = mf_coarse.get_colored_graph();
@@ -556,18 +585,20 @@ namespace Portable
 
     // Assert(n_colors == colored_graph_coarse.size(),
     //        ExcMessage(
-    //          "Coarse and fine levels must have the same number of colors"));
+    //          "Coarse and fine levels must have the same number of
+    //          colors"));
 
     // FE_Q<1> fe_coarse_1d(p_coarse);
     // FE_Q<1> fe_fine_1d(p_fine);
 
-    // std::vector<unsigned int> renumbering_fine(fe_fine_1d.n_dofs_per_cell());
+    // std::vector<unsigned int>
+    // renumbering_fine(fe_fine_1d.n_dofs_per_cell());
 
     // renumbering_fine[0] = 0;
     // for (unsigned int i = 0; i < fe_fine_1d.dofs_per_line; ++i)
     //   renumbering_fine[i + fe_fine_1d.n_dofs_per_vertex()] =
-    //     GeometryInfo<1>::vertices_per_cell * fe_fine_1d.n_dofs_per_vertex() +
-    //     i;
+    //     GeometryInfo<1>::vertices_per_cell *
+    //     fe_fine_1d.n_dofs_per_vertex() + i;
 
     // if (fe_fine_1d.n_dofs_per_vertex() > 0)
     //   renumbering_fine[fe_fine_1d.n_dofs_per_cell() -
@@ -580,7 +611,8 @@ namespace Portable
     // renumbering_coarse[0] = 0;
     // for (unsigned int i = 0; i < fe_coarse_1d.dofs_per_line; ++i)
     //   renumbering_coarse[i + fe_coarse_1d.n_dofs_per_vertex()] =
-    //     GeometryInfo<1>::vertices_per_cell * fe_coarse_1d.n_dofs_per_vertex()
+    //     GeometryInfo<1>::vertices_per_cell *
+    //     fe_coarse_1d.n_dofs_per_vertex()
     //     + i;
 
     // if (fe_coarse_1d.n_dofs_per_vertex() > 0)
@@ -604,8 +636,10 @@ namespace Portable
     // auto prolongation_matrix_1d_view =
     //   Kokkos::create_mirror_view(this->prolongation_matrix_1d);
 
-    // for (unsigned int i = 0, k = 0; i < fe_coarse_1d.n_dofs_per_cell(); ++i)
-    //   for (unsigned int j = 0; j < fe_fine_1d.n_dofs_per_cell(); ++j, ++k)
+    // for (unsigned int i = 0, k = 0; i < fe_coarse_1d.n_dofs_per_cell();
+    // ++i)
+    //   for (unsigned int j = 0; j < fe_fine_1d.n_dofs_per_cell(); ++j,
+    //   ++k)
     //     prolongation_matrix_1d_view[k] =
     //       matrix(renumbering_fine[j], renumbering_coarse[i]);
 
@@ -655,7 +689,7 @@ namespace Portable
     //     Kokkos::fence();
     //   }
 
-    setup_weights_and_boundary_dofs_masks();
+    // setup_weights_and_boundary_dofs_masks();
   }
 
   template <int dim, typename number>
