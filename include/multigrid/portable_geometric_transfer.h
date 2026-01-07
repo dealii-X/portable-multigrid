@@ -41,6 +41,9 @@ namespace Portable
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) override;
 
+    void
+    test();
+
   private:
     void
     setup_weights_and_boundary_dofs_masks();
@@ -145,6 +148,84 @@ namespace Portable
   GeometricTransfer<dim, number>::GeometricTransfer()
   {}
 
+
+
+  template <int dim, typename number>
+  void
+  GeometricTransfer<dim, number>::test()
+  {
+    unsigned int first_cell = 0;
+
+    // const auto n_coarse_cells_0 = transfer_schemes[0].n_coarse_cells;
+
+    const auto n_coarse_cells = transfer_schemes[1].n_coarse_cells;
+
+
+    // for (std::size_t i = 0; i < transfer_schemes.size(); ++i)
+    //   {
+    //     std::cout << "On process "
+    //               << Utilities::MPI::this_mpi_process(
+    //                    matrix_free_coarse->get_vector_partitioner()
+    //                      ->get_mpi_communicator())
+    //               << "  mg_level_fine = " << matrix_free_fine->get_mg_level()
+    //               << " Transfer scheme [ " << i << "]: n_coarse_cells = "
+    //               << transfer_schemes[i].n_coarse_cells << std::endl;
+    //   }
+
+    for (unsigned int v = 0; v < n_coarse_cells; ++v)
+      {
+        std::cout << "  On coarse cell " << v << ":\n";
+
+        const unsigned int  cell_index = first_cell + v;
+        const unsigned int *dof_indices =
+          this->constraint_info_coarse.dof_indices.data() +
+          this->constraint_info_coarse.row_starts[cell_index].first;
+        unsigned int index_indicators =
+          this->constraint_info_coarse.row_starts[cell_index].second;
+        unsigned int next_index_indicators =
+          this->constraint_info_coarse.row_starts[cell_index + 1].second;
+
+        unsigned int ind_local = 0;
+        for (; index_indicators != next_index_indicators; ++index_indicators)
+          {
+            const std::pair<unsigned short, unsigned short> indicator =
+              this->constraint_info_coarse
+                .constraint_indicator[index_indicators];
+
+            // run through values up to next constraint
+            for (unsigned int j = 0; j < indicator.first; ++j)
+              // operation.process_dof(dof_indices[j],
+              //                       global_vector,
+              //                       local_vector[ind_local + j][v]);
+              std::cout << "        dof_index [" << j << "]= " << dof_indices[j]
+                        << std::endl;
+
+            ind_local += indicator.first;
+            dof_indices += indicator.first;
+
+            // constrained case: build the local value as a linear
+            // combination of the global value according to constraints
+            // typename Number::value_type value;
+            // operation.pre_constraints(local_vector[ind_local][v], value);
+
+            // const typename Number::value_type *data_val =
+            //   this->constraint_pool_begin(indicator.second);
+            // const typename Number::value_type *end_pool =
+            //   this->constraint_pool_end(indicator.second);
+            // for (; data_val != end_pool; ++data_val, ++dof_indices)
+            //   operation.process_constraint(*dof_indices,
+            //                                *data_val,
+            //                                global_vector,
+            //                                value);
+
+            // operation.post_constraints(value, local_vector[ind_local][v]);
+            // ++ind_local;
+          }
+      }
+  }
+
+
+
   template <int dim, typename number>
   void
   GeometricTransfer<dim, number>::prolongate_and_add(
@@ -152,7 +233,8 @@ namespace Portable
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
     const
   {
-    
+    (void)dst;
+    (void)src;
     return;
   }
 
@@ -163,6 +245,8 @@ namespace Portable
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
     const
   {
+    (void)dst;
+    (void)src;
     return;
   }
 
@@ -219,9 +303,9 @@ namespace Portable
     const auto &fe_fine   = dof_handler_fine.get_fe();
     const auto &fe_coarse = dof_handler_coarse.get_fe();
 
-    // helper function: to process the fine level cells; function fu_non_refined
-    // is performed on cells that are not refined and fu_refined is performed
-    // on children of cells that are refined
+    // helper function: to process the fine level cells; function
+    // fu_non_refined is performed on cells that are not refined and
+    // fu_refined is performed on children of cells that are refined
     const auto process_cells = [&](const auto &fu_non_refined,
                                    const auto &fu_refined) {
       dealii::internal::loop_over_active_or_level_cells(
@@ -562,19 +646,18 @@ namespace Portable
         }
     }
 
-
-
-    for (int count = 1; count < transfer_schemes.size(); ++count)
-      {
-        std::cout << "Prolongation matrix scheme " << count << " : \n";
-        for (unsigned int i = 0;
-             i < transfer_schemes[count].prolongation_matrix.size();
-             ++i)
-          {
-            std::cout << transfer_schemes[count].prolongation_matrix[i] << " ";
-            std::cout << "\n";
-          }
-      }
+    // for (std::size_t count = 1; count < transfer_schemes.size(); ++count)
+    //   {
+    //     std::cout << "Prolongation matrix scheme " << count << " : \n";
+    //     for (unsigned int i = 0;
+    //          i < transfer_schemes[count].prolongation_matrix.size();
+    //          ++i)
+    //       {
+    //         std::cout << transfer_schemes[count].prolongation_matrix[i] <<
+    //         "
+    //         "; std::cout << "\n";
+    //       }
+    //   }
 
 
     // auto &colored_graph_coarse = mf_coarse.get_colored_graph();

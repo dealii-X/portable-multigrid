@@ -47,13 +47,19 @@ public:
 
 private:
   void
-  setup_system();
+  create_coarse_triangulations();
 
   void
-  assemble_rhs();
+  setup_dofs();
+
+  void
+  setup_matrix_free();
 
   void
   setup_mg_transfers();
+
+  void
+  assemble_rhs();
 
   void
   solve();
@@ -65,18 +71,14 @@ private:
 
   parallel::distributed::Triangulation<dim> triangulation;
 
-  FE_Q<dim>       fe;
-  DoFHandler<dim> dof_handler;
+  FE_Q<dim>                 fe;
+  DoFHandler<dim>           dof_handler;
+  AffineConstraints<double> constraints_fine;
 
   IndexSet locally_owned_dofs;
   IndexSet locally_relevant_dofs;
 
-  AffineConstraints<double> constraints;
-
-  MGConstrainedDoFs mg_constrained_dofs;
-
-  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>>
-    mg_matrices;
+  std::set<types::boundary_id> dirichlet_boundary_ids;
 
   std::unique_ptr<Portable::LaplaceOperator<dim, fe_degree, double>>
     system_matrix;
@@ -87,8 +89,19 @@ private:
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     system_rhs_device;
 
-  // MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, double>>>
-  //   mg_transfers;
+
+  // MGConstrainedDoFs mg_constrained_dofs;
+
+  std::vector<std::shared_ptr<const Triangulation<dim>>> coarse_triangulations;
+
+  MGLevelObject<DoFHandler<dim>>           level_dof_handlers;
+  MGLevelObject<AffineConstraints<double>> level_constraints;
+
+  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>>
+    level_matrices;
+
+  MGLevelObject<std::unique_ptr<Portable::GeometricTransfer<dim, double>>>
+    mg_transfers;
 
   bool overlap_communication_computation;
 
@@ -123,122 +136,124 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem(
       parallel::distributed::Triangulation<dim>::construct_multigrid_hierarchy)
   , fe(fe_degree)
   , dof_handler(triangulation)
+  , dirichlet_boundary_ids({{0}})
   , overlap_communication_computation(overlap_communication_computation)
   , pcout(std::cout, Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
 {}
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::setup_system()
+LaplaceProblem<dim, fe_degree>::create_coarse_triangulations()
 {
-  std::set<types::boundary_id> dirichlet_boundary_ids = {0};
+  //   coarse_triangulations =
+  //     MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+  //       triangulation,
+  //       RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
+
+  coarse_triangulations =
+    MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+      triangulation);
+}
+
+
+template <int dim, int fe_degree>
+void
+LaplaceProblem<dim, fe_degree>::setup_dofs()
+{
+  dof_handler.reinit(triangulation);
+  dof_handler.distribute_dofs(fe);
+
+  locally_owned_dofs    = dof_handler.locally_owned_dofs();
+  locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
+
+  level_dof_handlers.resize(0, coarse_triangulations.size() - 1);
+  level_constraints.resize(0, level_dof_handlers.max_level());
+
   Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
   std::map<types::boundary_id, const Function<dim> *>
     dirichlet_boundary_functions = {
       {types::boundary_id(0), &homogeneous_dirichlet_bc}};
 
-  mg_matrices.clear();
-  dof_handler.distribute_dofs(fe);
-  dof_handler.distribute_mg_dofs();
+  for (unsigned int level = level_dof_handlers.min_level();
+       level <= level_dof_handlers.max_level();
+       ++level)
+    {
+      DoFHandler<dim> &dof_h = level_dof_handlers[level];
+
+      dof_h.reinit(*coarse_triangulations[level]);
+      dof_h.distribute_dofs(fe);
+
+      IndexSet level_relevant_dofs =
+        DoFTools::extract_locally_relevant_dofs(dof_h);
+
+      AffineConstraints<double> &constraints = level_constraints[level];
+      constraints.reinit(dof_h.locally_owned_dofs(), level_relevant_dofs);
+      DoFTools::make_hanging_node_constraints(dof_h, constraints);
+      VectorTools::interpolate_boundary_values(dof_h,
+                                               dirichlet_boundary_functions,
+                                               constraints);
+      constraints.close();
+    }
 
   pcout << " Number of degrees of freedom: " << dof_handler.n_dofs()
         << " (by level: ";
 
-  for (unsigned int level = 0; level < triangulation.n_global_levels(); ++level)
+  for (unsigned int level = level_dof_handlers.min_level();
+       level <= level_dof_handlers.max_level();
+       ++level)
     {
-      pcout << dof_handler.n_dofs(level)
-            << (level == triangulation.n_global_levels() - 1 ? ")" : ", ");
+      pcout << level_dof_handlers[level].n_dofs()
+            << (level == level_dof_handlers.max_level() ? ")" : ", ");
     }
+
   pcout << std::endl;
+}
 
 
-  locally_owned_dofs    = dof_handler.locally_owned_dofs();
-  locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
-
-  constraints.clear();
-  constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
-  DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-  VectorTools::interpolate_boundary_values(dof_handler,
-                                           dirichlet_boundary_functions,
-                                           constraints);
-  constraints.close();
-
+template <int dim, int fe_degree>
+void
+LaplaceProblem<dim, fe_degree>::setup_matrix_free()
+{
+  constraints_fine.reinit(locally_owned_dofs, locally_relevant_dofs);
+  constraints_fine.copy_from(level_constraints.back());
 
   system_matrix.reset(new Portable::LaplaceOperator<dim, fe_degree, double>(
-    dof_handler, constraints, overlap_communication_computation));
+    dof_handler, constraints_fine, overlap_communication_computation));
 
-  {
-    const unsigned int n_levels = triangulation.n_global_levels();
-    mg_matrices.resize(0, n_levels - 1);
-
-    mg_constrained_dofs.initialize(dof_handler);
-    mg_constrained_dofs.make_zero_boundary_constraints(dof_handler,
-                                                       dirichlet_boundary_ids);
-
-    for (unsigned int level = 0; level < n_levels; ++level)
-      {
-        AffineConstraints<double> level_constraints(
-          dof_handler.locally_owned_mg_dofs(level),
-          DoFTools::extract_locally_relevant_level_dofs(dof_handler, level));
-
-        for (const types::global_dof_index dof_index :
-             mg_constrained_dofs.get_boundary_indices(level))
-          {
-            level_constraints.constrain_dof_to_zero(dof_index);
-          }
-
-        level_constraints.close();
-
-        mg_matrices[level] =
-          std::make_unique<Portable::LaplaceOperator<dim, fe_degree, double>>(
-            dof_handler,
-            level_constraints,
-            overlap_communication_computation,
-            level);
-      }
-  }
-
-
-
+  system_matrix->initialize_dof_vector(solution_device);
+  system_rhs_device.reinit(solution_device);
   ghost_solution_host.reinit(locally_owned_dofs,
                              locally_relevant_dofs,
                              mpi_communicator);
 
-  mg_matrices.back()->initialize_dof_vector(solution_device);
-
-  system_rhs_device.reinit(solution_device);
+  level_matrices.resize(0, level_dof_handlers.max_level());
+  for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
+    {
+      level_matrices[level] =
+        std::make_unique<Portable::LaplaceOperator<dim, fe_degree, double>>(
+          level_dof_handlers[level],
+          level_constraints[level],
+          overlap_communication_computation);
+    }
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
 {
-  // mg_transfers.resize(mg_matrices.min_level(), mg_matrices.max_level());
+  mg_transfers.resize(level_matrices.min_level(), level_matrices.max_level());
 
-  // for (unsigned int level = mg_matrices.min_level() + 1;
-  //      level <= mg_matrices.max_level();
-  //      ++level)
-  //   {
-  //     PolynomialTransferRunner runner{(int)level,
-  //                                     mg_matrices[level -
-  //                                     1]->get_matrix_free(),
-  //                                     mg_matrices[level]->get_matrix_free(),
-  //                                     constraints_collection[level - 1],
-  //                                     constraints_collection[level],
-  //                                     *this};
-
-  //     const int p_fine   = fe_degree - (mg_levels - 1 - level);
-  //     const int p_coarse = p_fine - 1;
-
-  //     bool success =
-  //       Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse,
-  //                                                             p_fine,
-  //                                                             runner);
-
-  //     Assert(success,
-  //            ExcMessage("Failed to find a matching polynomial degree "
-  //                       "pair in transfer dispatcher."));
-  //   }
+  for (unsigned int level = level_matrices.min_level() + 1;
+       level <= level_matrices.max_level();
+       ++level)
+    {
+      mg_transfers[level] =
+        std::make_unique<Portable::GeometricTransfer<dim, double>>();
+      mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
+                                  level_matrices[level]->get_matrix_free(),
+                                  level_constraints[level - 1],
+                                  level_constraints[level]);
+    }
 }
 
 template <int dim, int fe_degree>
@@ -275,9 +290,9 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
                               fe_values.JxW(q_index));
 
           cell->get_dof_indices(local_dof_indices);
-          constraints.distribute_local_to_global(cell_rhs,
-                                                 local_dof_indices,
-                                                 system_rhs_host);
+          constraints_fine.distribute_local_to_global(cell_rhs,
+                                                      local_dof_indices,
+                                                      system_rhs_host);
         }
     }
 
@@ -390,26 +405,47 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::test()
 {
-  const unsigned int min_level = 0;
-  const unsigned int max_level =
-    dof_handler.get_triangulation().n_global_levels() - 1;
+  // const unsigned int min_level = 0;
+  // const unsigned int max_level =
+  //   dof_handler.get_triangulation().n_global_levels() - 1;
 
-  MGLevelObject<AffineConstraints<double>> level_constraints(min_level,
-                                                             max_level);
+  // MGLevelObject<AffineConstraints<double>> level_constraints(min_level,
+  //                                                            max_level);
 
-  for (unsigned int l = min_level; l <= max_level; ++l)
-    mg_constrained_dofs.merge_constraints(level_constraints[l],
-                                          l,
-                                          /*add_boundary_indices*/ true,
-                                          /*add_refinement_edge_indices*/ false,
-                                          /*add_level_constraints*/ true,
-                                          /*add_user_constraints*/ true);
+  // for (unsigned int l = min_level; l <= max_level; ++l)
+  //   mg_constrained_dofs.merge_constraints(level_constraints[l],
+  //                                         l,
+  //                                         /*add_boundary_indices*/ true,
+  //                                         /*add_refinement_edge_indices*/
+  //                                         false,
+  //                                         /*add_level_constraints*/ true,
+  //                                         /*add_user_constraints*/ true);
 
-  Portable::GeometricTransfer<dim, double> mg_transfer;
-  mg_transfer.reinit(mg_matrices[0]->get_matrix_free(),
-                     mg_matrices[1]->get_matrix_free(),
-                     level_constraints[0],
-                     level_constraints[1]);
+  // Portable::GeometricTransfer<dim, double> mg_transfer;
+  // mg_transfer.reinit(mg_matrices[0]->get_matrix_free(),
+  //                    mg_matrices[1]->get_matrix_free(),
+  //                    level_constraints[0],
+  //                    level_constraints[1]);
+
+  // mg_transfer.test();
+
+
+  // MGLevelObject<Portable::GeometricTransfer<dim, double>> mg_transfers(
+  //   0, max_level);
+
+  for (unsigned int level = 1; level <= level_dof_handlers.max_level(); ++level)
+    {
+      // mg_transfers[level].reinit(mg_matrices[level - 1]->get_matrix_free(),
+      //                            mg_matrices[level]->get_matrix_free(),
+      //                            level_constraints[level - 1],
+      //                            level_constraints[level]);
+
+      pcout << "Test h-transfer on level " << level << ":\n ";
+
+      mg_transfers[level]->test();
+
+      pcout << std::endl;
+    }
 }
 
 template <int dim, int fe_degree>
@@ -417,7 +453,7 @@ void
 LaplaceProblem<dim, fe_degree>::run()
 {
   // for (unsigned int cycle = 0; cycle < 9 - dim; ++cycle)
-  for (unsigned int cycle = 0; cycle < 1; ++cycle)
+  for (unsigned int cycle = 0; cycle < 3; ++cycle)
 
     {
       pcout << std::endl << std::endl;
@@ -433,10 +469,14 @@ LaplaceProblem<dim, fe_degree>::run()
           triangulation.refine_global(1);
         }
 
-      setup_system();
+
+      create_coarse_triangulations();
+      setup_dofs();
+      setup_matrix_free();
+      setup_mg_transfers();
+      assemble_rhs();
+
       test();
-      // setup_mg_transfers();
-      // assemble_rhs();
       // solve();
       // output_results(cycle);
 
