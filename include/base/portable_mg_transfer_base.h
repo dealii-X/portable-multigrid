@@ -1,5 +1,5 @@
-#ifndef portable_polynomial_transfer_base_h
-#define portable_polynomial_transfer_base_h
+#ifndef portable_mg_transfer_base_h
+#define portable_mg_transfer_base_h
 
 #include <deal.II/base/enable_observer_pointer.h>
 
@@ -13,10 +13,10 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
   template <int dim, typename number>
-  class PolynomialTransferBase : public EnableObserverPointer
+  class MGTransferBase : public EnableObserverPointer
   {
   public:
-    ~PolynomialTransferBase() = default;
+    ~MGTransferBase() = default;
 
     virtual void
     prolongate_and_add(
