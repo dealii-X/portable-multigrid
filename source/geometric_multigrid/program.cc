@@ -100,7 +100,8 @@ private:
   MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>>
     level_matrices;
 
-  MGLevelObject<std::unique_ptr<Portable::GeometricTransfer<dim, double>>>
+  MGLevelObject<
+    std::unique_ptr<Portable::GeometricTransfer<dim, fe_degree, double>>>
     mg_transfers;
 
   bool overlap_communication_computation;
@@ -248,7 +249,7 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
        ++level)
     {
       mg_transfers[level] =
-        std::make_unique<Portable::GeometricTransfer<dim, double>>();
+        std::make_unique<Portable::GeometricTransfer<dim, fe_degree, double>>();
       mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
                                   level_matrices[level]->get_matrix_free(),
                                   level_constraints[level - 1],
@@ -442,7 +443,9 @@ LaplaceProblem<dim, fe_degree>::test()
 
       pcout << "Test h-transfer on level " << level << ":\n ";
 
+      // mg_transfers[level]->test();
       mg_transfers[level]->test();
+
 
       pcout << std::endl;
     }
