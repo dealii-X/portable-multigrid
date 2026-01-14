@@ -150,6 +150,13 @@ namespace Portable
           // Accuracy on coarsest level should be comparable to overall level
           // accuracy (~1e-3)
           smooth(dst, src, mg_matrices.min_level());
+
+          // LevelMatrixType      &coarse_matrix = *mg_matrices[level];
+          // SolverControl        solver_control(10000, 1e-12 * src.l2_norm());
+          // SolverCG<VectorType> cg(solver_control);
+          // dst = 0;
+          // cg.solve(coarse_matrix, dst, src, PreconditionIdentity());
+
           return;
         }
 
