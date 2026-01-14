@@ -118,6 +118,49 @@ private:
   bool overlap_communication_computation;
 
   ConditionalOStream pcout;
+
+  struct LaplaceOperatorRunner
+  {
+    const unsigned int              level;
+    DoFHandler<dim>                &dof_handler;
+    AffineConstraints<double>      &constraints;
+    bool                            overlap_communication_computation;
+    LaplaceProblem<dim, fe_degree> &parent_problem;
+
+    template <unsigned int degree>
+    void
+    run()
+    {
+      parent_problem.level_matrices[level] =
+        std::make_unique<Portable::LaplaceOperator<dim, degree, double>>(
+          dof_handler, constraints, overlap_communication_computation);
+    }
+  };
+
+  struct PolynomialTransferRunner
+  {
+    const unsigned int                       level;
+    const Portable::MatrixFree<dim, double> &mf_coarse;
+    const Portable::MatrixFree<dim, double> &mf_fine;
+    AffineConstraints<double>               &constraints_coarse;
+    AffineConstraints<double>               &constraints_fine;
+
+    LaplaceProblem<dim, fe_degree> &parent_problem;
+
+    template <unsigned int degree_coarse, unsigned int degree_fine>
+    void
+    run()
+    {
+      parent_problem.mg_transfers[level] = std::make_unique<
+        Portable::
+          PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
+
+      parent_problem.mg_transfers[level]->reinit(mf_coarse,
+                                                 mf_fine,
+                                                 constraints_coarse,
+                                                 constraints_fine);
+    }
+  };
 };
 
 template <int dim, int fe_degree>
@@ -171,10 +214,6 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
   while (p_levels.back() > 1)
     p_levels.push_back(std::max(p_levels.back() - 1, 1u));
-
-  for (const auto &p : p_levels)
-    pcout << p << " ";
-  pcout << std::endl;
 
   p_level_fes.resize(0, p_levels.size() - 1);
 
@@ -239,7 +278,8 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
         {
           pcout << "p_level = "
                 << p_level_fes[level + 1 - coarse_triangulations.size()]->degree
-                << level_dof_handlers[level].n_dofs() << std::endl;
+                << ": n_dofs = ";
+          pcout << level_dof_handlers[level].n_dofs() << std::endl;
         }
     }
   pcout << std::endl;
@@ -265,11 +305,30 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
   level_matrices.resize(0, level_dof_handlers.max_level());
   for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
     {
-      level_matrices[level] =
-        std::make_unique<Portable::LaplaceOperator<dim, fe_degree, double>>(
-          level_dof_handlers[level],
-          level_constraints[level],
-          overlap_communication_computation);
+      if (level < coarse_triangulations.size())
+        level_matrices[level] =
+          std::make_unique<Portable::LaplaceOperator<dim, 1, double>>(
+            level_dof_handlers[level],
+            level_constraints[level],
+            overlap_communication_computation);
+
+      else
+        {
+          LaplaceOperatorRunner runner{level,
+                                       level_dof_handlers[level],
+                                       level_constraints[level],
+                                       overlap_communication_computation,
+                                       *this};
+
+          bool success = Portable::OperatorDispatchFactory::dispatch(
+            p_level_fes[level + 1 - coarse_triangulations.size()]->degree,
+            runner);
+
+          Assert(
+            success,
+            ExcMessage(
+              "Failed to find a matching polynomial degree in dispatcher."));
+        }
     }
 
 
@@ -291,12 +350,42 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
        level <= level_matrices.max_level();
        ++level)
     {
-      mg_transfers[level] =
-        std::make_unique<Portable::GeometricTransfer<dim, fe_degree, double>>();
-      mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
-                                  level_matrices[level]->get_matrix_free(),
-                                  level_constraints[level - 1],
-                                  level_constraints[level]);
+      if (level < coarse_triangulations.size())
+        {
+          
+          mg_transfers[level] = std::make_unique<
+            Portable::GeometricTransfer<dim, 1, double>>();
+          mg_transfers[level]->reinit(
+            level_matrices[level - 1]->get_matrix_free(),
+            level_matrices[level]->get_matrix_free(),
+            level_constraints[level - 1],
+            level_constraints[level]);
+        }
+      else
+        {
+          const unsigned int p_coarse =
+            p_level_fes[level - coarse_triangulations.size()]->degree;
+          const unsigned int p_fine =
+            p_level_fes[level + 1 - coarse_triangulations.size()]->degree;
+
+          PolynomialTransferRunner runner{
+            level,
+            level_matrices[level - 1]->get_matrix_free(),
+            level_matrices[level]->get_matrix_free(),
+            level_constraints[level - 1],
+            level_constraints[level],
+            *this};
+
+
+          bool success =
+            Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse,
+                                                                  p_fine,
+                                                                  runner);
+
+          Assert(success,
+                 ExcMessage("Failed to find a matching polynomial degree "
+                            "pair in transfer dispatcher."));
+        }
     }
 }
 
@@ -465,15 +554,15 @@ LaplaceProblem<dim, fe_degree>::run()
 
       create_coarse_triangulations();
       setup_dofs();
-      // setup_matrix_free();
-      // setup_mg_transfers();
-      // setup_smoothers();
-      // assemble_rhs();
+      setup_matrix_free();
+      setup_mg_transfers();
+      setup_smoothers();
+      assemble_rhs();
 
-      // solve();
-      // output_results(cycle);
+      solve();
+      output_results(cycle);
 
-      // pcout << std::endl;
+      pcout << std::endl;
     }
 }
 
@@ -497,10 +586,10 @@ main(int argc, char *argv[])
     {
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      const int dim           = 2;
-      const int max_fe_degree = 3;
+      const int dim           = 3;
+      const int max_fe_degree = 7;
 
-      for (int fe_degree = 2; fe_degree <= max_fe_degree; ++fe_degree)
+      for (int fe_degree = 1; fe_degree <= max_fe_degree; ++fe_degree)
         {
           solve_for_degree<dim, 1>(fe_degree);
         }
