@@ -975,6 +975,11 @@ namespace Portable
         prolongation_matrix_1d_view[k] =
           matrix(renumbering_fine[j], renumbering_coarse[i]);
 
+    Kokkos::deep_copy(this->prolongation_matrix_1d,
+                      prolongation_matrix_1d_view);
+    Kokkos::fence();
+
+    // map fine cells to coarse cells
     const auto &tria =
       this->matrix_free_coarse->get_dof_handler().get_triangulation();
     std::vector<std::vector<unsigned int>> coarse_cell_ids(n_colors);
@@ -1020,6 +1025,7 @@ namespace Portable
                           cell_list_host_view);
         Kokkos::fence();
       }
+
 
     setup_weights_and_boundary_dofs_masks();
   }
@@ -1223,7 +1229,7 @@ namespace Portable
         if (colored_graph_fine[color].size() > 0)
           {
             const auto &mf_data_fine = matrix_free_fine->get_data(color);
-            
+
             const auto &graph = colored_graph_fine[color];
 
             this->boundary_dofs_mask_fine[color] =
