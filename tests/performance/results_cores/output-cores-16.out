@@ -1,0 +1,2099 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) Stages/2026
+10: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+10:   process threads available :   1,  requested thread :  24
+ 8: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 8:   process threads available :   1,  requested thread :  24
+ 9: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 9:   process threads available :   1,  requested thread :  24
+11: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+11:   process threads available :   1,  requested thread :  24
+23: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+18: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+18:   process threads available :   1,  requested thread :  24
+20: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+20:   process threads available :   1,  requested thread :  24
+23:   process threads available :   1,  requested thread :  24
+22: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+22:   process threads available :   1,  requested thread :  24
+21: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+21:   process threads available :   1,  requested thread :  24
+17: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+17:   process threads available :   1,  requested thread :  24
+19: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+19:   process threads available :   1,  requested thread :  24
+16: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+16:   process threads available :   1,  requested thread :  24
+55: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+55:   process threads available :   1,  requested thread :  24
+54: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+54:   process threads available :   1,  requested thread :  24
+53: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+53:   process threads available :   1,  requested thread :  24
+26: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+26:   process threads available :   1,  requested thread :  24
+12: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+12:   process threads available :   1,  requested thread :  24
+46: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+46:   process threads available :   1,  requested thread :  24
+24: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+24:   process threads available :   1,  requested thread :  24
+25: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+25:   process threads available :   1,  requested thread :  24
+27: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+27:   process threads available :   1,  requested thread :  24
+ 7: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 7:   process threads available :   1,  requested thread :  24
+45: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+45:   process threads available :   1,  requested thread :  24
+ 5: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 5:   process threads available :   1,  requested thread :  24
+ 6: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 6:   process threads available :   1,  requested thread :  24
+47: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+47:   process threads available :   1,  requested thread :  24
+52: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+52:   process threads available :   1,  requested thread :  24
+44: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+44:   process threads available :   1,  requested thread :  24
+49: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+49:   process threads available :   1,  requested thread :  24
+ 4: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 4:   process threads available :   1,  requested thread :  24
+50: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+50:   process threads available :   1,  requested thread :  24
+48: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+48:   process threads available :   1,  requested thread :  24
+51: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+51:   process threads available :   1,  requested thread :  24
+31: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+31:   process threads available :   1,  requested thread :  24
+29: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+29:   process threads available :   1,  requested thread :  24
+57: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+57:   process threads available :   1,  requested thread :  24
+33: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+33:   process threads available :   1,  requested thread :  24
+30: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+30:   process threads available :   1,  requested thread :  24
+28: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+28:   process threads available :   1,  requested thread :  24
+35: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+35:   process threads available :   1,  requested thread :  24
+58: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+58:   process threads available :   1,  requested thread :  24
+59: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+59:   process threads available :   1,  requested thread :  24
+60: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+60:   process threads available :   1,  requested thread :  24
+34: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+34:   process threads available :   1,  requested thread :  24
+61: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+61:   process threads available :   1,  requested thread :  24
+63: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+63:   process threads available :   1,  requested thread :  24
+32: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+32:   process threads available :   1,  requested thread :  24
+62: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+62:   process threads available :   1,  requested thread :  24
+56: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+56:   process threads available :   1,  requested thread :  24
+42: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+41: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+43: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+42:   process threads available :   1,  requested thread :  24
+41:   process threads available :   1,  requested thread :  24
+43:   process threads available :   1,  requested thread :  24
+40: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+40:   process threads available :   1,  requested thread :  24
+ 1: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 1:   process threads available :   1,  requested thread :  24
+ 3: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 3:   process threads available :   1,  requested thread :  24
+ 0: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 0:   process threads available :   1,  requested thread :  24
+ 2: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+ 2:   process threads available :   1,  requested thread :  24
+37: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+37:   process threads available :   1,  requested thread :  24
+39: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+38: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+38:   process threads available :   1,  requested thread :  24
+39:   process threads available :   1,  requested thread :  24
+36: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+36:   process threads available :   1,  requested thread :  24
+13: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+13:   process threads available :   1,  requested thread :  24
+15: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+15:   process threads available :   1,  requested thread :  24
+14: Kokkos::OpenMP::initialize WARNING: You are likely oversubscribing your CPU cores.
+14:   process threads available :   1,  requested thread :  24
+ 0: Refinement cycles: 0
+ 0: 
+ 0: timing
+ 0: n_dofs = 125
+ 0: n_dofs = 125
+ 0: n_dofs = 125
+ 0: n_dofs = 125
+ 0: n_dofs = 125
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.2188206 13.6336372  2.9023628  5.9989648               7343.18%        5
+ 0: setup_coarse_grids      0.0000024  0.0000767  0.0000177  0.0000330                  0.04%        5
+ 0: setup_dofs              0.0057534  8.0083511  1.6088790  3.5774141               4070.58%        5
+ 0: setup_matrix_free       0.0062864 14.5285315  2.9111381  6.4943204               7365.39%        5
+ 0: setup_smoothers         0.0014391  0.0119252  0.0035550  0.0046791                  8.99%        5
+ 0: setup_mg_transfers      0.0127828  5.0230312  1.0196615  2.2379544               2579.82%        5
+ 0: compute_rhs             0.0197859  2.1512009  0.4468148  0.9527811               1130.47%        5
+ 0: solve0                  0.0472214  1.1038322  0.2585823  0.4725090                654.23%        5
+ 0: solve1                  0.0395372  0.0398241  0.0396734  0.0001172                100.38%        5
+ 0: solve2                  0.0395211  0.0396898  0.0395838  0.0000735                100.15%        5
+ 0: matvec_double           0.0000498  0.0000960  0.0000615  0.0000200                  0.16%        5
+ 0: prolongate_tot          0.0000297  0.0000300  0.0000298  0.0000002                  0.08%        5
+ 0: restrict_tot            0.0000295  0.0000297  0.0000296  0.0000001                  0.07%        5
+ 0: matvec_L0               0.0000490  0.0000495  0.0000492  0.0000002                  0.12%        5
+ 0: matvec_L1               0.0000488  0.0000491  0.0000490  0.0000001                  0.12%        5
+ 0: matvec_L2               0.0000489  0.0000490  0.0000489  0.0000000                  0.12%        5
+ 0: matvec_L3               0.0000493  0.0000617  0.0000563  0.0000064                  0.14%        5
+ 0: matvec_L4               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0000708  0.0000713  0.0000710  0.0000002                  0.18%        5
+ 0: apply_smoother_L1       0.0070868  0.0071768  0.0071346  0.0000320                 18.05%        5
+ 0: apply_smoother_L2       0.0070642  0.0072022  0.0071397  0.0000597                 18.06%        5
+ 0: apply_smoother_L3       0.0070319  0.0071698  0.0071202  0.0000562                 18.01%        5
+ 0: apply_smoother_L4       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0000099  0.0000100  0.0000099  0.0000001                  0.03%        5
+ 0: prolongate_L_2          0.0000098  0.0000099  0.0000099  0.0000000                  0.03%        5
+ 0: prolongate_L_3          0.0000098  0.0000099  0.0000098  0.0000001                  0.02%        5
+ 0: prolongate_L_4          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0000099  0.0000100  0.0000099  0.0000001                  0.03%        5
+ 0: restrict_L_2            0.0000098  0.0000099  0.0000099  0.0000000                  0.03%        5
+ 0: restrict_L_3            0.0000098  0.0000099  0.0000098  0.0000001                  0.02%        5
+ 0: restrict_L_4            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 1
+ 0: 
+ 0: timing
+ 0: n_dofs = 225
+ 0: n_dofs = 225
+ 0: n_dofs = 225
+ 0: n_dofs = 225
+ 0: n_dofs = 225
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.4127385  2.0616326  0.7461543  0.7353899                215.24%        5
+ 0: setup_coarse_grids      0.0000029  0.0000039  0.0000033  0.0000005                  0.00%        5
+ 0: setup_dofs              0.0267227  0.0497289  0.0328387  0.0097597                  9.47%        5
+ 0: setup_matrix_free       0.0068255  3.8740787  0.7808231  1.7291825                225.24%        5
+ 0: setup_smoothers         0.0014660  0.0015818  0.0015150  0.0000421                  0.44%        5
+ 0: setup_mg_transfers      0.0193605  0.0360884  0.0253590  0.0064687                  7.32%        5
+ 0: compute_rhs             0.0309082  0.0620129  0.0391680  0.0129442                 11.30%        5
+ 0: solve0                  0.3801733  0.4200550  0.3899306  0.0170069                112.48%        5
+ 0: solve1                  0.3453328  0.3548058  0.3479448  0.0038770                100.37%        5
+ 0: solve2                  0.3427143  0.3475761  0.3454866  0.0021224                 99.66%        5
+ 0: matvec_double           0.0000497  0.0000620  0.0000523  0.0000054                  0.02%        5
+ 0: prolongate_tot          0.0000297  0.0000350  0.0000325  0.0000024                  0.01%        5
+ 0: restrict_tot            0.0000295  0.0000361  0.0000322  0.0000035                  0.01%        5
+ 0: matvec_L0               0.0000492  0.0000494  0.0000493  0.0000001                  0.01%        5
+ 0: matvec_L1               0.0000489  0.0000572  0.0000507  0.0000036                  0.01%        5
+ 0: matvec_L2               0.0000488  0.0000490  0.0000489  0.0000001                  0.01%        5
+ 0: matvec_L3               0.0000492  0.0000498  0.0000494  0.0000002                  0.01%        5
+ 0: matvec_L4               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0000710  0.0000778  0.0000746  0.0000032                  0.02%        5
+ 0: apply_smoother_L1       0.0070665  0.0071727  0.0071250  0.0000457                  2.06%        5
+ 0: apply_smoother_L2       0.0070943  0.0072235  0.0071503  0.0000478                  2.06%        5
+ 0: apply_smoother_L3       0.0070981  0.0072314  0.0071407  0.0000530                  2.06%        5
+ 0: apply_smoother_L4       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0000099  0.0000121  0.0000109  0.0000011                  0.00%        5
+ 0: prolongate_L_2          0.0000097  0.0000121  0.0000107  0.0000012                  0.00%        5
+ 0: prolongate_L_3          0.0000098  0.0000121  0.0000107  0.0000012                  0.00%        5
+ 0: prolongate_L_4          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0000099  0.0000121  0.0000109  0.0000011                  0.00%        5
+ 0: restrict_L_2            0.0000097  0.0000121  0.0000107  0.0000012                  0.00%        5
+ 0: restrict_L_3            0.0000098  0.0000121  0.0000107  0.0000012                  0.00%        5
+ 0: restrict_L_4            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 2
+ 0: 
+ 0: timing
+ 0: n_dofs = 405
+ 0: n_dofs = 405
+ 0: n_dofs = 405
+ 0: n_dofs = 405
+ 0: n_dofs = 405
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.5416896  0.6354337  0.5686910  0.0383437                155.04%        5
+ 0: setup_coarse_grids      0.0000029  0.0000038  0.0000033  0.0000003                  0.00%        5
+ 0: setup_dofs              0.0280673  0.0388170  0.0326839  0.0051421                  8.91%        5
+ 0: setup_matrix_free       0.0073670  7.2644036  1.4592102  3.2452018                397.81%        5
+ 0: setup_smoothers         0.0014729  0.0016008  0.0015269  0.0000524                  0.42%        5
+ 0: setup_mg_transfers      0.0239469  0.0473285  0.0365864  0.0091735                  9.97%        5
+ 0: compute_rhs             0.0361203  0.0647461  0.0429619  0.0122185                 11.71%        5
+ 0: solve0                  0.4079049  0.4489905  0.4260424  0.0153299                116.15%        5
+ 0: solve1                  0.3676564  0.3764338  0.3697577  0.0037826                100.80%        5
+ 0: solve2                  0.3657062  0.3820001  0.3706461  0.0067237                101.05%        5
+ 0: matvec_double           0.0000497  0.0000500  0.0000498  0.0000001                  0.01%        5
+ 0: prolongate_tot          0.0000294  0.0000297  0.0000296  0.0000002                  0.01%        5
+ 0: restrict_tot            0.0000296  0.0000298  0.0000297  0.0000001                  0.01%        5
+ 0: matvec_L0               0.0000489  0.0000512  0.0000496  0.0000010                  0.01%        5
+ 0: matvec_L1               0.0000490  0.0000543  0.0000501  0.0000024                  0.01%        5
+ 0: matvec_L2               0.0000487  0.0000491  0.0000489  0.0000002                  0.01%        5
+ 0: matvec_L3               0.0000490  0.0000536  0.0000503  0.0000019                  0.01%        5
+ 0: matvec_L4               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0000689  0.0000709  0.0000700  0.0000010                  0.02%        5
+ 0: apply_smoother_L1       0.0071231  0.0071640  0.0071421  0.0000179                  1.95%        5
+ 0: apply_smoother_L2       0.0070804  0.0071973  0.0071403  0.0000517                  1.95%        5
+ 0: apply_smoother_L3       0.0070856  0.0071541  0.0071118  0.0000260                  1.94%        5
+ 0: apply_smoother_L4       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0000099  0.0000100  0.0000099  0.0000001                  0.00%        5
+ 0: prolongate_L_2          0.0000098  0.0000099  0.0000099  0.0000000                  0.00%        5
+ 0: prolongate_L_3          0.0000098  0.0000099  0.0000099  0.0000001                  0.00%        5
+ 0: prolongate_L_4          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0000099  0.0000100  0.0000099  0.0000001                  0.00%        5
+ 0: restrict_L_2            0.0000098  0.0000099  0.0000099  0.0000000                  0.00%        5
+ 0: restrict_L_3            0.0000098  0.0000099  0.0000099  0.0000001                  0.00%        5
+ 0: restrict_L_4            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 3
+ 0: 
+ 0: timing
+ 0: n_dofs = 729
+ 0: n_dofs = 729
+ 0: n_dofs = 729
+ 0: n_dofs = 729
+ 0: n_dofs = 729
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0093704  2.5086285  0.5102921  1.1171056                545.42%        5
+ 0: setup_coarse_grids      0.0113338  5.0381076  1.0174959  2.2475906               1087.53%        5
+ 0: setup_dofs              0.0050343  0.0086205  0.0065441  0.0014159                  6.99%        5
+ 0: setup_matrix_free       0.0073415  4.1043396  0.8271152  1.8320241                884.05%        5
+ 0: setup_smoothers         0.0022108  0.0080698  0.0033979  0.0026117                  3.63%        5
+ 0: setup_mg_transfers      0.0300770  3.6047651  0.7520536  1.5947710                803.82%        5
+ 0: compute_rhs             0.0200776  0.0276826  0.0228325  0.0037410                 24.40%        5
+ 0: solve0                  0.1045993  0.1429123  0.1145266  0.0165087                122.41%        5
+ 0: solve1                  0.0933496  0.1085152  0.0964520  0.0067439                103.09%        5
+ 0: solve2                  0.0932955  0.1163543  0.0980567  0.0102293                104.81%        5
+ 0: matvec_double           0.0000498  0.0000530  0.0000506  0.0000013                  0.05%        5
+ 0: prolongate_tot          0.1471054  0.1736174  0.1611646  0.0122565                172.26%        5
+ 0: restrict_tot            0.1513863  0.1753353  0.1566301  0.0104627                167.41%        5
+ 0: matvec_L0               0.0026121  0.0026612  0.0026311  0.0000186                  2.81%        5
+ 0: matvec_L1               0.0000493  0.0000597  0.0000534  0.0000053                  0.06%        5
+ 0: matvec_L2               0.0000488  0.0000617  0.0000518  0.0000056                  0.06%        5
+ 0: matvec_L3               0.0000488  0.0000615  0.0000516  0.0000055                  0.06%        5
+ 0: matvec_L4               0.0000491  0.0000497  0.0000495  0.0000003                  0.05%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005815  0.0006132  0.0005894  0.0000136                  0.63%        5
+ 0: apply_smoother_L1       0.0071362  0.0072466  0.0071820  0.0000437                  7.68%        5
+ 0: apply_smoother_L2       0.0071419  0.0072678  0.0072193  0.0000481                  7.72%        5
+ 0: apply_smoother_L3       0.0071522  0.0072760  0.0072129  0.0000481                  7.71%        5
+ 0: apply_smoother_L4       0.0071524  0.0072112  0.0071761  0.0000229                  7.67%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.1513562  0.1753032  0.1565996  0.0104618                167.38%        5
+ 0: prolongate_L_2          0.0000102  0.0000124  0.0000106  0.0000010                  0.01%        5
+ 0: prolongate_L_3          0.0000099  0.0000100  0.0000100  0.0000001                  0.01%        5
+ 0: prolongate_L_4          0.0000098  0.0000100  0.0000099  0.0000001                  0.01%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.1513562  0.1753032  0.1565996  0.0104618                167.38%        5
+ 0: restrict_L_2            0.0000102  0.0000124  0.0000106  0.0000010                  0.01%        5
+ 0: restrict_L_3            0.0000099  0.0000100  0.0000100  0.0000001                  0.01%        5
+ 0: restrict_L_4            0.0000098  0.0000100  0.0000099  0.0000001                  0.01%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 4
+ 0: 
+ 0: timing
+ 0: n_dofs = 1377
+ 0: n_dofs = 1377
+ 0: n_dofs = 1377
+ 0: n_dofs = 1377
+ 0: n_dofs = 1377
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0351364  1.5321061  0.3347694  0.6693316                 64.34%        5
+ 0: setup_coarse_grids      0.0116266  0.0393857  0.0173240  0.0123350                  3.33%        5
+ 0: setup_dofs              0.0170687  0.0357928  0.0304133  0.0076201                  5.85%        5
+ 0: setup_matrix_free       0.0087097  4.4632738  0.9008701  1.9914447                173.14%        5
+ 0: setup_smoothers         0.0022221  0.0024169  0.0022801  0.0000794                  0.44%        5
+ 0: setup_mg_transfers      0.0332063  0.0429634  0.0369776  0.0040442                  7.11%        5
+ 0: compute_rhs             0.0324638  0.0569360  0.0391667  0.0102107                  7.53%        5
+ 0: solve0                  0.5561868  0.6155732  0.5787848  0.0223113                111.24%        5
+ 0: solve1                  0.5156380  0.5240081  0.5192384  0.0033694                 99.79%        5
+ 0: solve2                  0.5168353  0.5203126  0.5186371  0.0015562                 99.68%        5
+ 0: matvec_double           0.0000499  0.0000504  0.0000501  0.0000002                  0.01%        5
+ 0: prolongate_tot          0.0444629  0.0446656  0.0445663  0.0000845                  8.57%        5
+ 0: restrict_tot            0.0337634  0.0338998  0.0338341  0.0000525                  6.50%        5
+ 0: matvec_L0               0.0026126  0.0026386  0.0026262  0.0000111                  0.50%        5
+ 0: matvec_L1               0.0000492  0.0000537  0.0000504  0.0000019                  0.01%        5
+ 0: matvec_L2               0.0000492  0.0000539  0.0000503  0.0000021                  0.01%        5
+ 0: matvec_L3               0.0000490  0.0000569  0.0000506  0.0000035                  0.01%        5
+ 0: matvec_L4               0.0000491  0.0000593  0.0000524  0.0000046                  0.01%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005783  0.0006097  0.0005909  0.0000157                  0.11%        5
+ 0: apply_smoother_L1       0.0071149  0.0072397  0.0071790  0.0000449                  1.38%        5
+ 0: apply_smoother_L2       0.0071666  0.0072810  0.0072189  0.0000421                  1.39%        5
+ 0: apply_smoother_L3       0.0071358  0.0071837  0.0071590  0.0000212                  1.38%        5
+ 0: apply_smoother_L4       0.0070736  0.0072426  0.0071745  0.0000656                  1.38%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0337335  0.0338703  0.0338029  0.0000527                  6.50%        5
+ 0: prolongate_L_2          0.0000101  0.0000124  0.0000106  0.0000010                  0.00%        5
+ 0: prolongate_L_3          0.0000098  0.0000120  0.0000103  0.0000010                  0.00%        5
+ 0: prolongate_L_4          0.0000096  0.0000122  0.0000104  0.0000010                  0.00%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0337335  0.0338703  0.0338029  0.0000527                  6.50%        5
+ 0: restrict_L_2            0.0000101  0.0000124  0.0000106  0.0000010                  0.00%        5
+ 0: restrict_L_3            0.0000098  0.0000120  0.0000103  0.0000010                  0.00%        5
+ 0: restrict_L_4            0.0000096  0.0000122  0.0000104  0.0000010                  0.00%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 5
+ 0: 
+ 0: timing
+ 0: n_dofs = 2601
+ 0: n_dofs = 2601
+ 0: n_dofs = 2601
+ 0: n_dofs = 2601
+ 0: n_dofs = 2601
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0542298  0.2506881  0.0989362  0.0856283                 17.09%        5
+ 0: setup_coarse_grids      0.0122929  3.7633522  0.7633029  1.6770791                131.83%        5
+ 0: setup_dofs              0.0354044  0.0530930  0.0415543  0.0074410                  7.18%        5
+ 0: setup_matrix_free       0.0104583  4.2716062  0.8696598  1.9017934                150.19%        5
+ 0: setup_smoothers         0.0022453  0.0023255  0.0022769  0.0000319                  0.39%        5
+ 0: setup_mg_transfers      0.0389116  0.0469222  0.0421946  0.0032496                  7.29%        5
+ 0: compute_rhs             0.0346197  1.6897961  0.3678479  0.7389950                 63.53%        5
+ 0: solve0                  0.5996658  0.6509642  0.6127556  0.0217162                105.83%        5
+ 0: solve1                  0.5600461  0.5849784  0.5719310  0.0100065                 98.77%        5
+ 0: solve2                  0.5576590  0.5790241  0.5697240  0.0089666                 98.39%        5
+ 0: matvec_double           0.0000496  0.0000552  0.0000520  0.0000029                  0.01%        5
+ 0: prolongate_tot          0.0390411  0.0579814  0.0445461  0.0082792                  7.69%        5
+ 0: restrict_tot            0.0324300  0.0556600  0.0371384  0.0103541                  6.41%        5
+ 0: matvec_L0               0.0026153  0.0026558  0.0026403  0.0000158                  0.46%        5
+ 0: matvec_L1               0.0000492  0.0000495  0.0000494  0.0000001                  0.01%        5
+ 0: matvec_L2               0.0000491  0.0000493  0.0000492  0.0000001                  0.01%        5
+ 0: matvec_L3               0.0000490  0.0000548  0.0000502  0.0000026                  0.01%        5
+ 0: matvec_L4               0.0000492  0.0000550  0.0000514  0.0000029                  0.01%        5
+ 0: matvec_L5               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005823  0.0006052  0.0005880  0.0000098                  0.10%        5
+ 0: apply_smoother_L1       0.0071196  0.0077698  0.0072928  0.0002691                  1.26%        5
+ 0: apply_smoother_L2       0.0070972  0.0071882  0.0071498  0.0000385                  1.23%        5
+ 0: apply_smoother_L3       0.0072012  0.0072513  0.0072279  0.0000182                  1.25%        5
+ 0: apply_smoother_L4       0.0071329  0.0072297  0.0071871  0.0000395                  1.24%        5
+ 0: apply_smoother_L5       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0323926  0.0556300  0.0371069  0.0103550                  6.41%        5
+ 0: prolongate_L_2          0.0000100  0.0000177  0.0000117  0.0000034                  0.00%        5
+ 0: prolongate_L_3          0.0000098  0.0000100  0.0000099  0.0000001                  0.00%        5
+ 0: prolongate_L_4          0.0000099  0.0000100  0.0000100  0.0000001                  0.00%        5
+ 0: prolongate_L_5          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0323926  0.0556300  0.0371069  0.0103550                  6.41%        5
+ 0: restrict_L_2            0.0000100  0.0000177  0.0000117  0.0000034                  0.00%        5
+ 0: restrict_L_3            0.0000098  0.0000100  0.0000099  0.0000001                  0.00%        5
+ 0: restrict_L_4            0.0000099  0.0000100  0.0000100  0.0000001                  0.00%        5
+ 0: restrict_L_5            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 6
+ 0: 
+ 0: timing
+ 0: n_dofs = 4913
+ 0: n_dofs = 4913
+ 0: n_dofs = 4913
+ 0: n_dofs = 4913
+ 0: n_dofs = 4913
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0045064  3.7681925  0.7577957  1.6828631                115.32%        5
+ 0: setup_coarse_grids      0.0231609  0.0733726  0.0338693  0.0220964                  5.15%        5
+ 0: setup_dofs              0.0403681  0.0470521  0.0447297  0.0027025                  6.81%        5
+ 0: setup_matrix_free       0.0195680  3.9524250  0.8083110  1.7576152                123.01%        5
+ 0: setup_smoothers         0.0230284  0.0493196  0.0287399  0.0115155                  4.37%        5
+ 0: setup_mg_transfers      0.0320585  0.0569067  0.0419496  0.0104096                  6.38%        5
+ 0: compute_rhs             0.0131906  0.0187317  0.0154581  0.0020607                  2.35%        5
+ 0: solve0                  0.6925440  0.7511235  0.7209005  0.0258041                109.71%        5
+ 0: solve1                  0.6436871  0.6735086  0.6592218  0.0148604                100.32%        5
+ 0: solve2                  0.6384068  0.6571030  0.6484452  0.0089923                 98.68%        5
+ 0: matvec_double           0.0174404  0.0176328  0.0175230  0.0000904                  2.67%        5
+ 0: prolongate_tot          0.0902654  0.0947900  0.0917293  0.0018779                 13.96%        5
+ 0: restrict_tot            0.0944181  0.1261821  0.1009484  0.0141070                 15.36%        5
+ 0: matvec_L0               0.0026107  0.0026537  0.0026335  0.0000168                  0.40%        5
+ 0: matvec_L1               0.0026678  0.0026921  0.0026828  0.0000098                  0.41%        5
+ 0: matvec_L2               0.0149511  0.0150069  0.0149767  0.0000220                  2.28%        5
+ 0: matvec_L3               0.0160086  0.0164361  0.0162206  0.0001714                  2.47%        5
+ 0: matvec_L4               0.0166529  0.0182892  0.0170169  0.0007134                  2.59%        5
+ 0: matvec_L5               0.0173627  0.0174214  0.0173986  0.0000219                  2.65%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005804  0.0005953  0.0005867  0.0000061                  0.09%        5
+ 0: apply_smoother_L1       0.0626212  0.0628611  0.0627443  0.0001019                  9.55%        5
+ 0: apply_smoother_L2       0.1900333  0.1913343  0.1907968  0.0006344                 29.04%        5
+ 0: apply_smoother_L3       0.2007660  0.2017523  0.2011149  0.0004023                 30.61%        5
+ 0: apply_smoother_L4       0.2081137  0.2088351  0.2085445  0.0002651                 31.74%        5
+ 0: apply_smoother_L5       0.2153961  0.2160378  0.2156329  0.0002451                 32.82%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0141361  0.0460375  0.0205593  0.0142430                  3.13%        5
+ 0: prolongate_L_2          0.0386835  0.0389123  0.0387919  0.0001019                  5.90%        5
+ 0: prolongate_L_3          0.0134716  0.0135400  0.0135084  0.0000265                  2.06%        5
+ 0: prolongate_L_4          0.0139143  0.0140233  0.0139709  0.0000439                  2.13%        5
+ 0: prolongate_L_5          0.0140566  0.0141807  0.0141178  0.0000518                  2.15%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0141361  0.0460375  0.0205593  0.0142430                  3.13%        5
+ 0: restrict_L_2            0.0386835  0.0389123  0.0387919  0.0001019                  5.90%        5
+ 0: restrict_L_3            0.0134716  0.0135400  0.0135084  0.0000265                  2.06%        5
+ 0: restrict_L_4            0.0139143  0.0140233  0.0139709  0.0000439                  2.13%        5
+ 0: restrict_L_5            0.0140566  0.0141807  0.0141178  0.0000518                  2.15%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 7
+ 0: 
+ 0: timing
+ 0: n_dofs = 9537
+ 0: n_dofs = 9537
+ 0: n_dofs = 9537
+ 0: n_dofs = 9537
+ 0: n_dofs = 9537
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0307544  2.0280224  0.4315752  0.8924427                 62.90%        5
+ 0: setup_coarse_grids      0.0251977  0.1060484  0.0421963  0.0357003                  6.15%        5
+ 0: setup_dofs              0.0462368  0.0709322  0.0567452  0.0095097                  8.27%        5
+ 0: setup_matrix_free       0.0211498  4.3881776  0.8967207  1.9517851                130.70%        5
+ 0: setup_smoothers         0.0241019  0.0483282  0.0299443  0.0103052                  4.36%        5
+ 0: setup_mg_transfers      0.0440151  0.1002452  0.0612281  0.0225289                  8.92%        5
+ 0: compute_rhs             0.0186304  0.0582601  0.0279631  0.0169945                  4.08%        5
+ 0: solve0                  0.7515545  0.8085384  0.7802165  0.0212571                113.71%        5
+ 0: solve1                  0.6876663  0.7020777  0.6957766  0.0061874                101.41%        5
+ 0: solve2                  0.6827686  0.7327650  0.7005997  0.0201210                102.11%        5
+ 0: matvec_double           0.0237539  0.0242957  0.0240211  0.0002405                  3.50%        5
+ 0: prolongate_tot          0.1102593  0.1420128  0.1182924  0.0137055                 17.24%        5
+ 0: restrict_tot            0.1200869  0.1651550  0.1293485  0.0200189                 18.85%        5
+ 0: matvec_L0               0.0026225  0.0026659  0.0026374  0.0000194                  0.38%        5
+ 0: matvec_L1               0.0026656  0.0027004  0.0026794  0.0000145                  0.39%        5
+ 0: matvec_L2               0.0206782  0.0229643  0.0211600  0.0010089                  3.08%        5
+ 0: matvec_L3               0.0221211  0.0227972  0.0223625  0.0002629                  3.26%        5
+ 0: matvec_L4               0.0228289  0.0231693  0.0229650  0.0001281                  3.35%        5
+ 0: matvec_L5               0.0235054  0.0236798  0.0235952  0.0000835                  3.44%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005852  0.0005994  0.0005899  0.0000055                  0.09%        5
+ 0: apply_smoother_L1       0.0628119  0.0628794  0.0628516  0.0000262                  9.16%        5
+ 0: apply_smoother_L2       0.2481889  0.2639663  0.2515484  0.0069521                 36.66%        5
+ 0: apply_smoother_L3       0.2621253  0.2774614  0.2656457  0.0066675                 38.72%        5
+ 0: apply_smoother_L4       0.2707595  0.2712968  0.2710122  0.0001912                 39.50%        5
+ 0: apply_smoother_L5       0.2774530  0.2779869  0.2777260  0.0002513                 40.48%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0143362  0.0383079  0.0191526  0.0107082                  2.79%        5
+ 0: prolongate_L_2          0.0454832  0.0669130  0.0498911  0.0095166                  7.27%        5
+ 0: prolongate_L_3          0.0194328  0.0204359  0.0196889  0.0004210                  2.87%        5
+ 0: prolongate_L_4          0.0200883  0.0202573  0.0201664  0.0000671                  2.94%        5
+ 0: prolongate_L_5          0.0203105  0.0207255  0.0204494  0.0001716                  2.98%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0143362  0.0383079  0.0191526  0.0107082                  2.79%        5
+ 0: restrict_L_2            0.0454832  0.0669130  0.0498911  0.0095166                  7.27%        5
+ 0: restrict_L_3            0.0194328  0.0204359  0.0196889  0.0004210                  2.87%        5
+ 0: restrict_L_4            0.0200883  0.0202573  0.0201664  0.0000671                  2.94%        5
+ 0: restrict_L_5            0.0203105  0.0207255  0.0204494  0.0001716                  2.98%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 8
+ 0: 
+ 0: timing
+ 0: n_dofs = 18513
+ 0: n_dofs = 18513
+ 0: n_dofs = 18513
+ 0: n_dofs = 18513
+ 0: n_dofs = 18513
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0303048  0.0824221  0.0422600  0.0225180                  5.00%        5
+ 0: setup_coarse_grids      0.0301321  0.1109196  0.0525658  0.0342983                  6.21%        5
+ 0: setup_dofs              0.0552765  0.0697132  0.0625574  0.0062490                  7.40%        5
+ 0: setup_matrix_free       0.0262448  0.1912544  0.0605833  0.0730617                  7.16%        5
+ 0: setup_smoothers         0.0266575  0.0623335  0.0400729  0.0181551                  4.74%        5
+ 0: setup_mg_transfers      0.0612652  0.1080593  0.0750089  0.0187767                  8.87%        5
+ 0: compute_rhs             0.0234098  0.0582922  0.0312665  0.0151861                  3.70%        5
+ 0: solve0                  0.9272936  0.9654588  0.9478907  0.0146344                112.06%        5
+ 0: solve1                  0.8320691  0.9511840  0.8799868  0.0456697                104.03%        5
+ 0: solve2                  0.8300323  0.8880738  0.8594648  0.0226743                101.60%        5
+ 0: matvec_double           0.0343467  0.0352573  0.0346111  0.0003770                  4.09%        5
+ 0: prolongate_tot          0.1769652  0.2327212  0.1945867  0.0250331                 23.00%        5
+ 0: restrict_tot            0.1874663  0.2212410  0.2013251  0.0174463                 23.80%        5
+ 0: matvec_L0               0.0026393  0.0026805  0.0026591  0.0000192                  0.31%        5
+ 0: matvec_L1               0.0063210  0.0063891  0.0063523  0.0000258                  0.75%        5
+ 0: matvec_L2               0.0302436  0.0304049  0.0302959  0.0000672                  3.58%        5
+ 0: matvec_L3               0.0322355  0.0345170  0.0329388  0.0009272                  3.89%        5
+ 0: matvec_L4               0.0335593  0.0359772  0.0341204  0.0010420                  4.03%        5
+ 0: matvec_L5               0.0342402  0.0345352  0.0343678  0.0001284                  4.06%        5
+ 0: matvec_L6               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005856  0.0005978  0.0005920  0.0000046                  0.07%        5
+ 0: apply_smoother_L1       0.1013455  0.1018646  0.1015960  0.0002185                 12.01%        5
+ 0: apply_smoother_L2       0.3449001  0.4073492  0.3781265  0.0223852                 44.70%        5
+ 0: apply_smoother_L3       0.3637225  0.4282600  0.3882616  0.0325384                 45.90%        5
+ 0: apply_smoother_L4       0.3772852  0.4434466  0.4123314  0.0300016                 48.75%        5
+ 0: apply_smoother_L5       0.3848871  0.4488663  0.4211598  0.0249411                 49.79%        5
+ 0: apply_smoother_L6       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0352555  0.0354433  0.0353697  0.0000775                  4.18%        5
+ 0: prolongate_L_2          0.0613946  0.0929334  0.0679877  0.0139485                  8.04%        5
+ 0: prolongate_L_3          0.0290888  0.0610882  0.0355910  0.0142543                  4.21%        5
+ 0: prolongate_L_4          0.0306139  0.0313572  0.0309547  0.0002752                  3.66%        5
+ 0: prolongate_L_5          0.0310562  0.0320411  0.0314220  0.0004699                  3.71%        5
+ 0: prolongate_L_6          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0352555  0.0354433  0.0353697  0.0000775                  4.18%        5
+ 0: restrict_L_2            0.0613946  0.0929334  0.0679877  0.0139485                  8.04%        5
+ 0: restrict_L_3            0.0290888  0.0610882  0.0355910  0.0142543                  4.21%        5
+ 0: restrict_L_4            0.0306139  0.0313572  0.0309547  0.0002752                  3.66%        5
+ 0: restrict_L_5            0.0310562  0.0320411  0.0314220  0.0004699                  3.71%        5
+ 0: restrict_L_6            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 9
+ 0: 
+ 0: timing
+ 0: n_dofs = 35937
+ 0: n_dofs = 35937
+ 0: n_dofs = 35937
+ 0: n_dofs = 35937
+ 0: n_dofs = 35937
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0346653  0.0729843  0.0435221  0.0165930                  4.24%        5
+ 0: setup_coarse_grids      0.1097275  2.9977410  0.6888509  1.2907106                 67.04%        5
+ 0: setup_dofs              0.0670677  0.1078020  0.0842381  0.0184286                  8.20%        5
+ 0: setup_matrix_free       0.0360982  0.1294866  0.0559871  0.0411037                  5.45%        5
+ 0: setup_smoothers         0.0294846  0.1090334  0.0466880  0.0348798                  4.54%        5
+ 0: setup_mg_transfers      0.0695345  0.1515217  0.0942647  0.0336204                  9.17%        5
+ 0: compute_rhs             0.0250440  0.0591874  0.0329280  0.0147067                  3.20%        5
+ 0: solve0                  1.2123320  1.2572965  1.2376722  0.0207623                120.45%        5
+ 0: solve1                  1.0608906  1.1598296  1.0847245  0.0425046                105.56%        5
+ 0: solve2                  1.0275487  1.0944437  1.0615867  0.0256837                103.31%        5
+ 0: matvec_double           0.0494406  0.0836548  0.0563802  0.0152475                  5.49%        5
+ 0: prolongate_tot          0.2717114  0.3059025  0.2790509  0.0150195                 27.16%        5
+ 0: restrict_tot            0.2720224  0.3036640  0.2858233  0.0163266                 27.82%        5
+ 0: matvec_L0               0.0026353  0.0026644  0.0026523  0.0000113                  0.26%        5
+ 0: matvec_L1               0.0026594  0.0027073  0.0026862  0.0000201                  0.26%        5
+ 0: matvec_L2               0.0103693  0.0104497  0.0104050  0.0000383                  1.01%        5
+ 0: matvec_L3               0.0444242  0.0664302  0.0494937  0.0095712                  4.82%        5
+ 0: matvec_L4               0.0477851  0.0491847  0.0483152  0.0005828                  4.70%        5
+ 0: matvec_L5               0.0487920  0.0517668  0.0500612  0.0012070                  4.87%        5
+ 0: matvec_L6               0.0493576  0.0502894  0.0497800  0.0004029                  4.84%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005869  0.0006153  0.0005952  0.0000114                  0.06%        5
+ 0: apply_smoother_L1       0.0630218  0.0631865  0.0630945  0.0000684                  6.14%        5
+ 0: apply_smoother_L2       0.1432002  0.1439738  0.1436930  0.0003119                 13.98%        5
+ 0: apply_smoother_L3       0.4886799  0.5500391  0.5196457  0.0216977                 50.57%        5
+ 0: apply_smoother_L4       0.5159227  0.6115927  0.5542697  0.0413996                 53.94%        5
+ 0: apply_smoother_L5       0.5369084  0.5972078  0.5685661  0.0216249                 55.33%        5
+ 0: apply_smoother_L6       0.5391455  0.6338324  0.5705773  0.0386066                 55.53%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0145130  0.0146154  0.0145718  0.0000454                  1.42%        5
+ 0: prolongate_L_2          0.0420447  0.0426113  0.0422575  0.0002167                  4.11%        5
+ 0: prolongate_L_3          0.0776887  0.1091013  0.0841032  0.0139748                  8.18%        5
+ 0: prolongate_L_4          0.0435596  0.0438483  0.0436638  0.0001138                  4.25%        5
+ 0: prolongate_L_5          0.0471511  0.0493459  0.0478410  0.0009093                  4.66%        5
+ 0: prolongate_L_6          0.0464879  0.0782582  0.0533860  0.0139427                  5.20%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0145130  0.0146154  0.0145718  0.0000454                  1.42%        5
+ 0: restrict_L_2            0.0420447  0.0426113  0.0422575  0.0002167                  4.11%        5
+ 0: restrict_L_3            0.0776887  0.1091013  0.0841032  0.0139748                  8.18%        5
+ 0: restrict_L_4            0.0435596  0.0438483  0.0436638  0.0001138                  4.25%        5
+ 0: restrict_L_5            0.0471511  0.0493459  0.0478410  0.0009093                  4.66%        5
+ 0: restrict_L_6            0.0464879  0.0782582  0.0533860  0.0139427                  5.20%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 10
+ 0: 
+ 0: timing
+ 0: n_dofs = 70785
+ 0: n_dofs = 70785
+ 0: n_dofs = 70785
+ 0: n_dofs = 70785
+ 0: n_dofs = 70785
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0350710  0.0409168  0.0373604  0.0027119                  2.92%        5
+ 0: setup_coarse_grids      0.1366811  1.8442293  0.4793939  0.7629668                 37.42%        5
+ 0: setup_dofs              0.1011692  0.1129448  0.1096401  0.0048646                  8.56%        5
+ 0: setup_matrix_free       0.0385458  0.1292662  0.0612299  0.0382437                  4.78%        5
+ 0: setup_smoothers         0.0308159  0.0363366  0.0330523  0.0020472                  2.58%        5
+ 0: setup_mg_transfers      0.0692822  0.1023277  0.0808739  0.0128159                  6.31%        5
+ 0: compute_rhs             0.0332822  0.0605891  0.0445887  0.0135914                  3.48%        5
+ 0: solve0                  1.3773491  1.4780035  1.4357949  0.0394956                112.07%        5
+ 0: solve1                  1.2516822  1.3408964  1.2720073  0.0386485                 99.29%        5
+ 0: solve2                  1.2402514  1.3439475  1.2883504  0.0372244                100.56%        5
+ 0: matvec_double           0.0496532  0.0518807  0.0502694  0.0009377                  3.92%        5
+ 0: prolongate_tot          0.6237491  0.6557071  0.6440005  0.0122338                 50.27%        5
+ 0: restrict_tot            0.5926872  0.6305944  0.6058739  0.0159651                 47.29%        5
+ 0: matvec_L0               0.0026324  0.0026790  0.0026533  0.0000168                  0.21%        5
+ 0: matvec_L1               0.0026764  0.0027129  0.0026915  0.0000153                  0.21%        5
+ 0: matvec_L2               0.0165764  0.0175092  0.0168036  0.0003958                  1.31%        5
+ 0: matvec_L3               0.0459786  0.0773189  0.0525469  0.0138543                  4.10%        5
+ 0: matvec_L4               0.0485283  0.0495457  0.0489439  0.0004463                  3.82%        5
+ 0: matvec_L5               0.0489618  0.0812367  0.0665280  0.0163638                  5.19%        5
+ 0: matvec_L6               0.0493126  0.0501057  0.0497417  0.0002914                  3.88%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005886  0.0006145  0.0005990  0.0000102                  0.05%        5
+ 0: apply_smoother_L1       0.0631384  0.0633064  0.0632366  0.0000680                  4.94%        5
+ 0: apply_smoother_L2       0.2061022  0.2076205  0.2064835  0.0006509                 16.12%        5
+ 0: apply_smoother_L3       0.4893456  0.5214084  0.5083512  0.0171457                 39.68%        5
+ 0: apply_smoother_L4       0.5356617  0.6201173  0.5671463  0.0314308                 44.27%        5
+ 0: apply_smoother_L5       0.5335433  0.5662937  0.5465644  0.0174777                 42.66%        5
+ 0: apply_smoother_L6       0.5395822  0.5712907  0.5498097  0.0138473                 42.91%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0146889  0.0153456  0.0148640  0.0002719                  1.16%        5
+ 0: prolongate_L_2          0.2026763  0.2097451  0.2056409  0.0028631                 16.05%        5
+ 0: prolongate_L_3          0.2330253  0.2540777  0.2383042  0.0088538                 18.60%        5
+ 0: prolongate_L_4          0.0458411  0.0463361  0.0459879  0.0002008                  3.59%        5
+ 0: prolongate_L_5          0.0471442  0.0480142  0.0475410  0.0003120                  3.71%        5
+ 0: prolongate_L_6          0.0465613  0.0796336  0.0535359  0.0145952                  4.18%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0146889  0.0153456  0.0148640  0.0002719                  1.16%        5
+ 0: restrict_L_2            0.2026763  0.2097451  0.2056409  0.0028631                 16.05%        5
+ 0: restrict_L_3            0.2330253  0.2540777  0.2383042  0.0088538                 18.60%        5
+ 0: restrict_L_4            0.0458411  0.0463361  0.0459879  0.0002008                  3.59%        5
+ 0: restrict_L_5            0.0471442  0.0480142  0.0475410  0.0003120                  3.71%        5
+ 0: restrict_L_6            0.0465613  0.0796336  0.0535359  0.0145952                  4.18%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 11
+ 0: 
+ 0: timing
+ 0: n_dofs = 139425
+ 0: n_dofs = 139425
+ 0: n_dofs = 139425
+ 0: n_dofs = 139425
+ 0: n_dofs = 139425
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0384020  0.0457329  0.0427658  0.0030583                  2.49%        5
+ 0: setup_coarse_grids      0.1484463  0.1876778  0.1626015  0.0168803                  9.47%        5
+ 0: setup_dofs              0.1040898  0.1555681  0.1242516  0.0201890                  7.24%        5
+ 0: setup_matrix_free       0.0444301  0.1405244  0.0752687  0.0379316                  4.38%        5
+ 0: setup_smoothers         0.0346168  0.0672615  0.0419071  0.0142073                  2.44%        5
+ 0: setup_mg_transfers      0.0797930  0.1281876  0.0917542  0.0205666                  5.34%        5
+ 0: compute_rhs             0.0385134  0.0427567  0.0400468  0.0015961                  2.33%        5
+ 0: solve0                  1.9075116  1.9855567  1.9429049  0.0309869                113.17%        5
+ 0: solve1                  1.7389902  1.7867771  1.7545804  0.0188428                102.20%        5
+ 0: solve2                  1.7168242  1.7941350  1.7667979  0.0335376                102.91%        5
+ 0: matvec_double           0.0497548  0.0814247  0.0592789  0.0140988                  3.45%        5
+ 0: prolongate_tot          0.6800537  0.7359874  0.7117190  0.0206801                 41.46%        5
+ 0: restrict_tot            0.6628322  0.7322305  0.6783744  0.0301669                 39.51%        5
+ 0: matvec_L0               0.0026381  0.0026706  0.0026604  0.0000134                  0.15%        5
+ 0: matvec_L1               0.0066243  0.0066769  0.0066527  0.0000200                  0.39%        5
+ 0: matvec_L2               0.0253039  0.0255092  0.0254549  0.0000851                  1.48%        5
+ 0: matvec_L3               0.0451006  0.0754874  0.0597032  0.0144144                  3.48%        5
+ 0: matvec_L4               0.0480019  0.0484982  0.0482678  0.0002086                  2.81%        5
+ 0: matvec_L5               0.0484854  0.0512411  0.0493885  0.0010665                  2.88%        5
+ 0: matvec_L6               0.0496107  0.0822067  0.0562180  0.0145283                  3.27%        5
+ 0: matvec_L7               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005860  0.0005950  0.0005928  0.0000039                  0.03%        5
+ 0: apply_smoother_L1       0.1018078  0.1020578  0.1018943  0.0001101                  5.94%        5
+ 0: apply_smoother_L2       0.2746749  0.3076168  0.2881662  0.0177508                 16.78%        5
+ 0: apply_smoother_L3       0.4920070  0.5855846  0.5359168  0.0353974                 31.22%        5
+ 0: apply_smoother_L4       0.5261604  0.5878257  0.5571793  0.0218094                 32.45%        5
+ 0: apply_smoother_L5       0.5351119  0.5672984  0.5604770  0.0141955                 32.65%        5
+ 0: apply_smoother_L6       0.5728513  0.6046225  0.5803054  0.0137463                 33.80%        5
+ 0: apply_smoother_L7       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0373926  0.0671257  0.0434208  0.0132516                  2.53%        5
+ 0: prolongate_L_2          0.1826847  0.1871370  0.1849332  0.0020460                 10.77%        5
+ 0: prolongate_L_3          0.2735336  0.3075646  0.2982144  0.0139389                 17.37%        5
+ 0: prolongate_L_4          0.0447101  0.0451087  0.0449084  0.0001677                  2.62%        5
+ 0: prolongate_L_5          0.0467641  0.0793704  0.0536346  0.0143943                  3.12%        5
+ 0: prolongate_L_6          0.0466616  0.0787766  0.0532630  0.0142661                  3.10%        5
+ 0: prolongate_L_7          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0373926  0.0671257  0.0434208  0.0132516                  2.53%        5
+ 0: restrict_L_2            0.1826847  0.1871370  0.1849332  0.0020460                 10.77%        5
+ 0: restrict_L_3            0.2735336  0.3075646  0.2982144  0.0139389                 17.37%        5
+ 0: restrict_L_4            0.0447101  0.0451087  0.0449084  0.0001677                  2.62%        5
+ 0: restrict_L_5            0.0467641  0.0793704  0.0536346  0.0143943                  3.12%        5
+ 0: restrict_L_6            0.0466616  0.0787766  0.0532630  0.0142661                  3.10%        5
+ 0: restrict_L_7            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 12
+ 0: 
+ 0: timing
+ 0: n_dofs = 274625
+ 0: n_dofs = 274625
+ 0: n_dofs = 274625
+ 0: n_dofs = 274625
+ 0: n_dofs = 274625
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0454466  0.0503537  0.0481337  0.0018411                  2.48%        5
+ 0: setup_coarse_grids      0.0906430  0.1158262  0.0974316  0.0104142                  5.02%        5
+ 0: setup_dofs              0.0767459  0.1125607  0.0945627  0.0130886                  4.88%        5
+ 0: setup_matrix_free       0.0591465  0.1075330  0.0720310  0.0200012                  3.71%        5
+ 0: setup_smoothers         0.0366401  0.0396874  0.0380016  0.0011318                  1.96%        5
+ 0: setup_mg_transfers      0.0982371  0.1250813  0.1083124  0.0102190                  5.59%        5
+ 0: compute_rhs             0.0486729  0.0519700  0.0502505  0.0014019                  2.59%        5
+ 0: solve0                  2.0223982  2.1139917  2.0735760  0.0377321                106.94%        5
+ 0: solve1                  1.8143710  1.9511885  1.8839527  0.0490659                 97.16%        5
+ 0: solve2                  1.8399120  1.9404140  1.9016089  0.0413145                 98.07%        5
+ 0: matvec_double           0.0498280  0.0814203  0.0562134  0.0140912                  2.90%        5
+ 0: prolongate_tot          0.7244763  0.8039314  0.7661028  0.0304078                 39.51%        5
+ 0: restrict_tot            0.6805893  0.7006876  0.6892573  0.0092095                 35.55%        5
+ 0: matvec_L0               0.0026254  0.0026733  0.0026556  0.0000198                  0.14%        5
+ 0: matvec_L1               0.0026752  0.0027029  0.0026871  0.0000102                  0.14%        5
+ 0: matvec_L2               0.0104742  0.0106216  0.0105263  0.0000607                  0.54%        5
+ 0: matvec_L3               0.0335228  0.0338820  0.0337153  0.0001610                  1.74%        5
+ 0: matvec_L4               0.0465286  0.0692781  0.0520390  0.0096971                  2.68%        5
+ 0: matvec_L5               0.0481419  0.0801336  0.0550322  0.0140421                  2.84%        5
+ 0: matvec_L6               0.0490229  0.0508719  0.0499525  0.0007793                  2.58%        5
+ 0: matvec_L7               0.0497445  0.0505161  0.0500793  0.0002805                  2.58%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005927  0.0006091  0.0006008  0.0000074                  0.03%        5
+ 0: apply_smoother_L1       0.0629377  0.0631772  0.0630569  0.0000916                  3.25%        5
+ 0: apply_smoother_L2       0.1430733  0.1435516  0.1433891  0.0001951                  7.39%        5
+ 0: apply_smoother_L3       0.3571959  0.4070381  0.3737907  0.0230761                 19.28%        5
+ 0: apply_smoother_L4       0.4966969  0.5737448  0.5304878  0.0275832                 27.36%        5
+ 0: apply_smoother_L5       0.5261019  0.5769130  0.5489027  0.0221623                 28.31%        5
+ 0: apply_smoother_L6       0.5358475  0.5990672  0.5626501  0.0269705                 29.02%        5
+ 0: apply_smoother_L7       0.5417653  0.6054060  0.5675023  0.0266496                 29.27%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0147957  0.0149528  0.0148390  0.0000645                  0.77%        5
+ 0: prolongate_L_2          0.0477276  0.0484711  0.0481302  0.0003072                  2.48%        5
+ 0: prolongate_L_3          0.1870231  0.1934222  0.1885675  0.0027420                  9.72%        5
+ 0: prolongate_L_4          0.2767422  0.2881882  0.2831902  0.0052213                 14.60%        5
+ 0: prolongate_L_5          0.0452200  0.0473683  0.0461222  0.0010009                  2.38%        5
+ 0: prolongate_L_6          0.0469202  0.0780454  0.0542735  0.0133617                  2.80%        5
+ 0: prolongate_L_7          0.0467234  0.0788922  0.0541347  0.0138841                  2.79%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0147957  0.0149528  0.0148390  0.0000645                  0.77%        5
+ 0: restrict_L_2            0.0477276  0.0484711  0.0481302  0.0003072                  2.48%        5
+ 0: restrict_L_3            0.1870231  0.1934222  0.1885675  0.0027420                  9.72%        5
+ 0: restrict_L_4            0.2767422  0.2881882  0.2831902  0.0052213                 14.60%        5
+ 0: restrict_L_5            0.0452200  0.0473683  0.0461222  0.0010009                  2.38%        5
+ 0: restrict_L_6            0.0469202  0.0780454  0.0542735  0.0133617                  2.80%        5
+ 0: restrict_L_7            0.0467234  0.0788922  0.0541347  0.0138841                  2.79%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 13
+ 0: 
+ 0: timing
+ 0: n_dofs = 545025
+ 0: n_dofs = 545025
+ 0: n_dofs = 545025
+ 0: n_dofs = 545025
+ 0: n_dofs = 545025
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0877119  0.1191313  0.0958416  0.0131192                  4.76%        5
+ 0: setup_coarse_grids      0.1166725  0.1231177  0.1202238  0.0024182                  5.97%        5
+ 0: setup_dofs              0.1220273  0.1589019  0.1376320  0.0168436                  6.83%        5
+ 0: setup_matrix_free       0.0849686  0.1156089  0.1001740  0.0145699                  4.97%        5
+ 0: setup_smoothers         0.0413588  0.0717794  0.0479115  0.0133602                  2.38%        5
+ 0: setup_mg_transfers      0.1102263  0.1418070  0.1196459  0.0126344                  5.94%        5
+ 0: compute_rhs             0.0709692  0.0823571  0.0760410  0.0044940                  3.77%        5
+ 0: solve0                  2.0938905  2.2226645  2.1808140  0.0510318                108.26%        5
+ 0: solve1                  1.9166500  2.0633111  2.0081063  0.0561831                 99.68%        5
+ 0: solve2                  1.9623298  2.0451656  2.0080268  0.0336635                 99.68%        5
+ 0: matvec_double           0.0499840  0.0580876  0.0517271  0.0035590                  2.57%        5
+ 0: prolongate_tot          0.9615574  1.0196771  0.9895141  0.0263613                 49.12%        5
+ 0: restrict_tot            0.8653725  0.9509032  0.8954817  0.0355613                 44.45%        5
+ 0: matvec_L0               0.0026419  0.0026725  0.0026595  0.0000121                  0.13%        5
+ 0: matvec_L1               0.0026853  0.0027296  0.0027082  0.0000185                  0.13%        5
+ 0: matvec_L2               0.0165399  0.0166825  0.0166068  0.0000550                  0.82%        5
+ 0: matvec_L3               0.0463059  0.0472776  0.0467693  0.0004670                  2.32%        5
+ 0: matvec_L4               0.0472109  0.0480535  0.0476563  0.0003485                  2.37%        5
+ 0: matvec_L5               0.0483716  0.0494711  0.0488353  0.0004439                  2.42%        5
+ 0: matvec_L6               0.0489523  0.0495950  0.0493804  0.0002707                  2.45%        5
+ 0: matvec_L7               0.0500601  0.0515682  0.0506372  0.0005933                  2.51%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005861  0.0006096  0.0005974  0.0000100                  0.03%        5
+ 0: apply_smoother_L1       0.0628444  0.0634450  0.0631318  0.0002937                  3.13%        5
+ 0: apply_smoother_L2       0.2060327  0.2062918  0.2061210  0.0001021                 10.23%        5
+ 0: apply_smoother_L3       0.4892053  0.5809826  0.5204061  0.0373166                 25.83%        5
+ 0: apply_smoother_L4       0.5204152  0.5652179  0.5386721  0.0162866                 26.74%        5
+ 0: apply_smoother_L5       0.5265392  0.6084213  0.5618186  0.0368370                 27.89%        5
+ 0: apply_smoother_L6       0.5365466  0.6007412  0.5685595  0.0317685                 28.22%        5
+ 0: apply_smoother_L7       0.5432494  0.6062506  0.5750933  0.0312008                 28.55%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0147646  0.0148865  0.0148052  0.0000483                  0.73%        5
+ 0: prolongate_L_2          0.1801648  0.2052423  0.1868769  0.0103707                  9.28%        5
+ 0: prolongate_L_3          0.2377665  0.2690321  0.2448577  0.0135668                 12.16%        5
+ 0: prolongate_L_4          0.2839391  0.3431396  0.3015235  0.0256910                 14.97%        5
+ 0: prolongate_L_5          0.0457164  0.0499596  0.0467422  0.0018195                  2.32%        5
+ 0: prolongate_L_6          0.0467464  0.0768852  0.0530636  0.0133184                  2.63%        5
+ 0: prolongate_L_7          0.0468771  0.0492418  0.0476126  0.0009900                  2.36%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0147646  0.0148865  0.0148052  0.0000483                  0.73%        5
+ 0: restrict_L_2            0.1801648  0.2052423  0.1868769  0.0103707                  9.28%        5
+ 0: restrict_L_3            0.2377665  0.2690321  0.2448577  0.0135668                 12.16%        5
+ 0: restrict_L_4            0.2839391  0.3431396  0.3015235  0.0256910                 14.97%        5
+ 0: restrict_L_5            0.0457164  0.0499596  0.0467422  0.0018195                  2.32%        5
+ 0: restrict_L_6            0.0467464  0.0768852  0.0530636  0.0133184                  2.63%        5
+ 0: restrict_L_7            0.0468771  0.0492418  0.0476126  0.0009900                  2.36%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 14
+ 0: 
+ 0: timing
+ 0: n_dofs = 1081665
+ 0: n_dofs = 1081665
+ 0: n_dofs = 1081665
+ 0: n_dofs = 1081665
+ 0: n_dofs = 1081665
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.0910558  0.1148338  0.1029725  0.0112301                  4.61%        5
+ 0: setup_coarse_grids      0.0771600  0.1181023  0.0922820  0.0189621                  4.13%        5
+ 0: setup_dofs              0.0968498  0.1423638  0.1189627  0.0164467                  5.33%        5
+ 0: setup_matrix_free       0.0892035  0.1213377  0.1089679  0.0121547                  4.88%        5
+ 0: setup_smoothers         0.0472693  0.0734382  0.0553581  0.0104491                  2.48%        5
+ 0: setup_mg_transfers      0.1287938  0.1583975  0.1390440  0.0121917                  6.23%        5
+ 0: compute_rhs             0.0786652  0.1060593  0.0862499  0.0113221                  3.86%        5
+ 0: solve0                  2.3048330  2.4949015  2.4225279  0.0753848                108.54%        5
+ 0: solve1                  2.1760593  2.3085809  2.2337608  0.0481666                100.08%        5
+ 0: solve2                  2.1497206  2.2861309  2.2131634  0.0518680                 99.16%        5
+ 0: matvec_double           0.0498830  0.0505154  0.0501554  0.0002294                  2.25%        5
+ 0: prolongate_tot          1.0329205  1.1369994  1.0931150  0.0393306                 48.98%        5
+ 0: restrict_tot            1.0079523  1.0811049  1.0484347  0.0299817                 46.98%        5
+ 0: matvec_L0               0.0026605  0.0026906  0.0026705  0.0000123                  0.12%        5
+ 0: matvec_L1               0.0067895  0.0068709  0.0068195  0.0000322                  0.31%        5
+ 0: matvec_L2               0.0252045  0.0258573  0.0253750  0.0002773                  1.14%        5
+ 0: matvec_L3               0.0448760  0.0757455  0.0517816  0.0134265                  2.32%        5
+ 0: matvec_L4               0.0471699  0.0771285  0.0548317  0.0126392                  2.46%        5
+ 0: matvec_L5               0.0487585  0.0798805  0.0558934  0.0134550                  2.50%        5
+ 0: matvec_L6               0.0490826  0.0522614  0.0500926  0.0012622                  2.24%        5
+ 0: matvec_L7               0.0501996  0.0531112  0.0512428  0.0011648                  2.30%        5
+ 0: matvec_L8               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005864  0.0006047  0.0005937  0.0000067                  0.03%        5
+ 0: apply_smoother_L1       0.1018694  0.1023879  0.1020837  0.0002550                  4.57%        5
+ 0: apply_smoother_L2       0.2760690  0.2911804  0.2792493  0.0066709                 12.51%        5
+ 0: apply_smoother_L3       0.4929769  0.5747635  0.5278780  0.0366461                 23.65%        5
+ 0: apply_smoother_L4       0.5123055  0.5443321  0.5369727  0.0138116                 24.06%        5
+ 0: apply_smoother_L5       0.5278062  0.6455908  0.5578174  0.0508865                 24.99%        5
+ 0: apply_smoother_L6       0.5374213  0.5694871  0.5536232  0.0147105                 24.81%        5
+ 0: apply_smoother_L7       0.5764311  0.6319906  0.5946620  0.0247113                 26.64%        5
+ 0: apply_smoother_L8       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0331020  0.0334027  0.0333140  0.0001259                  1.49%        5
+ 0: prolongate_L_2          0.1855985  0.2108142  0.1956645  0.0121388                  8.77%        5
+ 0: prolongate_L_3          0.2819497  0.3109942  0.2934930  0.0151185                 13.15%        5
+ 0: prolongate_L_4          0.3590191  0.3939683  0.3787753  0.0164357                 16.97%        5
+ 0: prolongate_L_5          0.0461661  0.0468408  0.0464113  0.0002693                  2.08%        5
+ 0: prolongate_L_6          0.0468828  0.0783846  0.0535527  0.0138844                  2.40%        5
+ 0: prolongate_L_7          0.0469795  0.0479016  0.0472239  0.0003851                  2.12%        5
+ 0: prolongate_L_8          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0331020  0.0334027  0.0333140  0.0001259                  1.49%        5
+ 0: restrict_L_2            0.1855985  0.2108142  0.1956645  0.0121388                  8.77%        5
+ 0: restrict_L_3            0.2819497  0.3109942  0.2934930  0.0151185                 13.15%        5
+ 0: restrict_L_4            0.3590191  0.3939683  0.3787753  0.0164357                 16.97%        5
+ 0: restrict_L_5            0.0461661  0.0468408  0.0464113  0.0002693                  2.08%        5
+ 0: restrict_L_6            0.0468828  0.0783846  0.0535527  0.0138844                  2.40%        5
+ 0: restrict_L_7            0.0469795  0.0479016  0.0472239  0.0003851                  2.12%        5
+ 0: restrict_L_8            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 15
+ 0: 
+ 0: timing
+ 0: n_dofs = 2146689
+ 0: n_dofs = 2146689
+ 0: n_dofs = 2146689
+ 0: n_dofs = 2146689
+ 0: n_dofs = 2146689
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.1127508  0.1359013  0.1187896  0.0096818                  4.97%        5
+ 0: setup_coarse_grids      0.0989741  0.1116120  0.1071176  0.0048627                  4.48%        5
+ 0: setup_dofs              0.1162660  0.1416167  0.1306035  0.0123400                  5.46%        5
+ 0: setup_matrix_free       0.1229162  0.1699219  0.1493663  0.0184315                  6.25%        5
+ 0: setup_smoothers         0.0499328  0.0792744  0.0578788  0.0121374                  2.42%        5
+ 0: setup_mg_transfers      0.1608278  0.1989917  0.1711360  0.0161132                  7.16%        5
+ 0: compute_rhs             0.0927309  0.1104599  0.1010353  0.0071981                  4.23%        5
+ 0: solve0                  2.5464735  2.7061354  2.5936245  0.0655572                108.51%        5
+ 0: solve1                  2.2886217  2.4070166  2.3436552  0.0443067                 98.05%        5
+ 0: solve2                  2.2769199  2.3901700  2.3261229  0.0413177                 97.32%        5
+ 0: matvec_double           0.0502007  0.0815569  0.0567368  0.0138768                  2.37%        5
+ 0: prolongate_tot          1.1267483  1.2299091  1.1957527  0.0422045                 50.03%        5
+ 0: restrict_tot            1.0766544  1.1968549  1.1156930  0.0483803                 46.68%        5
+ 0: matvec_L0               0.0026252  0.0026935  0.0026469  0.0000274                  0.11%        5
+ 0: matvec_L1               0.0026790  0.0027162  0.0026935  0.0000152                  0.11%        5
+ 0: matvec_L2               0.0102679  0.0103361  0.0102966  0.0000294                  0.43%        5
+ 0: matvec_L3               0.0334465  0.0606125  0.0391938  0.0119777                  1.64%        5
+ 0: matvec_L4               0.0469282  0.0768062  0.0531453  0.0132333                  2.22%        5
+ 0: matvec_L5               0.0473430  0.0787136  0.0602981  0.0167214                  2.52%        5
+ 0: matvec_L6               0.0484554  0.0638360  0.0518499  0.0067115                  2.17%        5
+ 0: matvec_L7               0.0493932  0.0807243  0.0558575  0.0139053                  2.34%        5
+ 0: matvec_L8               0.0498246  0.0817194  0.0565336  0.0140814                  2.37%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005848  0.0005980  0.0005915  0.0000049                  0.02%        5
+ 0: apply_smoother_L1       0.0630333  0.0632750  0.0631588  0.0000924                  2.64%        5
+ 0: apply_smoother_L2       0.1434777  0.1438534  0.1436835  0.0001784                  6.01%        5
+ 0: apply_smoother_L3       0.3582473  0.3590244  0.3585909  0.0002956                 15.00%        5
+ 0: apply_smoother_L4       0.4955403  0.5282049  0.5087814  0.0175472                 21.29%        5
+ 0: apply_smoother_L5       0.5116227  0.5455323  0.5309055  0.0176471                 22.21%        5
+ 0: apply_smoother_L6       0.5287592  0.6218061  0.5589860  0.0379187                 23.39%        5
+ 0: apply_smoother_L7       0.5393066  0.5711844  0.5641257  0.0138874                 23.60%        5
+ 0: apply_smoother_L8       0.5471422  0.6015391  0.5799987  0.0206534                 24.27%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0152096  0.0169071  0.0155863  0.0007391                  0.65%        5
+ 0: prolongate_L_2          0.0530145  0.0820192  0.0590104  0.0128639                  2.47%        5
+ 0: prolongate_L_3          0.1850433  0.2217894  0.1956586  0.0152901                  8.19%        5
+ 0: prolongate_L_4          0.2844035  0.3362150  0.3057370  0.0204574                 12.79%        5
+ 0: prolongate_L_5          0.3663099  0.4222913  0.3857837  0.0245474                 16.14%        5
+ 0: prolongate_L_6          0.0458550  0.0500590  0.0469839  0.0017624                  1.97%        5
+ 0: prolongate_L_7          0.0472412  0.0708608  0.0528316  0.0102114                  2.21%        5
+ 0: prolongate_L_8          0.0470026  0.0819705  0.0541016  0.0155800                  2.26%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0152096  0.0169071  0.0155863  0.0007391                  0.65%        5
+ 0: restrict_L_2            0.0530145  0.0820192  0.0590104  0.0128639                  2.47%        5
+ 0: restrict_L_3            0.1850433  0.2217894  0.1956586  0.0152901                  8.19%        5
+ 0: restrict_L_4            0.2844035  0.3362150  0.3057370  0.0204574                 12.79%        5
+ 0: restrict_L_5            0.3663099  0.4222913  0.3857837  0.0245474                 16.14%        5
+ 0: restrict_L_6            0.0458550  0.0500590  0.0469839  0.0017624                  1.97%        5
+ 0: restrict_L_7            0.0472412  0.0708608  0.0528316  0.0102114                  2.21%        5
+ 0: restrict_L_8            0.0470026  0.0819705  0.0541016  0.0155800                  2.26%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 16
+ 0: 
+ 0: timing
+ 0: n_dofs = 4276737
+ 0: n_dofs = 4276737
+ 0: n_dofs = 4276737
+ 0: n_dofs = 4276737
+ 0: n_dofs = 4276737
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.1527452  0.1831067  0.1676210  0.0118423                  6.64%        5
+ 0: setup_coarse_grids      0.1196796  0.1506979  0.1318527  0.0118708                  5.23%        5
+ 0: setup_dofs              0.1255885  0.1664960  0.1460599  0.0168714                  5.79%        5
+ 0: setup_matrix_free       0.1587910  0.1969763  0.1693894  0.0157215                  6.71%        5
+ 0: setup_smoothers         0.0638054  0.0743630  0.0711961  0.0042286                  2.82%        5
+ 0: setup_mg_transfers      0.1914888  0.2191001  0.2032849  0.0117460                  8.06%        5
+ 0: compute_rhs             0.1126818  0.1523301  0.1302247  0.0161409                  5.16%        5
+ 0: solve0                  2.6816924  2.7675739  2.7258014  0.0325987                108.03%        5
+ 0: solve1                  2.4630920  2.5830123  2.5424417  0.0492650                100.76%        5
+ 0: solve2                  2.4273300  2.5232413  2.4737688  0.0412513                 98.04%        5
+ 0: matvec_double           0.0527964  0.0849166  0.0598492  0.0140432                  2.37%        5
+ 0: prolongate_tot          1.3725690  1.4252596  1.4114321  0.0221425                 55.94%        5
+ 0: restrict_tot            1.3759796  1.4581488  1.4049500  0.0326121                 55.68%        5
+ 0: matvec_L0               0.0026447  0.0026879  0.0026694  0.0000157                  0.11%        5
+ 0: matvec_L1               0.0026750  0.0027121  0.0026907  0.0000182                  0.11%        5
+ 0: matvec_L2               0.0166428  0.0167491  0.0166898  0.0000448                  0.66%        5
+ 0: matvec_L3               0.0463211  0.0795600  0.0593926  0.0174469                  2.35%        5
+ 0: matvec_L4               0.0475323  0.0835758  0.0552397  0.0158648                  2.19%        5
+ 0: matvec_L5               0.0474998  0.0497021  0.0484366  0.0010716                  1.92%        5
+ 0: matvec_L6               0.0495688  0.0529865  0.0503469  0.0014789                  2.00%        5
+ 0: matvec_L7               0.0498404  0.0519103  0.0504722  0.0008304                  2.00%        5
+ 0: matvec_L8               0.0522995  0.0530989  0.0527360  0.0003219                  2.09%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005922  0.0006024  0.0005960  0.0000041                  0.02%        5
+ 0: apply_smoother_L1       0.0627761  0.0630912  0.0629352  0.0001166                  2.49%        5
+ 0: apply_smoother_L2       0.2058320  0.2063587  0.2060875  0.0002150                  8.17%        5
+ 0: apply_smoother_L3       0.4893246  0.5585459  0.5101676  0.0303979                 20.22%        5
+ 0: apply_smoother_L4       0.5354716  0.6177954  0.5588502  0.0355383                 22.15%        5
+ 0: apply_smoother_L5       0.5212940  0.6140190  0.5473017  0.0394172                 21.69%        5
+ 0: apply_smoother_L6       0.5364365  0.5996857  0.5731342  0.0250416                 22.71%        5
+ 0: apply_smoother_L7       0.5421059  0.5799691  0.5623309  0.0185055                 22.29%        5
+ 0: apply_smoother_L8       0.5707661  0.6029690  0.5901777  0.0168572                 23.39%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0152308  0.0154942  0.0153497  0.0001078                  0.61%        5
+ 0: prolongate_L_2          0.1873236  0.2148886  0.1935151  0.0119609                  7.67%        5
+ 0: prolongate_L_3          0.2433583  0.2724054  0.2606057  0.0143479                 10.33%        5
+ 0: prolongate_L_4          0.2911351  0.3541796  0.3165348  0.0263758                 12.54%        5
+ 0: prolongate_L_5          0.4336400  0.4900363  0.4587383  0.0242559                 18.18%        5
+ 0: prolongate_L_6          0.0464408  0.0776368  0.0529630  0.0137949                  2.10%        5
+ 0: prolongate_L_7          0.0468294  0.0787200  0.0534464  0.0141312                  2.12%        5
+ 0: prolongate_L_8          0.0473398  0.0788816  0.0537970  0.0140234                  2.13%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0152308  0.0154942  0.0153497  0.0001078                  0.61%        5
+ 0: restrict_L_2            0.1873236  0.2148886  0.1935151  0.0119609                  7.67%        5
+ 0: restrict_L_3            0.2433583  0.2724054  0.2606057  0.0143479                 10.33%        5
+ 0: restrict_L_4            0.2911351  0.3541796  0.3165348  0.0263758                 12.54%        5
+ 0: restrict_L_5            0.4336400  0.4900363  0.4587383  0.0242559                 18.18%        5
+ 0: restrict_L_6            0.0464408  0.0776368  0.0529630  0.0137949                  2.10%        5
+ 0: restrict_L_7            0.0468294  0.0787200  0.0534464  0.0141312                  2.12%        5
+ 0: restrict_L_8            0.0473398  0.0788816  0.0537970  0.0140234                  2.13%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 17
+ 0: 
+ 0: timing
+ 0: n_dofs = 8520321
+ 0: n_dofs = 8520321
+ 0: n_dofs = 8520321
+ 0: n_dofs = 8520321
+ 0: n_dofs = 8520321
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.1389437  0.1703213  0.1516247  0.0128456                  5.19%        5
+ 0: setup_coarse_grids      0.1535918  0.1961865  0.1724638  0.0206426                  5.90%        5
+ 0: setup_dofs              0.1421575  0.1824375  0.1657961  0.0169583                  5.67%        5
+ 0: setup_matrix_free       0.1987076  0.2296674  0.2127340  0.0126491                  7.28%        5
+ 0: setup_smoothers         0.0885926  0.1188756  0.0973434  0.0129071                  3.33%        5
+ 0: setup_mg_transfers      0.2325267  0.2969107  0.2526771  0.0257250                  8.64%        5
+ 0: compute_rhs             0.1332677  0.1478446  0.1392984  0.0057465                  4.76%        5
+ 0: solve0                  3.0433886  3.1228876  3.0843044  0.0351076                105.49%        5
+ 0: solve1                  2.6876369  2.8756955  2.8127640  0.0769325                 96.20%        5
+ 0: solve2                  2.6935880  2.9237520  2.8238856  0.0883976                 96.58%        5
+ 0: matvec_double           0.0557656  0.0567710  0.0562656  0.0004798                  1.92%        5
+ 0: prolongate_tot          1.5067548  1.5945657  1.5437731  0.0362146                 52.80%        5
+ 0: restrict_tot            1.4918449  1.5779335  1.5486831  0.0342324                 52.97%        5
+ 0: matvec_L0               0.0026419  0.0026870  0.0026647  0.0000160                  0.09%        5
+ 0: matvec_L1               0.0071429  0.0072105  0.0071717  0.0000253                  0.25%        5
+ 0: matvec_L2               0.0256526  0.0267113  0.0259213  0.0004451                  0.89%        5
+ 0: matvec_L3               0.0454831  0.0757719  0.0525207  0.0130287                  1.80%        5
+ 0: matvec_L4               0.0484225  0.0804414  0.0552346  0.0140949                  1.89%        5
+ 0: matvec_L5               0.0494054  0.0807578  0.0618373  0.0168548                  2.11%        5
+ 0: matvec_L6               0.0501973  0.0549116  0.0512383  0.0020556                  1.75%        5
+ 0: matvec_L7               0.0510404  0.0535119  0.0518081  0.0009827                  1.77%        5
+ 0: matvec_L8               0.0553272  0.0563102  0.0557081  0.0004001                  1.91%        5
+ 0: matvec_L9               0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005914  0.0006233  0.0006012  0.0000128                  0.02%        5
+ 0: apply_smoother_L1       0.1018187  0.1024952  0.1021630  0.0003041                  3.49%        5
+ 0: apply_smoother_L2       0.2757098  0.2849482  0.2777970  0.0040033                  9.50%        5
+ 0: apply_smoother_L3       0.4919786  0.5550261  0.5114837  0.0281185                 17.49%        5
+ 0: apply_smoother_L4       0.5120463  0.5465062  0.5315090  0.0177796                 18.18%        5
+ 0: apply_smoother_L5       0.5281982  0.6207827  0.5621164  0.0353174                 19.23%        5
+ 0: apply_smoother_L6       0.5764120  0.5777275  0.5770954  0.0005579                 19.74%        5
+ 0: apply_smoother_L7       0.5573412  0.6202063  0.5888213  0.0222277                 20.14%        5
+ 0: apply_smoother_L8       0.6090277  0.6743266  0.6405494  0.0231110                 21.91%        5
+ 0: apply_smoother_L9       0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0418348  0.0424705  0.0420393  0.0002514                  1.44%        5
+ 0: prolongate_L_2          0.1816528  0.2208460  0.2025520  0.0172077                  6.93%        5
+ 0: prolongate_L_3          0.2981978  0.3273521  0.3071702  0.0117349                 10.51%        5
+ 0: prolongate_L_4          0.3469632  0.4241941  0.3802637  0.0306774                 13.01%        5
+ 0: prolongate_L_5          0.4390158  0.4945520  0.4723336  0.0203735                 16.16%        5
+ 0: prolongate_L_6          0.0474162  0.0478206  0.0476157  0.0001469                  1.63%        5
+ 0: prolongate_L_7          0.0473913  0.0483753  0.0480388  0.0003943                  1.64%        5
+ 0: prolongate_L_8          0.0483288  0.0489171  0.0486697  0.0002917                  1.66%        5
+ 0: prolongate_L_9          0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0418348  0.0424705  0.0420393  0.0002514                  1.44%        5
+ 0: restrict_L_2            0.1816528  0.2208460  0.2025520  0.0172077                  6.93%        5
+ 0: restrict_L_3            0.2981978  0.3273521  0.3071702  0.0117349                 10.51%        5
+ 0: restrict_L_4            0.3469632  0.4241941  0.3802637  0.0306774                 13.01%        5
+ 0: restrict_L_5            0.4390158  0.4945520  0.4723336  0.0203735                 16.16%        5
+ 0: restrict_L_6            0.0474162  0.0478206  0.0476157  0.0001469                  1.63%        5
+ 0: restrict_L_7            0.0473913  0.0483753  0.0480388  0.0003943                  1.64%        5
+ 0: restrict_L_8            0.0483288  0.0489171  0.0486697  0.0002917                  1.66%        5
+ 0: restrict_L_9            0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 18
+ 0: 
+ 0: timing
+ 0: n_dofs = 16974593
+ 0: n_dofs = 16974593
+ 0: n_dofs = 16974593
+ 0: n_dofs = 16974593
+ 0: n_dofs = 16974593
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.1680407  0.2122417  0.1879970  0.0188978                  6.25%        5
+ 0: setup_coarse_grids      0.2301332  0.2426070  0.2357872  0.0052739                  7.84%        5
+ 0: setup_dofs              0.1694160  0.2192121  0.1982830  0.0186639                  6.60%        5
+ 0: setup_matrix_free       0.2696361  0.3211346  0.2901624  0.0192945                  9.65%        5
+ 0: setup_smoothers         0.1358737  0.1622084  0.1446785  0.0101879                  4.81%        5
+ 0: setup_mg_transfers      0.3107852  0.3259393  0.3177430  0.0068505                 10.57%        5
+ 0: compute_rhs             0.1771020  0.2302922  0.1980327  0.0234948                  6.59%        5
+ 0: solve0                  3.2664629  3.4216522  3.3537940  0.0681315                111.57%        5
+ 0: solve1                  3.0238188  3.1403003  3.0836783  0.0495477                102.59%        5
+ 0: solve2                  3.0058993  3.1138856  3.0531121  0.0454826                101.57%        5
+ 0: matvec_double           0.0619987  0.0936590  0.0750244  0.0169730                  2.50%        5
+ 0: prolongate_tot          1.6123911  1.6883548  1.6495260  0.0309276                 54.88%        5
+ 0: restrict_tot            1.5859804  1.6782289  1.6358825  0.0355180                 54.42%        5
+ 0: matvec_L0               0.0026443  0.0026606  0.0026499  0.0000063                  0.09%        5
+ 0: matvec_L1               0.0026771  0.0027198  0.0027040  0.0000172                  0.09%        5
+ 0: matvec_L2               0.0103245  0.0104254  0.0103755  0.0000455                  0.35%        5
+ 0: matvec_L3               0.0335728  0.0340282  0.0337437  0.0001736                  1.12%        5
+ 0: matvec_L4               0.0469132  0.0482454  0.0475292  0.0006251                  1.58%        5
+ 0: matvec_L5               0.0474357  0.0794429  0.0542350  0.0140973                  1.80%        5
+ 0: matvec_L6               0.0494462  0.0524075  0.0502600  0.0012171                  1.67%        5
+ 0: matvec_L7               0.0510824  0.0522105  0.0515212  0.0004570                  1.71%        5
+ 0: matvec_L8               0.0545778  0.0604134  0.0560556  0.0025045                  1.86%        5
+ 0: matvec_L9               0.0618511  0.0652602  0.0628530  0.0013654                  2.09%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005902  0.0006133  0.0005977  0.0000095                  0.02%        5
+ 0: apply_smoother_L1       0.0630037  0.0631019  0.0630537  0.0000475                  2.10%        5
+ 0: apply_smoother_L2       0.1427227  0.1748673  0.1494191  0.0142275                  4.97%        5
+ 0: apply_smoother_L3       0.3577694  0.3591541  0.3581052  0.0005909                 11.91%        5
+ 0: apply_smoother_L4       0.4972454  0.5345999  0.5172808  0.0180779                 17.21%        5
+ 0: apply_smoother_L5       0.5129356  0.5772468  0.5379962  0.0263526                 17.90%        5
+ 0: apply_smoother_L6       0.5394213  0.6015182  0.5644675  0.0260396                 18.78%        5
+ 0: apply_smoother_L7       0.5606943  0.6235956  0.5994990  0.0258622                 19.94%        5
+ 0: apply_smoother_L8       0.5989734  0.6927713  0.6382041  0.0414826                 21.23%        5
+ 0: apply_smoother_L9       0.7011419  0.7058437  0.7033840  0.0019585                 23.40%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0152179  0.0472049  0.0217077  0.0142537                  0.72%        5
+ 0: prolongate_L_2          0.0539615  0.0548508  0.0544103  0.0003354                  1.81%        5
+ 0: prolongate_L_3          0.1855056  0.2180914  0.1990089  0.0170471                  6.62%        5
+ 0: prolongate_L_4          0.2884833  0.3218277  0.2979599  0.0137610                  9.91%        5
+ 0: prolongate_L_5          0.3686769  0.4257741  0.3970737  0.0202166                 13.21%        5
+ 0: prolongate_L_6          0.4655724  0.5497680  0.5130962  0.0303552                 17.07%        5
+ 0: prolongate_L_7          0.0464976  0.0694317  0.0518983  0.0098710                  1.73%        5
+ 0: prolongate_L_8          0.0480843  0.0524819  0.0494104  0.0018030                  1.64%        5
+ 0: prolongate_L_9          0.0498010  0.0544021  0.0513171  0.0018555                  1.71%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0152179  0.0472049  0.0217077  0.0142537                  0.72%        5
+ 0: restrict_L_2            0.0539615  0.0548508  0.0544103  0.0003354                  1.81%        5
+ 0: restrict_L_3            0.1855056  0.2180914  0.1990089  0.0170471                  6.62%        5
+ 0: restrict_L_4            0.2884833  0.3218277  0.2979599  0.0137610                  9.91%        5
+ 0: restrict_L_5            0.3686769  0.4257741  0.3970737  0.0202166                 13.21%        5
+ 0: restrict_L_6            0.4655724  0.5497680  0.5130962  0.0303552                 17.07%        5
+ 0: restrict_L_7            0.0464976  0.0694317  0.0518983  0.0098710                  1.73%        5
+ 0: restrict_L_8            0.0480843  0.0524819  0.0494104  0.0018030                  1.64%        5
+ 0: restrict_L_9            0.0498010  0.0544021  0.0513171  0.0018555                  1.71%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 19
+ 0: 
+ 0: timing
+ 0: n_dofs = 33883137
+ 0: n_dofs = 33883137
+ 0: n_dofs = 33883137
+ 0: n_dofs = 33883137
+ 0: n_dofs = 33883137
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.2478096  0.2597529  0.2539841  0.0056861                  7.33%        5
+ 0: setup_coarse_grids      0.3373214  0.3644778  0.3498053  0.0122656                 10.09%        5
+ 0: setup_dofs              0.2331786  0.2918121  0.2736947  0.0240131                  7.89%        5
+ 0: setup_matrix_free       0.3437727  0.3734505  0.3569852  0.0126636                 10.30%        5
+ 0: setup_smoothers         0.2188421  0.2411787  0.2313476  0.0098668                  6.67%        5
+ 0: setup_mg_transfers      0.4070004  0.4732243  0.4415506  0.0240631                 12.74%        5
+ 0: compute_rhs             0.2493177  0.3458948  0.2794054  0.0401115                  8.06%        5
+ 0: solve0                  3.5211177  3.6698839  3.5977214  0.0700828                103.76%        5
+ 0: solve1                  3.3832484  3.4829346  3.4490849  0.0403181                 99.48%        5
+ 0: solve2                  3.3049832  3.4671822  3.3744055  0.0640433                 97.32%        5
+ 0: matvec_double           0.0723628  0.1033443  0.0789617  0.0136461                  2.28%        5
+ 0: prolongate_tot          1.8662778  1.9464372  1.9150054  0.0303605                 55.23%        5
+ 0: restrict_tot            1.7664214  1.9353460  1.8551006  0.0646702                 53.50%        5
+ 0: matvec_L0               0.0026545  0.0026767  0.0026673  0.0000085                  0.08%        5
+ 0: matvec_L1               0.0026773  0.0027198  0.0027005  0.0000160                  0.08%        5
+ 0: matvec_L2               0.0166868  0.0169933  0.0168395  0.0001107                  0.49%        5
+ 0: matvec_L3               0.0465609  0.0480597  0.0470169  0.0006017                  1.36%        5
+ 0: matvec_L4               0.0466237  0.0787477  0.0539099  0.0139400                  1.55%        5
+ 0: matvec_L5               0.0479780  0.0491646  0.0483731  0.0004582                  1.40%        5
+ 0: matvec_L6               0.0509027  0.0818303  0.0572818  0.0137243                  1.65%        5
+ 0: matvec_L7               0.0552308  0.0557218  0.0554398  0.0002019                  1.60%        5
+ 0: matvec_L8               0.0624644  0.0638389  0.0630339  0.0005353                  1.82%        5
+ 0: matvec_L9               0.0721071  0.1034583  0.0787717  0.0138069                  2.27%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005875  0.0006072  0.0005933  0.0000084                  0.02%        5
+ 0: apply_smoother_L1       0.0626475  0.0629960  0.0627918  0.0001460                  1.81%        5
+ 0: apply_smoother_L2       0.2054615  0.2062106  0.2059912  0.0003179                  5.94%        5
+ 0: apply_smoother_L3       0.4899006  0.5548207  0.5136256  0.0264649                 14.81%        5
+ 0: apply_smoother_L4       0.5038606  0.5700409  0.5236540  0.0294005                 15.10%        5
+ 0: apply_smoother_L5       0.5205587  0.5986859  0.5492638  0.0321016                 15.84%        5
+ 0: apply_smoother_L6       0.5586953  0.6241519  0.5862490  0.0278717                 16.91%        5
+ 0: apply_smoother_L7       0.5964350  0.6913086  0.6286849  0.0384461                 18.13%        5
+ 0: apply_smoother_L8       0.7029326  0.7356979  0.7098808  0.0144447                 20.47%        5
+ 0: apply_smoother_L9       0.7388434  0.9030114  0.8165295  0.0583810                 23.55%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0154711  0.0177608  0.0160257  0.0009754                  0.46%        5
+ 0: prolongate_L_2          0.1792424  0.2005179  0.1855962  0.0086252                  5.35%        5
+ 0: prolongate_L_3          0.2559648  0.2986803  0.2663048  0.0181799                  7.68%        5
+ 0: prolongate_L_4          0.2914083  0.3234054  0.3016544  0.0125160                  8.70%        5
+ 0: prolongate_L_5          0.4249473  0.4806253  0.4488181  0.0237801                 12.94%        5
+ 0: prolongate_L_6          0.4293943  0.5272921  0.4836375  0.0412749                 13.95%        5
+ 0: prolongate_L_7          0.0476252  0.0481030  0.0477943  0.0002170                  1.38%        5
+ 0: prolongate_L_8          0.0489031  0.0494554  0.0491558  0.0002150                  1.42%        5
+ 0: prolongate_L_9          0.0540382  0.0620084  0.0561138  0.0033170                  1.62%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0154711  0.0177608  0.0160257  0.0009754                  0.46%        5
+ 0: restrict_L_2            0.1792424  0.2005179  0.1855962  0.0086252                  5.35%        5
+ 0: restrict_L_3            0.2559648  0.2986803  0.2663048  0.0181799                  7.68%        5
+ 0: restrict_L_4            0.2914083  0.3234054  0.3016544  0.0125160                  8.70%        5
+ 0: restrict_L_5            0.4249473  0.4806253  0.4488181  0.0237801                 12.94%        5
+ 0: restrict_L_6            0.4293943  0.5272921  0.4836375  0.0412749                 13.95%        5
+ 0: restrict_L_7            0.0476252  0.0481030  0.0477943  0.0002170                  1.38%        5
+ 0: restrict_L_8            0.0489031  0.0494554  0.0491558  0.0002150                  1.42%        5
+ 0: restrict_L_9            0.0540382  0.0620084  0.0561138  0.0033170                  1.62%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 20
+ 0: 
+ 0: timing
+ 0: n_dofs = 67634433
+ 0: n_dofs = 67634433
+ 0: n_dofs = 67634433
+ 0: n_dofs = 67634433
+ 0: n_dofs = 67634433
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.2753899  0.3028527  0.2873627  0.0102343                  7.37%        5
+ 0: setup_coarse_grids      0.5240538  0.5501149  0.5358568  0.0124830                 13.74%        5
+ 0: setup_dofs              0.3529146  0.4285090  0.3795394  0.0288911                  9.73%        5
+ 0: setup_matrix_free       0.4903837  0.5079940  0.5017441  0.0070093                 12.86%        5
+ 0: setup_smoothers         0.3566312  0.4034796  0.3738318  0.0191333                  9.58%        5
+ 0: setup_mg_transfers      0.5974297  0.6397475  0.6197336  0.0154383                 15.89%        5
+ 0: compute_rhs             0.3921562  0.4304131  0.4125738  0.0138651                 10.58%        5
+ 0: solve0                  4.0867205  4.2882956  4.1965237  0.0862555                107.60%        5
+ 0: solve1                  3.7811132  3.9783361  3.8819090  0.0708537                 99.53%        5
+ 0: solve2                  3.8592110  3.9066752  3.8904936  0.0183652                 99.75%        5
+ 0: matvec_double           0.0935253  0.1031559  0.0959597  0.0040555                  2.46%        5
+ 0: prolongate_tot          1.9366386  2.0285454  1.9718337  0.0396233                 50.56%        5
+ 0: restrict_tot            1.9532906  2.1439463  2.0175968  0.0758374                 51.73%        5
+ 0: matvec_L0               0.0026360  0.0026740  0.0026528  0.0000167                  0.07%        5
+ 0: matvec_L1               0.0066520  0.0070101  0.0068356  0.0001388                  0.18%        5
+ 0: matvec_L2               0.0255170  0.0258772  0.0256470  0.0001430                  0.66%        5
+ 0: matvec_L3               0.0458135  0.0803819  0.0562935  0.0153269                  1.44%        5
+ 0: matvec_L4               0.0474330  0.0490302  0.0481356  0.0006926                  1.23%        5
+ 0: matvec_L5               0.0494011  0.0505245  0.0499015  0.0004629                  1.28%        5
+ 0: matvec_L6               0.0559157  0.0575752  0.0566956  0.0007710                  1.45%        5
+ 0: matvec_L7               0.0638306  0.0984705  0.0709356  0.0153938                  1.82%        5
+ 0: matvec_L8               0.0725827  0.1087947  0.0872966  0.0182409                  2.24%        5
+ 0: matvec_L9               0.0814868  0.1127807  0.0880673  0.0138203                  2.26%        5
+ 0: matvec_L10              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005893  0.0006172  0.0006017  0.0000117                  0.02%        5
+ 0: apply_smoother_L1       0.1015491  0.1021057  0.1018022  0.0002437                  2.61%        5
+ 0: apply_smoother_L2       0.2752043  0.2762588  0.2756634  0.0004714                  7.07%        5
+ 0: apply_smoother_L3       0.4926206  0.5559044  0.5209597  0.0234579                 13.36%        5
+ 0: apply_smoother_L4       0.5133007  0.5435807  0.5310090  0.0160298                 13.61%        5
+ 0: apply_smoother_L5       0.5327670  0.5913094  0.5614795  0.0207165                 14.40%        5
+ 0: apply_smoother_L6       0.5951392  0.6582439  0.6274287  0.0273421                 16.09%        5
+ 0: apply_smoother_L7       0.7051981  0.7415141  0.7190851  0.0187816                 18.44%        5
+ 0: apply_smoother_L8       0.7440523  0.8393343  0.8009862  0.0393968                 20.54%        5
+ 0: apply_smoother_L9       0.8839121  0.9497859  0.9285660  0.0283655                 23.81%        5
+ 0: apply_smoother_L10      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0385913  0.0387579  0.0386709  0.0000744                  0.99%        5
+ 0: prolongate_L_2          0.1809613  0.2083302  0.1939453  0.0129572                  4.97%        5
+ 0: prolongate_L_3          0.2777226  0.3141256  0.2860313  0.0157639                  7.33%        5
+ 0: prolongate_L_4          0.3616671  0.4008194  0.3828361  0.0174502                  9.82%        5
+ 0: prolongate_L_5          0.4339237  0.5927895  0.4812554  0.0657915                 12.34%        5
+ 0: prolongate_L_6          0.4236385  0.4877159  0.4448520  0.0278103                 11.41%        5
+ 0: prolongate_L_7          0.0488388  0.0808314  0.0556259  0.0140953                  1.43%        5
+ 0: prolongate_L_8          0.0533801  0.0845828  0.0602726  0.0136007                  1.55%        5
+ 0: prolongate_L_9          0.0605130  0.0958451  0.0741072  0.0178487                  1.90%        5
+ 0: prolongate_L_10         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0385913  0.0387579  0.0386709  0.0000744                  0.99%        5
+ 0: restrict_L_2            0.1809613  0.2083302  0.1939453  0.0129572                  4.97%        5
+ 0: restrict_L_3            0.2777226  0.3141256  0.2860313  0.0157639                  7.33%        5
+ 0: restrict_L_4            0.3616671  0.4008194  0.3828361  0.0174502                  9.82%        5
+ 0: restrict_L_5            0.4339237  0.5927895  0.4812554  0.0657915                 12.34%        5
+ 0: restrict_L_6            0.4236385  0.4877159  0.4448520  0.0278103                 11.41%        5
+ 0: restrict_L_7            0.0488388  0.0808314  0.0556259  0.0140953                  1.43%        5
+ 0: restrict_L_8            0.0533801  0.0845828  0.0602726  0.0136007                  1.55%        5
+ 0: restrict_L_9            0.0605130  0.0958451  0.0741072  0.0178487                  1.90%        5
+ 0: restrict_L_10           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 21
+ 0: 
+ 0: timing
+ 0: n_dofs = 135005697
+ 0: n_dofs = 135005697
+ 0: n_dofs = 135005697
+ 0: n_dofs = 135005697
+ 0: n_dofs = 135005697
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.3934584  0.4262812  0.4054698  0.0134940                  9.25%        5
+ 0: setup_coarse_grids      0.9271159  1.0067949  0.9590643  0.0333970                 21.89%        5
+ 0: setup_dofs              0.5240393  0.5829143  0.5633301  0.0233483                 12.86%        5
+ 0: setup_matrix_free       0.7910536  0.8180937  0.8068278  0.0115187                 18.41%        5
+ 0: setup_smoothers         0.6112327  0.6421593  0.6256131  0.0144276                 14.28%        5
+ 0: setup_mg_transfers      0.9084349  1.0109230  0.9552665  0.0398327                 21.80%        5
+ 0: compute_rhs             0.6942521  0.7479210  0.7251543  0.0212180                 16.55%        5
+ 0: solve0                  4.6143349  4.7680123  4.6932545  0.0614781                107.11%        5
+ 0: solve1                  4.3581993  4.5083125  4.4578458  0.0583480                101.74%        5
+ 0: solve2                  4.3815218  4.4843201  4.4142518  0.0409398                100.75%        5
+ 0: matvec_double           0.1333531  0.1587127  0.1413071  0.0104920                  3.23%        5
+ 0: prolongate_tot          2.0688848  2.1176477  2.0914695  0.0186618                 47.73%        5
+ 0: restrict_tot            1.9193281  2.0088059  1.9710363  0.0325151                 44.99%        5
+ 0: matvec_L0               0.0025269  0.0026712  0.0026285  0.0000590                  0.06%        5
+ 0: matvec_L1               0.0025513  0.0027088  0.0026686  0.0000663                  0.06%        5
+ 0: matvec_L2               0.0099553  0.0105356  0.0103479  0.0002301                  0.24%        5
+ 0: matvec_L3               0.0336861  0.0349247  0.0344134  0.0004517                  0.79%        5
+ 0: matvec_L4               0.0466071  0.0780880  0.0530762  0.0139828                  1.21%        5
+ 0: matvec_L5               0.0460983  0.0773321  0.0530820  0.0135675                  1.21%        5
+ 0: matvec_L6               0.0501977  0.0504554  0.0503437  0.0001313                  1.15%        5
+ 0: matvec_L7               0.0653752  0.0967949  0.0779517  0.0169350                  1.78%        5
+ 0: matvec_L8               0.0743808  0.0764900  0.0751462  0.0008561                  1.72%        5
+ 0: matvec_L9               0.0859099  0.1199223  0.0934868  0.0148284                  2.13%        5
+ 0: matvec_L10              0.1148117  0.1172588  0.1156676  0.0009886                  2.64%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005687  0.0006053  0.0005918  0.0000145                  0.01%        5
+ 0: apply_smoother_L1       0.0599708  0.0630765  0.0620391  0.0012465                  1.42%        5
+ 0: apply_smoother_L2       0.1356647  0.1432420  0.1407986  0.0030997                  3.21%        5
+ 0: apply_smoother_L3       0.3432738  0.3577734  0.3534283  0.0060227                  8.07%        5
+ 0: apply_smoother_L4       0.4854394  0.5090113  0.4943190  0.0093432                 11.28%        5
+ 0: apply_smoother_L5       0.4987839  0.5408343  0.5243983  0.0191574                 11.97%        5
+ 0: apply_smoother_L6       0.5392435  0.6324361  0.5771398  0.0408034                 13.17%        5
+ 0: apply_smoother_L7       0.6841234  0.7814662  0.7231579  0.0418610                 16.50%        5
+ 0: apply_smoother_L8       0.7466633  0.8446674  0.8037005  0.0357809                 18.34%        5
+ 0: apply_smoother_L9       0.9893689  1.0705507  1.0126652  0.0349971                 23.11%        5
+ 0: apply_smoother_L10      1.3147038  1.3741925  1.3403139  0.0250645                 30.59%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0151524  0.0152652  0.0152101  0.0000523                  0.35%        5
+ 0: prolongate_L_2          0.0455924  0.0463508  0.0458856  0.0002859                  1.05%        5
+ 0: prolongate_L_3          0.1756964  0.2086497  0.1876801  0.0149135                  4.28%        5
+ 0: prolongate_L_4          0.2840205  0.3318545  0.2994825  0.0197174                  6.84%        5
+ 0: prolongate_L_5          0.3621350  0.3915708  0.3743794  0.0152775                  8.54%        5
+ 0: prolongate_L_6          0.4229347  0.4732975  0.4459092  0.0221081                 10.18%        5
+ 0: prolongate_L_7          0.4186026  0.4264731  0.4215788  0.0029256                  9.62%        5
+ 0: prolongate_L_8          0.0515434  0.0538936  0.0521775  0.0009794                  1.19%        5
+ 0: prolongate_L_9          0.0582355  0.0592694  0.0589253  0.0004320                  1.34%        5
+ 0: prolongate_L_10         0.0696645  0.0701072  0.0698077  0.0001804                  1.59%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0151524  0.0152652  0.0152101  0.0000523                  0.35%        5
+ 0: restrict_L_2            0.0455924  0.0463508  0.0458856  0.0002859                  1.05%        5
+ 0: restrict_L_3            0.1756964  0.2086497  0.1876801  0.0149135                  4.28%        5
+ 0: restrict_L_4            0.2840205  0.3318545  0.2994825  0.0197174                  6.84%        5
+ 0: restrict_L_5            0.3621350  0.3915708  0.3743794  0.0152775                  8.54%        5
+ 0: restrict_L_6            0.4229347  0.4732975  0.4459092  0.0221081                 10.18%        5
+ 0: restrict_L_7            0.4186026  0.4264731  0.4215788  0.0029256                  9.62%        5
+ 0: restrict_L_8            0.0515434  0.0538936  0.0521775  0.0009794                  1.19%        5
+ 0: restrict_L_9            0.0582355  0.0592694  0.0589253  0.0004320                  1.34%        5
+ 0: restrict_L_10           0.0696645  0.0701072  0.0698077  0.0001804                  1.59%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 22
+ 0: 
+ 0: timing
+ 0: n_dofs = 269748225
+ 0: n_dofs = 269748225
+ 0: n_dofs = 269748225
+ 0: n_dofs = 269748225
+ 0: n_dofs = 269748225
+ 0: 
+ 0: name                          min        max       mean    std_dev        mean / solver   samples
+ 0: setup_grid              0.6537047  0.6870279  0.6674728  0.0145942                 13.21%        5
+ 0: setup_coarse_grids      1.6430530  1.6979346  1.6777254  0.0214926                 33.20%        5
+ 0: setup_dofs              0.8591539  0.9143943  0.8883048  0.0204518                 17.58%        5
+ 0: setup_matrix_free       1.3314268  1.3706985  1.3467298  0.0155734                 26.65%        5
+ 0: setup_smoothers         1.1035818  1.1274453  1.1126330  0.0092095                 22.02%        5
+ 0: setup_mg_transfers      1.5206216  1.6060066  1.5462717  0.0350366                 30.60%        5
+ 0: compute_rhs             1.2697462  1.3044000  1.2925102  0.0143706                 25.58%        5
+ 0: solve0                  5.5163396  5.6849863  5.6097435  0.0720419                111.02%        5
+ 0: solve1                  5.1326791  5.3243713  5.2386653  0.0778960                103.67%        5
+ 0: solve2                  5.0530163  5.2483816  5.1509664  0.0895528                101.94%        5
+ 0: matvec_double           0.2076320  0.2382501  0.2206722  0.0157961                  4.37%        5
+ 0: prolongate_tot          2.2954738  2.4565537  2.3942780  0.0615206                 47.38%        5
+ 0: restrict_tot            2.2773143  2.4604727  2.3542507  0.0759422                 46.59%        5
+ 0: matvec_L0               0.0024156  0.0026388  0.0024693  0.0000952                  0.05%        5
+ 0: matvec_L1               0.0024429  0.0026877  0.0025010  0.0001048                  0.05%        5
+ 0: matvec_L2               0.0154272  0.0160837  0.0155976  0.0002752                  0.31%        5
+ 0: matvec_L3               0.0455900  0.0766566  0.0588312  0.0134458                  1.16%        5
+ 0: matvec_L4               0.0431584  0.0765442  0.0509704  0.0143363                  1.01%        5
+ 0: matvec_L5               0.0448290  0.0761216  0.0516747  0.0136812                  1.02%        5
+ 0: matvec_L6               0.0525598  0.0541361  0.0532481  0.0007706                  1.05%        5
+ 0: matvec_L7               0.0845656  0.0850711  0.0847851  0.0001861                  1.68%        5
+ 0: matvec_L8               0.0919168  0.0931439  0.0925269  0.0004666                  1.83%        5
+ 0: matvec_L9               0.1248190  0.1403765  0.1282579  0.0067875                  2.54%        5
+ 0: matvec_L10              0.1766256  0.2073277  0.1830763  0.0135594                  3.62%        5
+ 0: matvec_L11              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L12              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L13              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: matvec_L14              0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L0       0.0005541  0.0006057  0.0005687  0.0000218                  0.01%        5
+ 0: apply_smoother_L1       0.0582197  0.0583712  0.0583095  0.0000587                  1.15%        5
+ 0: apply_smoother_L2       0.1914052  0.1956782  0.1925080  0.0017918                  3.81%        5
+ 0: apply_smoother_L3       0.4560229  0.5554057  0.5016241  0.0373635                  9.93%        5
+ 0: apply_smoother_L4       0.4689169  0.5075512  0.4849304  0.0202976                  9.60%        5
+ 0: apply_smoother_L5       0.5020083  0.5533732  0.5288114  0.0234843                 10.47%        5
+ 0: apply_smoother_L6       0.5617479  0.6221324  0.5917522  0.0213718                 11.71%        5
+ 0: apply_smoother_L7       0.8049889  0.9341683  0.8698728  0.0457937                 17.21%        5
+ 0: apply_smoother_L8       1.0013673  1.0654480  1.0270162  0.0267272                 20.32%        5
+ 0: apply_smoother_L9       1.3365448  1.4528262  1.3956734  0.0411667                 27.62%        5
+ 0: apply_smoother_L10      1.9992190  2.1487607  2.0623701  0.0635613                 40.81%        5
+ 0: apply_smoother_L11      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L12      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L13      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: apply_smoother_L14      0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_1          0.0153821  0.0156056  0.0155067  0.0000974                  0.31%        5
+ 0: prolongate_L_2          0.1829419  0.2371787  0.2060890  0.0213615                  4.08%        5
+ 0: prolongate_L_3          0.2485568  0.2613444  0.2549125  0.0047893                  5.04%        5
+ 0: prolongate_L_4          0.2829610  0.2873134  0.2849014  0.0018469                  5.64%        5
+ 0: prolongate_L_5          0.4252411  0.5446617  0.4626246  0.0525496                  9.16%        5
+ 0: prolongate_L_6          0.4261274  0.4728946  0.4474322  0.0204659                  8.85%        5
+ 0: prolongate_L_7          0.4257637  0.4595243  0.4418283  0.0156551                  8.74%        5
+ 0: prolongate_L_8          0.0596938  0.0903628  0.0672413  0.0130249                  1.33%        5
+ 0: prolongate_L_9          0.0680963  0.1029254  0.0766606  0.0147982                  1.52%        5
+ 0: prolongate_L_10         0.0894753  0.1186313  0.0970542  0.0121381                  1.92%        5
+ 0: prolongate_L_11         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_12         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_13         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: prolongate_L_14         0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_1            0.0153821  0.0156056  0.0155067  0.0000974                  0.31%        5
+ 0: restrict_L_2            0.1829419  0.2371787  0.2060890  0.0213615                  4.08%        5
+ 0: restrict_L_3            0.2485568  0.2613444  0.2549125  0.0047893                  5.04%        5
+ 0: restrict_L_4            0.2829610  0.2873134  0.2849014  0.0018469                  5.64%        5
+ 0: restrict_L_5            0.4252411  0.5446617  0.4626246  0.0525496                  9.16%        5
+ 0: restrict_L_6            0.4261274  0.4728946  0.4474322  0.0204659                  8.85%        5
+ 0: restrict_L_7            0.4257637  0.4595243  0.4418283  0.0156551                  8.74%        5
+ 0: restrict_L_8            0.0596938  0.0903628  0.0672413  0.0130249                  1.33%        5
+ 0: restrict_L_9            0.0680963  0.1029254  0.0766606  0.0147982                  1.52%        5
+ 0: restrict_L_10           0.0894753  0.1186313  0.0970542  0.0121381                  1.92%        5
+ 0: restrict_L_11           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_12           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_13           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: restrict_L_14           0.0000000  0.0000000  0.0000000  0.0000000                  0.00%        5
+ 0: 
+ 0: 
+ 0: Refinement cycles: 23
+ 0: 
+ 0: timing
+ 0: n_dofs = 538970625
+ 0: n_dofs = 538970625
+ 0: n_dofs = 538970625
+ 7: terminate called after throwing an instance of 'std::runtime_error'
+ 7:   what():  Kokkos ERROR: Cuda memory space failed to allocate 73.4 MiB (label="memoryspace data").
+ 7: [jwb0263:2543012] *** Process received signal ***
+ 7: [jwb0263:2543012] Signal: Aborted (6)
+ 7: [jwb0263:2543012] Signal code:  (-6)
+ 7: [jwb0263:2543012] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14fd7fbd2bf0]
+ 7: [jwb0263:2543012] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14fd7fc1fedc]
+ 7: [jwb0263:2543012] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14fd7fbd2b46]
+ 7: [jwb0263:2543012] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14fd7fbbc833]
+ 7: [jwb0263:2543012] [ 4] /p/software/default/stages/2026/software/GCCcore/14.3.0/lib64/libstdc++.so.6(+0xadc3d)[0x14fd7ff52c3d]
+ 7: [jwb0263:2543012] [ 5] /p/software/default/stages/2026/software/GCCcore/14.3.0/lib64/libstdc++.so.6(+0xbf14a)[0x14fd7ff6414a]
+ 7: [jwb0263:2543012] [ 6] /p/software/default/stages/2026/software/GCCcore/14.3.0/lib64/libstdc++.so.6(_ZSt10unexpectedv+0x0)[0x14fd7ff527e9]
+ 7: [jwb0263:2543012] [ 7] /p/software/default/stages/2026/software/GCCcore/14.3.0/lib64/libstdc++.so.6(+0xbf3c7)[0x14fd7ff643c7]
+ 7: [jwb0263:2543012] [ 8] ./timing_ph_mg(_ZN6Kokkos4Impl15throw_bad_allocESt17basic_string_viewIcSt11char_traitsIcEEmS4_+0x115)[0x617635]
+ 7: [jwb0263:2543012] [ 9] ./timing_ph_mg(_ZNK6Kokkos9CudaSpace13impl_allocateERKNS_4CudaEPKcmm28Kokkos_Profiling_Sp
+ 7: aceHandle+0x22d)[0x62453d]
+ 7: [jwb0263:2543012] [10] ./timing_ph_mg(_ZNK6Kokkos9CudaSpace8allocateERKNS_4CudaEPKcmm+0x6d)[0x6245bd]
+ 7: [jwb0263:2543012] [11] 
+ 7: /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(_ZN6Kokkos11impl_resizeIPdJNS_9CudaSpaceEEJNS_4Impl21WithoutInitializing_tEEEENSt9enable_ifIXoo9is_same_vINS_4ViewIT_JDpT0_EE12array_layoutENS_10LayoutLeftEE9is_same_vISB_NS_11LayoutRightEEEvE4typeERKNS3_12ViewCtorPropIJDpT1_EEERSA_mmmmmmmm+0x406)[0x14fd85909ca6]
+ 7: [jwb0263:2543012] [12] 
+ 7: /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(_ZN6dealii13LinearAlgebra11distributed6VectorIdNS_11MemorySpace7DefaultEE10resize_valEmP19ompi_communicator_t+0x119)[0x14fd8590b609]
+ 7: [jwb0263:2543012] [13] 
+ 7: /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(_ZN6dealii13LinearAlgebra11distributed6VectorIdNS_11MemorySpace7DefaultEE6reinitIdEEvRKNS2_IT_S4_EEb+0x8a)[0x14fd8591120a]
+ 7: [jwb0263:2543012] [14] ./timing_ph_mg(_ZNK6dealii8Portable15VCycleMultigridILi3EdNS0_14MGTransferBaseILi3EdEEE6smoothERNS_13LinearAlgebra11distributed6VectorIdNS_11MemorySpace7DefaultEEERKSA_j+0x57)[0x5f6ef7]
+ 7: [jwb0263:2543012] [15] ./timing_ph_mg(_ZNK6dealii8Portable15VCycleMultigridILi3EdNS0_14MGTransferBaseILi3EdEEE7v_cycleERNS_13LinearAlgebra11distributed6VectorIdNS_11MemorySpace7DefaultEEERKSA_j+0x64)[0x5f7004]
+ 7: [jwb0263:2543012] [16] ./timing_ph_mg(_ZN6dealii8SolverCGINS_13LinearAlgebra11distributed6VectorIdNS_11MemorySpace7DefaultEEEE5solveINS_8Portable19LaplaceOperatorBaseILi3EdEENS9_15VCycleMultigridILi3EdNS9_14MGTransferBaseILi3EdEEEEEEvRKT_RS6_RKS6_RKT0_+0x48a)[0x5f773a]
+ 7: [jwb0263:2543012] [17] ./timing_ph_mg(_ZN14LaplaceProblemILi3ELi4EE5solveEv+0x12e)[0x5f84ee]
+ 7: [jwb0263:2543012] [18] ./timing_ph_mg(_ZN14LaplaceProblemILi3ELi4EE3runEv+0
+ 7: x689)[0x5f8cf9]
+ 7: [jwb0263:2543012] [19] ./timing_ph_mg(main+0x427)[0x4bf327]
+ 7: [jwb0263:2543012] [20] /usr/lib64/libc.so.6(+0x295d0)[0x14fd7fbbd5d0]
+ 7: [jwb0263:2543012] [21] /usr/lib64/libc.so.6(__libc_start_main+0x80)[0x14fd7fbbd680]
+ 7: [jwb0263:2543012] [22] ./timing_ph_mg(_start+0x25)[0x4c21c5]
+ 7: [jwb0263:2543012] *** End of error message ***
+srun: error: jwb0832: tasks 52-55: Terminated
+srun: error: jwb0263: tasks 4-6: Terminated
+srun: error: jwb0263: task 7: Aborted (core dumped)
+srun: error: jwb0637: tasks 36-39: Terminated
+srun: error: jwb0360: tasks 8-11: Terminated
+srun: error: jwb1089: tasks 60-63: Terminated
+srun: error: jwb0427: tasks 16-19: Terminated
+srun: error: jwb0547: tasks 24-27: Terminated
+srun: error: jwb0830: tasks 44-47: Terminated
+srun: error: jwb0609: tasks 28-31: Terminated
+srun: error: jwb0997: tasks 56-59: Terminated
+srun: error: jwb0361: tasks 12-15: Terminated
+srun: error: jwb0537: tasks 20-23: Terminated
+srun: error: jwb0831: tasks 48-51: Terminated
+srun: error: jwb0612: tasks 32-35: Terminated
+srun: error: jwb0639: tasks 40-43: Terminated
+srun: error: jwb0255: tasks 0-3: Terminated
+srun: Force Terminated StepId=13109306.0
