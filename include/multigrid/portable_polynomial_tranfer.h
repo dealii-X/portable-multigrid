@@ -63,7 +63,7 @@ namespace Portable
       SharedView &values_fine;
 
       /**
-       * Memory for temporary arrays required by evaluation and integration.
+       * Memory for temporary arrays required by kernel evaluation.
        */
       SharedView &scratch_pad;
     };
@@ -542,8 +542,8 @@ namespace Portable
     class CellRestrictionKernel : public EnableObserverPointer
     {
     public:
-      using DistributedVectorType =
-        LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
+      // using DistributedVectorType =
+      //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
 
       using TeamHandle = Kokkos::TeamPolicy<
         MemorySpace::Default::kokkos_space::execution_space>::member_type;
