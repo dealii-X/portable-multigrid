@@ -62,7 +62,7 @@ namespace Portable
   class OperatorDispatchFactory
   {
   public:
-    static constexpr unsigned int max_degree = 9;
+    static constexpr unsigned int max_degree = 4;
 
     template <typename OperatorRunner>
     static bool
