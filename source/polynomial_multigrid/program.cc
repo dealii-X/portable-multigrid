@@ -369,20 +369,23 @@ void
 LaplaceProblem<dim, fe_degree, mg_levels>::output_results(
   const unsigned int cycle) const
 {
+
+  (void) cycle;
+  
   auto &dof_handler = *dof_handler_collection.back();
   auto &fe          = fe_collection.back();
 
-  DataOut<dim> data_out;
+  // DataOut<dim> data_out;
 
-  data_out.attach_dof_handler(dof_handler);
-  data_out.add_data_vector(ghost_solution_host, "solution");
-  data_out.build_patches();
+  // data_out.attach_dof_handler(dof_handler);
+  // data_out.add_data_vector(ghost_solution_host, "solution");
+  // data_out.build_patches();
 
-  DataOutBase::VtkFlags flags;
-  flags.compression_level = DataOutBase::CompressionLevel::best_speed;
-  data_out.set_flags(flags);
-  data_out.write_vtu_with_pvtu_record(
-    "./", "solution", cycle, mpi_communicator, 2);
+  // DataOutBase::VtkFlags flags;
+  // flags.compression_level = DataOutBase::CompressionLevel::best_speed;
+  // data_out.set_flags(flags);
+  // data_out.write_vtu_with_pvtu_record(
+  //   "./", "solution", cycle, mpi_communicator, 2);
 
   Vector<float> cellwise_norm(triangulation.n_active_cells());
   VectorTools::integrate_difference(dof_handler,
@@ -437,8 +440,8 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
       const int dim       = 2;
-      const int fe_degree = 7;
-      const int mg_levels = 7;
+      const int fe_degree = 4;
+      const int mg_levels = 4;
 
       const bool overlap_communication_computation = false;
 
@@ -475,3 +478,4 @@ main(int argc, char *argv[])
 
   return 0;
 }
+

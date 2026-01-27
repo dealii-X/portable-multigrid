@@ -83,8 +83,6 @@ private:
 
   std::set<types::boundary_id> dirichlet_boundary_ids;
 
-  // std::unique_ptr<Portable::LaplaceOperator<dim, fe_degree, double>>
-  //   system_matrix;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
     ghost_solution_host;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
@@ -168,8 +166,6 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem(
   bool overlap_communication_computation)
   : mpi_communicator(MPI_COMM_WORLD)
   , triangulation(mpi_communicator)
-  // , Triangulation<dim>::limit_level_difference_at_vertices,
-  // parallel::distributed::Triangulation<dim>::construct_multigrid_hierarchy)
   , fe(fe_degree)
   , dof_handler(triangulation)
   , dirichlet_boundary_ids({{0}})
@@ -181,14 +177,10 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::create_coarse_triangulations()
 {
-  // coarse_triangulations =
-  //   MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
-  //     triangulation,
-  //     RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
-
   coarse_triangulations =
     MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
-      triangulation);
+      triangulation,
+      RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
 }
 
 
@@ -202,13 +194,10 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
 
-
-
   Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
   std::map<types::boundary_id, const Function<dim> *>
     dirichlet_boundary_functions = {
       {types::boundary_id(0), &homogeneous_dirichlet_bc}};
-
 
   std::vector<unsigned int> p_levels({fe.degree});
 
@@ -293,15 +282,6 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
   constraints_fine.reinit(locally_owned_dofs, locally_relevant_dofs);
   constraints_fine.copy_from(level_constraints.back());
 
-  // system_matrix.reset(new Portable::LaplaceOperator<dim, fe_degree, double>(
-  //   dof_handler, constraints_fine, overlap_communication_computation));
-
-  // system_matrix->initialize_dof_vector(solution_device);
-  // system_rhs_device.reinit(solution_device);
-  // ghost_solution_host.reinit(locally_owned_dofs,
-  //                            locally_relevant_dofs,
-  //                            mpi_communicator);
-
   level_matrices.resize(0, level_dof_handlers.max_level());
   for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
     {
@@ -352,9 +332,8 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
     {
       if (level < coarse_triangulations.size())
         {
-          
-          mg_transfers[level] = std::make_unique<
-            Portable::GeometricTransfer<dim, 1, double>>();
+          mg_transfers[level] =
+            std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
           mg_transfers[level]->reinit(
             level_matrices[level - 1]->get_matrix_free(),
             level_matrices[level]->get_matrix_free(),
@@ -375,7 +354,6 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
             level_constraints[level - 1],
             level_constraints[level],
             *this};
-
 
           bool success =
             Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse,
@@ -502,17 +480,19 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 {
-  DataOut<dim> data_out;
+  (void)cycle;
 
-  data_out.attach_dof_handler(dof_handler);
-  data_out.add_data_vector(ghost_solution_host, "solution");
-  data_out.build_patches();
+  // DataOut<dim> data_out;
 
-  DataOutBase::VtkFlags flags;
-  flags.compression_level = DataOutBase::CompressionLevel::best_speed;
-  data_out.set_flags(flags);
-  data_out.write_vtu_with_pvtu_record(
-    "./", "solution", cycle, mpi_communicator, 2);
+  // data_out.attach_dof_handler(dof_handler);
+  // data_out.add_data_vector(ghost_solution_host, "solution");
+  // data_out.build_patches();
+
+  // DataOutBase::VtkFlags flags;
+  // flags.compression_level = DataOutBase::CompressionLevel::best_speed;
+  // data_out.set_flags(flags);
+  // data_out.write_vtu_with_pvtu_record(
+  //   "./", "solution", cycle, mpi_communicator, 2);
 
   Vector<float> cellwise_norm(triangulation.n_active_cells());
   VectorTools::integrate_difference(dof_handler,
@@ -551,7 +531,6 @@ LaplaceProblem<dim, fe_degree>::run()
           triangulation.refine_global(1);
         }
 
-
       create_coarse_triangulations();
       setup_dofs();
       setup_matrix_free();
@@ -587,7 +566,7 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
       const int dim           = 3;
-      const int max_fe_degree = 7;
+      const int max_fe_degree = 1;
 
       for (int fe_degree = 1; fe_degree <= max_fe_degree; ++fe_degree)
         {
@@ -622,3 +601,4 @@ main(int argc, char *argv[])
 
   return 0;
 }
+

@@ -18,7 +18,6 @@ namespace Portable
   {
     using TeamHandle = Kokkos::TeamPolicy<
       MemorySpace::Default::kokkos_space::execution_space>::member_type;
-
     using ViewValues = Kokkos::View<
       number *,
       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
@@ -97,7 +96,6 @@ namespace Portable
     const DeviceVector<number> src;
     DeviceVector<number>       dst;
 
-
     // Provide the shared memory capacity. This function takes the team_size
     // as an argument, which allows team_size dependent allocations.
     std::size_t
@@ -105,9 +103,7 @@ namespace Portable
     {
       std::size_t result =
         SharedViewValues::shmem_size(Functor::n_q_points) +
-        //  precomputed_data.n_components) +
         SharedViewGradients::shmem_size(Functor::n_q_points, dim) +
-        // precomputed_data.n_components) +
         SharedViewScratchPad::shmem_size(precomputed_data.scratch_pad_size);
 
       return result;
@@ -127,7 +123,6 @@ namespace Portable
       SharedViewScratchPad scratch_pad(team_member.team_shmem(),
                                        precomputed_data.scratch_pad_size);
 
-
       CellData<dim, number> data{team_member,
                                  Functor::n_q_points,
                                  cell_index,
@@ -142,8 +137,7 @@ namespace Portable
     }
   };
 
-
-
+  //needed for MatrixFreeTools::compute_diagonal()
   template <int dim, int fe_degree, typename number>
   class LaplaceOperatorQuad
   {
@@ -157,8 +151,6 @@ namespace Portable
       Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number> *fe_eval,
       const int q_point) const;
 
-
-
     static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
   };
 
@@ -168,15 +160,10 @@ namespace Portable
     Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number> *fe_eval,
     const int q_point) const
   {
-    // const int cell_index = fe_eval->get_current_cell_index();
-
     auto value = fe_eval->get_value(q_point);
-
     fe_eval->submit_value(value, q_point);
     fe_eval->submit_gradient(fe_eval->get_gradient(q_point), q_point);
   }
-
-
 
   template <int dim, int fe_degree, typename number>
   class LocalLaplaceOperator
@@ -418,7 +405,6 @@ namespace Portable
       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
-
     void
     cell_loop(
       const LocalLaplaceOperator<dim, fe_degree, number> &cell_operator,
@@ -479,7 +465,6 @@ namespace Portable
 
     const auto &dof_handler = matrix_free.get_dof_handler();
 
-
     std::vector<unsigned int> lex_numbering(n_local_dofs);
 
     {
@@ -499,7 +484,6 @@ namespace Portable
     std::vector<types::global_dof_index> lexicographic_dof_indices(
       n_local_dofs);
 
-
     for (unsigned int color = 0; color < n_colors; ++color)
       {
         if (colored_graph[color].size() > 0)
@@ -516,7 +500,7 @@ namespace Portable
                 n_local_dofs,
                 mf_data.n_cells);
 
-            auto dofs_mask_host = Kokkos::create_mirror_view(
+            auto boundary_dofs_mask_host = Kokkos::create_mirror_view(
               this->dirichlet_boundary_dofs_masks[color]);
 
             auto cell = graph.cbegin(), end_cell = graph.cend();
@@ -529,21 +513,20 @@ namespace Portable
                   {
                     const auto global_dof = local_dof_indices[lex_numbering[i]];
                     if (constraints->is_constrained(global_dof))
-                      dofs_mask_host(i, cell_id) =
+                      boundary_dofs_mask_host(i, cell_id) =
                         numbers::invalid_unsigned_int;
                     else
-                      dofs_mask_host(i, cell_id) = global_dof;
+                      boundary_dofs_mask_host(i, cell_id) = global_dof;
                   }
               }
 
             Kokkos::deep_copy(exec_space,
                               this->dirichlet_boundary_dofs_masks[color],
-                              dofs_mask_host);
+                              boundary_dofs_mask_host);
             Kokkos::fence();
           }
       }
   }
-
 
   template <int dim, int fe_degree, typename number>
   void
