@@ -19,32 +19,6 @@ namespace Portable
     template <int dim, typename number>
     struct TransferData
     {
-      const typename MatrixFree<dim, number>::PrecomputedData gpu_data_coarse;
-      const typename MatrixFree<dim, number>::PrecomputedData gpu_data_fine;
-
-      const Kokkos::View<number **, MemorySpace::Default::kokkos_space>
-        &weights;
-
-      const Kokkos::View<number *, MemorySpace::Default::kokkos_space>
-        &prolongation_matrix;
-
-      const Kokkos::View<int *, MemorySpace::Default::kokkos_space>
-        &cell_lists_fine_to_coarse;
-
-      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
-        &boundary_dofs_mask_coarse;
-
-      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
-        &boundary_dofs_mask_fine;
-    };
-
-    template <int dim, int p_coarse, int p_fine, typename number>
-    class CellProlongationKernel : public EnableObserverPointer
-    {
-    public:
-      using DistributedVectorType =
-        LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
-
       using TeamHandle = Kokkos::TeamPolicy<
         MemorySpace::Default::kokkos_space::execution_space>::member_type;
 
@@ -53,89 +27,223 @@ namespace Portable
                                         execution_space::scratch_memory_space,
                                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
-      CellProlongationKernel(TransferData<dim, number>    transfer_data,
-                             const DistributedVectorType &src,
-                             DistributedVectorType       &dst);
+      TeamHandle team_member;
+
+      const int cell_index;
+
+      const SharedView &prolongation_matrix;
+
+      const typename MatrixFree<dim, number>::PrecomputedData
+        precomputed_data_coarse;
+      const typename MatrixFree<dim, number>::PrecomputedData
+        precomputed_data_fine;
+
+      const Kokkos::View<number **, MemorySpace::Default::kokkos_space>
+        &weights;
+
+      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+        &dirichlet_boundary_dofs_mask_coarse;
+
+      /**
+       * Memory for dof values.
+       */
+      SharedView &values_coarse;
+
+      SharedView &values_fine;
+
+      /**
+       * Memory for temporary arrays required by the kernel execution.
+       */
+      SharedView &scratch_pad;
+    };
 
 
+    template <int dim,
+              int p_coarse,
+              int p_fine,
+              typename number,
+              typename Functor>
+    struct ApplyCellKernel
+    {
+      using TeamHandle = Kokkos::TeamPolicy<
+        MemorySpace::Default::kokkos_space::execution_space>::member_type;
+      using SharedViewValues =
+        Kokkos::View<number *,
+                     MemorySpace::Default::kokkos_space::execution_space::
+                       scratch_memory_space,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+      ApplyCellKernel(
+        Functor func,
+        const typename MatrixFree<dim, number>::PrecomputedData
+          precomputed_data_coarse,
+        const typename MatrixFree<dim, number>::PrecomputedData
+          precomputed_data_fine,
+        const Kokkos::View<number *, MemorySpace::Default::kokkos_space>
+          prolongation_matrix_shared_memory,
+        const Kokkos::View<number **, MemorySpace::Default::kokkos_space>
+          weights,
+        const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+          dirichlet_boundary_dofs_mask_coarse,
+        const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+                                                                         &src,
+        LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst)
+        : func(func)
+        , precomputed_data_coarse(precomputed_data_coarse)
+        , precomputed_data_fine(precomputed_data_fine)
+        , prolongation_matrix_shared_memory(prolongation_matrix_shared_memory)
+        , weights(weights)
+        , dirichlet_boundary_dofs_mask_coarse(
+            dirichlet_boundary_dofs_mask_coarse)
+        , src(src.get_values(), src.locally_owned_size())
+        , dst(dst.get_values(), dst.locally_owned_size())
+      {}
+
+      Functor func;
+
+      typename MatrixFree<dim, number>::PrecomputedData precomputed_data_coarse;
+      typename MatrixFree<dim, number>::PrecomputedData precomputed_data_fine;
+
+
+      const Kokkos::View<number *, MemorySpace::Default::kokkos_space>
+        prolongation_matrix_shared_memory;
+
+      const Kokkos::View<number **, MemorySpace::Default::kokkos_space> weights;
+
+      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+        dirichlet_boundary_dofs_mask_coarse;
+
+      const DeviceVector<number> src;
+      DeviceVector<number>       dst;
+
+      // Provide the shared memory capacity. This function takes the team_size
+      // as an argument, which allows team_size dependent allocations.
       std::size_t
-      team_shmem_size(int team_size) const;
+      team_shmem_size(int /*team_size*/) const
+      {
+        return SharedViewValues::shmem_size(
+          Functor::n_local_dofs_coarse +  // coarse dof values
+          Functor::n_local_dofs_fine +    // fine dof values
+          2 * Functor::n_local_dofs_fine  // at most two tmp vectors of at most
+                                          // n_local_dofs_fine size
+          + (p_fine + 1) * (p_coarse + 1) // prolongation matrix
+        );
+      }
+
+
+      DEAL_II_HOST_DEVICE
+      void
+      operator()(const TeamHandle &team_member) const
+      {
+        const int cell_index = team_member.league_rank();
+
+        SharedViewValues values_coarse(team_member.team_shmem(),
+                                       Functor::n_local_dofs_coarse);
+
+        SharedViewValues values_fine(team_member.team_shmem(),
+                                     Functor::n_local_dofs_fine);
+
+        SharedViewValues prolongation_matrix_device(team_member.team_shmem(),
+                                                    (p_coarse + 1) *
+                                                      (p_fine + 1));
+
+        SharedViewValues scratch_pad(team_member.team_shmem(),
+                                     Functor::n_local_dofs_fine);
+
+        Kokkos::parallel_for(
+          Kokkos::TeamThreadRange(team_member, (p_coarse + 1) * (p_fine + 1)),
+          [&](const int &i) {
+            prolongation_matrix_device(i) =
+              prolongation_matrix_shared_memory(i);
+          });
+        team_member.team_barrier();
+
+
+        TransferData<dim, number> data{team_member,
+                                       cell_index,
+                                       prolongation_matrix_device,
+                                       precomputed_data_coarse,
+                                       precomputed_data_fine,
+                                       weights,
+                                       dirichlet_boundary_dofs_mask_coarse,
+                                       values_coarse,
+                                       values_fine,
+                                       scratch_pad};
+
+        DeviceVector<number> nonconstdst = dst;
+        func(&data, src, nonconstdst);
+      }
+    };
+
+    template <int dim, int p_coarse, int p_fine, typename number>
+    class CellProlongationKernel : public EnableObserverPointer
+    {
+    public:
+      using TeamHandle = Kokkos::TeamPolicy<
+        MemorySpace::Default::kokkos_space::execution_space>::member_type;
+
+      using SharedView = Kokkos::View<number *,
+                                      MemorySpace::Default::kokkos_space::
+                                        execution_space::scratch_memory_space,
+                                      Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+      CellProlongationKernel();
 
       DEAL_II_HOST_DEVICE void
-      operator()(const TeamHandle &team_member) const;
+      operator()(const TransferData<dim, number> *transfer_data,
+                 const DeviceVector<number>      &src,
+                 DeviceVector<number>            &dst) const;
 
       static const unsigned int n_local_dofs_coarse =
         Utilities::pow(p_coarse + 1, dim);
       static const unsigned int n_local_dofs_fine =
         Utilities::pow(p_fine + 1, dim);
-
-    private:
-      TransferData<dim, number> transfer_data;
-
-      const DeviceVector<number> src;
-      DeviceVector<number>       dst;
     };
 
     template <int dim, int p_coarse, int p_fine, typename number>
     CellProlongationKernel<dim, p_coarse, p_fine, number>::
-      CellProlongationKernel(TransferData<dim, number>    transfer_data,
-                             const DistributedVectorType &src,
-                             DistributedVectorType       &dst)
-      : transfer_data(transfer_data)
-      , src(src.get_values(), src.locally_owned_size())
-      , dst(dst.get_values(), dst.locally_owned_size())
+      CellProlongationKernel()
     {}
-
-    template <int dim, int p_coarse, int p_fine, typename number>
-    std::size_t
-    CellProlongationKernel<dim, p_coarse, p_fine, number>::team_shmem_size(
-      int /*team_size*/) const
-    {
-      return SharedView::shmem_size(
-        n_local_dofs_coarse +           // coarse dof values
-        n_local_dofs_fine +             // fine dof values
-        2 * n_local_dofs_fine           // at most two tmp vectors of at most
-                                        // n_local_dofs_fine size
-        + (p_fine + 1) * (p_coarse + 1) // prolongation matrix
-      );
-    }
 
     template <int dim, int p_coarse, int p_fine, typename number>
     DEAL_II_HOST_DEVICE void
     CellProlongationKernel<dim, p_coarse, p_fine, number>::operator()(
-      const TeamHandle &team_member) const
+      const TransferData<dim, number> *transfer_data,
+      const DeviceVector<number>      &src,
+      DeviceVector<number>            &dst) const
     {
-      const int cell_index_fine = team_member.league_rank();
-      const int cell_index_coarse =
-        transfer_data.cell_lists_fine_to_coarse[cell_index_fine];
+      const int   cell_id     = transfer_data->cell_index;
+      const auto &team_member = transfer_data->team_member;
 
-      SharedView values_coarse(team_member.team_shmem(), n_local_dofs_coarse);
-      SharedView values_fine(team_member.team_shmem(), n_local_dofs_fine);
+      const auto &precomputed_data_coarse =
+        transfer_data->precomputed_data_coarse;
+      const auto &precomputed_data_fine = transfer_data->precomputed_data_fine;
+
+      const auto &prolongation_matrix = transfer_data->prolongation_matrix;
+
+      auto &values_coarse = transfer_data->values_coarse;
+      auto &values_fine   = transfer_data->values_fine;
+      auto &scratch_pad   = transfer_data->scratch_pad;
 
       // read coarse dof values
       Kokkos::parallel_for(
         Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
         [&](const int &i) {
-          values_coarse(i) = src[transfer_data.gpu_data_coarse.local_to_global(
-            i, cell_index_coarse)];
-        });
-      team_member.team_barrier();
-
-      SharedView prolongation_matrix(team_member.team_shmem(),
-                                     (p_coarse + 1) * (p_fine + 1));
-
-      Kokkos::parallel_for(
-        Kokkos::TeamThreadRange(team_member, (p_coarse + 1) * (p_fine + 1)),
-        [&](const int &i) {
-          prolongation_matrix(i) = transfer_data.prolongation_matrix(i);
+          if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i, cell_id) ==
+              numbers::invalid_unsigned_int)
+            values_coarse(i) = 0.;
+          else
+            values_coarse(i) =
+              src[precomputed_data_coarse.local_to_global(i, cell_id)];
         });
       team_member.team_barrier();
 
       // apply kernel in each direction
       if constexpr (dim == 2)
         {
-          auto tmp =
-            SharedView(team_member.team_shmem(), (p_coarse + 1) * (p_fine + 1));
+          constexpr int temp_size = (p_coarse + 1) * (p_fine + 1);
+          auto          tmp =
+            Kokkos::subview(scratch_pad, Kokkos::make_pair(0, temp_size));
 
           {
             constexpr int Ni = p_coarse + 1;
@@ -164,6 +272,7 @@ namespace Portable
               tmp(index_tmp) = sum;
             });
           }
+
           team_member.team_barrier();
 
           {
@@ -196,12 +305,17 @@ namespace Portable
         }
       else if constexpr (dim == 3)
         {
+          constexpr int temp1_size =
+                          Utilities::pow(p_coarse + 1, 2) * (p_fine + 1),
+                        temp2_size =
+                          Utilities::pow(p_fine + 1, 2) * (p_coarse + 1);
           auto tmp1 =
-            SharedView(team_member.team_shmem(),
-                       Utilities::pow(p_coarse + 1, 2) * (p_fine + 1));
+            Kokkos::subview(scratch_pad, Kokkos::make_pair(0, temp1_size));
           auto tmp2 =
-            SharedView(team_member.team_shmem(),
-                       Utilities::pow(p_fine + 1, 2) * (p_coarse + 1));
+            Kokkos::subview(scratch_pad,
+                            Kokkos::make_pair(temp1_size,
+                                              temp1_size + temp2_size));
+
           {
             constexpr int Ni = p_coarse + 1;
             constexpr int Nj = p_coarse + 1;
@@ -298,29 +412,25 @@ namespace Portable
                                                    n_local_dofs_fine),
                            [&](const int &i) {
                              values_fine(i) *=
-                               transfer_data.weights(i, cell_index_fine);
+                               transfer_data->weights(i, cell_id);
                            });
       team_member.team_barrier();
 
       // distribute fine dofs values
-      if (transfer_data.gpu_data_fine.use_coloring)
+      if (precomputed_data_fine.use_coloring)
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
           [&](const int &i) {
-            if (transfer_data.boundary_dofs_mask_fine(i, cell_index_fine) !=
-                numbers::invalid_unsigned_int)
-              dst[transfer_data.gpu_data_fine.local_to_global(
-                i, cell_index_fine)] += values_fine(i);
+            dst[precomputed_data_fine.local_to_global(i, cell_id)] +=
+              values_fine(i);
           });
       else
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
           [&](const int &i) {
-            if (transfer_data.boundary_dofs_mask_fine(i, cell_index_fine) !=
-                numbers::invalid_unsigned_int)
-              Kokkos::atomic_add(&dst[transfer_data.gpu_data_fine
-                                        .local_to_global(i, cell_index_fine)],
-                                 values_fine(i));
+            Kokkos::atomic_add(
+              &dst[precomputed_data_fine.local_to_global(i, cell_id)],
+              values_fine(i));
           });
       team_member.team_barrier();
     }
@@ -341,71 +451,50 @@ namespace Portable
                                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
 
-      CellRestrictionKernel(TransferData<dim, number>    transfer_data,
-                            const DistributedVectorType &src,
-                            DistributedVectorType       &dst);
-
-      std::size_t
-      team_shmem_size(int team_size) const;
+      CellRestrictionKernel();
 
       DEAL_II_HOST_DEVICE void
-      operator()(const TeamHandle &team_member) const;
+      operator()(const TransferData<dim, number> *transfer_data,
+                 const DeviceVector<number>      &src,
+                 DeviceVector<number>            &dst) const;
 
       static const unsigned int n_local_dofs_coarse =
         Utilities::pow(p_coarse + 1, dim);
       static const unsigned int n_local_dofs_fine =
         Utilities::pow(p_fine + 1, dim);
-
-    private:
-      TransferData<dim, number> transfer_data;
-
-      const DeviceVector<number> src;
-      DeviceVector<number>       dst;
     };
 
     template <int dim, int p_coarse, int p_fine, typename number>
-    CellRestrictionKernel<dim, p_coarse, p_fine, number>::CellRestrictionKernel(
-      TransferData<dim, number>    transfer_data,
-      const DistributedVectorType &src,
-      DistributedVectorType       &dst)
-      : transfer_data(transfer_data)
-      , src(src.get_values(), src.locally_owned_size())
-      , dst(dst.get_values(), dst.locally_owned_size())
+    CellRestrictionKernel<dim, p_coarse, p_fine, number>::
+      CellRestrictionKernel()
     {}
-
-    template <int dim, int p_coarse, int p_fine, typename number>
-    std::size_t
-    CellRestrictionKernel<dim, p_coarse, p_fine, number>::team_shmem_size(
-      int /*team_size*/) const
-    {
-      return SharedView::shmem_size(
-        n_local_dofs_coarse +           // coarse dof values
-        n_local_dofs_fine +             // fine dof values
-        2 * n_local_dofs_fine           // at most two tmp vectors of at most
-                                        // n_local_dofs_fine size
-        + (p_fine + 1) * (p_coarse + 1) // prolongation matrix
-      );
-    }
 
     template <int dim, int p_coarse, int p_fine, typename number>
     DEAL_II_HOST_DEVICE void
     CellRestrictionKernel<dim, p_coarse, p_fine, number>::operator()(
-      const TeamHandle &team_member) const
+      const TransferData<dim, number> *transfer_data,
+      const DeviceVector<number>      &src,
+      DeviceVector<number>            &dst) const
     {
-      const int cell_index_fine = team_member.league_rank();
-      const int cell_index_coarse =
-        transfer_data.cell_lists_fine_to_coarse[cell_index_fine];
+      const int   cell_id     = transfer_data->cell_index;
+      const auto &team_member = transfer_data->team_member;
 
-      SharedView values_fine(team_member.team_shmem(), n_local_dofs_fine);
-      SharedView values_coarse(team_member.team_shmem(), n_local_dofs_coarse);
+      const auto &precomputed_data_coarse =
+        transfer_data->precomputed_data_coarse;
+      const auto &precomputed_data_fine = transfer_data->precomputed_data_fine;
+
+      const auto &prolongation_matrix = transfer_data->prolongation_matrix;
+
+      auto &values_coarse = transfer_data->values_coarse;
+      auto &values_fine   = transfer_data->values_fine;
+      auto &scratch_pad   = transfer_data->scratch_pad;
 
       // read fine dof values
       Kokkos::parallel_for(
         Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
         [&](const int &i) {
           values_fine(i) =
-            src[transfer_data.gpu_data_fine.local_to_global(i,
-                                                            cell_index_fine)];
+            src[precomputed_data_fine.local_to_global(i, cell_id)];
         });
       team_member.team_barrier();
 
@@ -414,25 +503,16 @@ namespace Portable
                                                    n_local_dofs_fine),
                            [&](const int &i) {
                              values_fine(i) *=
-                               transfer_data.weights(i, cell_index_fine);
+                               transfer_data->weights(i, cell_id);
                            });
-      team_member.team_barrier();
-
-      SharedView prolongation_matrix(team_member.team_shmem(),
-                                     (p_coarse + 1) * (p_fine + 1));
-
-      Kokkos::parallel_for(
-        Kokkos::TeamThreadRange(team_member, (p_coarse + 1) * (p_fine + 1)),
-        [&](const int &i) {
-          prolongation_matrix(i) = transfer_data.prolongation_matrix(i);
-        });
       team_member.team_barrier();
 
       // apply kernel in each direction
       if constexpr (dim == 2)
         {
-          auto tmp =
-            SharedView(team_member.team_shmem(), (p_fine + 1) * (p_coarse + 1));
+          constexpr int temp_size = (p_coarse + 1) * (p_fine + 1);
+          auto          tmp =
+            Kokkos::subview(scratch_pad, Kokkos::make_pair(0, temp_size));
 
           {
             constexpr int Ni = p_fine + 1;
@@ -461,6 +541,7 @@ namespace Portable
               tmp(index_tmp) = sum;
             });
           }
+
           team_member.team_barrier();
 
           {
@@ -493,13 +574,16 @@ namespace Portable
         }
       else if constexpr (dim == 3)
         {
+          constexpr int temp1_size =
+                          Utilities::pow(p_fine + 1, 2) * (p_coarse + 1),
+                        temp2_size =
+                          Utilities::pow(p_coarse + 1, 2) * (p_fine + 1);
           auto tmp1 =
-            SharedView(team_member.team_shmem(),
-                       Utilities::pow(p_fine + 1, 2) * (p_coarse + 1));
+            Kokkos::subview(scratch_pad, Kokkos::make_pair(0, temp1_size));
           auto tmp2 =
-            SharedView(team_member.team_shmem(),
-                       Utilities::pow(p_coarse + 1, 2) * (p_fine + 1));
-
+            Kokkos::subview(scratch_pad,
+                            Kokkos::make_pair(temp1_size,
+                                              temp1_size + temp2_size));
           {
             constexpr int Ni = p_fine + 1;
             constexpr int Nj = p_fine + 1;
@@ -528,6 +612,7 @@ namespace Portable
                 tmp1(index_tmp1)     = sum;
               });
           }
+
           team_member.team_barrier();
 
           {
@@ -557,6 +642,7 @@ namespace Portable
                 tmp2(index_tmp2)     = sum;
               });
           }
+
           team_member.team_barrier();
 
           {
@@ -592,24 +678,26 @@ namespace Portable
         }
 
       // distribute coarse dofs values
-      if (transfer_data.gpu_data_coarse.use_coloring)
+      if (precomputed_data_coarse.use_coloring)
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
           [&](const int &i) {
-            if (transfer_data.boundary_dofs_mask_coarse(i, cell_index_coarse) !=
+            if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i,
+                                                                   cell_id) !=
                 numbers::invalid_unsigned_int)
-              dst[transfer_data.gpu_data_coarse.local_to_global(
-                i, cell_index_coarse)] += values_coarse(i);
+              dst[precomputed_data_coarse.local_to_global(i, cell_id)] +=
+                values_coarse(i);
           });
       else
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
           [&](const int &i) {
-            if (transfer_data.boundary_dofs_mask_coarse(i, cell_index_coarse) !=
+            if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i,
+                                                                   cell_id) !=
                 numbers::invalid_unsigned_int)
-              Kokkos::atomic_add(&dst[transfer_data.gpu_data_coarse
-                                        .local_to_global(i, cell_index_coarse)],
-                                 values_coarse(i));
+              Kokkos::atomic_add(
+                &dst[precomputed_data_coarse.local_to_global(i, cell_id)],
+                values_coarse(i));
           });
       team_member.team_barrier();
     }
@@ -641,7 +729,19 @@ namespace Portable
 
   private:
     void
-    setup_weights_and_boundary_dofs_masks();
+    prolongate_and_add_internal(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const;
+
+    void
+    restrict_and_add_internal(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const;
+
+    void
+    setup_weights_and_boundary_dofs_mask_coarse();
 
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
@@ -658,10 +758,6 @@ namespace Portable
     std::vector<
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
       boundary_dofs_mask_coarse;
-
-    std::vector<
-      Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
-      boundary_dofs_mask_fine;
 
     std::vector<Kokkos::View<number **, MemorySpace::Default::kokkos_space>>
       weights_view_kokkos;
@@ -684,97 +780,8 @@ namespace Portable
              matrix_free_coarse->get_vector_partitioner(),
            ExcMessage("Coarse vector is not initialized correctly."));
 
-    MemorySpace::Default::kokkos_space::execution_space exec;
 
-    const auto        &colored_graph = matrix_free_fine->get_colored_graph();
-    const unsigned int n_colors      = colored_graph.size();
-
-    if (matrix_free_fine->use_overlap_communication_computation())
-      {
-        auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
-          const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
-
-          const auto n_cells = gpu_data_fine.n_cells;
-
-          Kokkos::TeamPolicy<
-            MemorySpace::Default::kokkos_space::execution_space>
-            team_policy(exec, n_cells, Kokkos::AUTO);
-
-          p_mg_transfer::TransferData<dim, number> transfer_data{
-            gpu_data_coarse,
-            gpu_data_fine,
-            weights_view_kokkos[color],
-            prolongation_matrix_1d,
-            cell_lists_fine_to_coarse[color],
-            boundary_dofs_mask_coarse[color],
-            boundary_dofs_mask_fine[color]};
-
-          p_mg_transfer::CellProlongationKernel<dim, p_coarse, p_fine, number>
-            prolongator(transfer_data, src, dst);
-
-          Kokkos::parallel_for("prolongate_" + std::to_string(color),
-                               team_policy,
-                               prolongator);
-        };
-
-        src.update_ghost_values_start(0);
-
-        if (n_colors > 0 && colored_graph[0].size() > 0)
-          do_color(0);
-
-        src.update_ghost_values_finish();
-
-        if (n_colors > 1 && colored_graph[1].size() > 0)
-          {
-            do_color(1);
-
-            // We need a synchronization point because we don't want
-            // device-aware MPI to start the MPI communication until the
-            // kernel is done.
-            Kokkos::fence();
-          }
-        dst.compress_start(0, VectorOperation::add);
-
-        if (n_colors > 2 && colored_graph[2].size() > 0)
-          do_color(2);
-
-        dst.compress_finish(VectorOperation::add);
-      }
-    else
-      {
-        src.update_ghost_values();
-
-        for (unsigned int color = 0; color < n_colors; ++color)
-          {
-            const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
-            const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
-
-            const auto n_cells = gpu_data_fine.n_cells;
-
-            p_mg_transfer::TransferData<dim, number> transfer_data{
-              gpu_data_coarse,
-              gpu_data_fine,
-              weights_view_kokkos[color],
-              prolongation_matrix_1d,
-              cell_lists_fine_to_coarse[color],
-              boundary_dofs_mask_coarse[color],
-              boundary_dofs_mask_fine[color]};
-
-            Kokkos::TeamPolicy<
-              MemorySpace::Default::kokkos_space::execution_space>
-              team_policy(exec, n_cells, Kokkos::AUTO);
-
-            p_mg_transfer::CellProlongationKernel<dim, p_coarse, p_fine, number>
-              prolongator(transfer_data, src, dst);
-
-            Kokkos::parallel_for("prolongate_" + std::to_string(color),
-                                 team_policy,
-                                 prolongator);
-          }
-        dst.compress(VectorOperation::add);
-      }
-    src.zero_out_ghost_values();
+    this->prolongate_and_add_internal(dst, src);
 
     Assert(dst.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
            ExcMessage(
@@ -799,97 +806,7 @@ namespace Portable
     Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
            ExcMessage("Fine vector is not initialized correctly."));
 
-    MemorySpace::Default::kokkos_space::execution_space exec;
-
-    const auto        &colored_graph = matrix_free_fine->get_colored_graph();
-    const unsigned int n_colors      = colored_graph.size();
-
-    if (matrix_free_fine->use_overlap_communication_computation())
-      {
-        auto do_color = [&](const unsigned int color) {
-          const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
-          const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
-
-          const auto n_cells = gpu_data_fine.n_cells;
-
-          Kokkos::TeamPolicy<
-            MemorySpace::Default::kokkos_space::execution_space>
-            team_policy(exec, n_cells, Kokkos::AUTO);
-
-          p_mg_transfer::TransferData<dim, number> transfer_data{
-            gpu_data_coarse,
-            gpu_data_fine,
-            weights_view_kokkos[color],
-            prolongation_matrix_1d,
-            cell_lists_fine_to_coarse[color],
-            boundary_dofs_mask_coarse[color],
-            boundary_dofs_mask_fine[color]};
-
-          p_mg_transfer::CellRestrictionKernel<dim, p_coarse, p_fine, number>
-            restrictor(transfer_data, src, dst);
-
-          Kokkos::parallel_for("restrict_" + std::to_string(color),
-                               team_policy,
-                               restrictor);
-        };
-
-        src.update_ghost_values_start(0);
-
-        if (n_colors > 0 && colored_graph[0].size() > 0)
-          do_color(0);
-
-        src.update_ghost_values_finish();
-
-        if (n_colors > 1 && colored_graph[1].size() > 0)
-          {
-            do_color(1);
-
-            // We need a synchronization point because we don't want
-            // device-aware MPI to start the MPI communication until the
-            // kernel is done.
-            Kokkos::fence();
-          }
-        dst.compress_start(0, VectorOperation::add);
-
-        if (n_colors > 2 && colored_graph[2].size() > 0)
-          do_color(2);
-
-        dst.compress_finish(VectorOperation::add);
-      }
-    else
-      {
-        src.update_ghost_values();
-
-        for (unsigned int color = 0; color < n_colors; ++color)
-          {
-            const auto &gpu_data_coarse = matrix_free_coarse->get_data(color);
-            const auto &gpu_data_fine   = matrix_free_fine->get_data(color);
-
-            const auto n_cells = gpu_data_fine.n_cells;
-
-            p_mg_transfer::TransferData<dim, number> transfer_data{
-              gpu_data_coarse,
-              gpu_data_fine,
-              weights_view_kokkos[color],
-              prolongation_matrix_1d,
-              cell_lists_fine_to_coarse[color],
-              boundary_dofs_mask_coarse[color],
-              boundary_dofs_mask_fine[color]};
-
-            Kokkos::TeamPolicy<
-              MemorySpace::Default::kokkos_space::execution_space>
-              team_policy(exec, n_cells, Kokkos::AUTO);
-
-            p_mg_transfer::CellRestrictionKernel<dim, p_coarse, p_fine, number>
-              restrictor(transfer_data, src, dst);
-
-            Kokkos::parallel_for("restrict_" + std::to_string(color),
-                                 team_policy,
-                                 restrictor);
-          }
-        dst.compress(VectorOperation::add);
-      }
-    src.zero_out_ghost_values();
+    this->restrict_and_add_internal(dst, src);
 
     Assert(
       dst.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
@@ -898,6 +815,263 @@ namespace Portable
     Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
            ExcMessage(
              "Fine vector is not handled correclty after restrtiction."));
+  }
+
+
+  template <int dim, int p_coarse, int p_fine, typename number>
+  void
+  PolynomialTransfer<dim, p_coarse, p_fine, number>::
+    prolongate_and_add_internal(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const
+  {
+    MemorySpace::Default::kokkos_space::execution_space exec;
+    using Functor =
+      p_mg_transfer::CellProlongationKernel<dim, p_coarse, p_fine, number>;
+
+    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+
+    const unsigned int n_colors = colored_graph.size();
+
+    if (matrix_free_fine->use_overlap_communication_computation())
+      {
+        // helper to process one color
+        auto do_color = [&](const unsigned int color) {
+          using TeamPolicy = Kokkos::TeamPolicy<
+            MemorySpace::Default::kokkos_space::execution_space>;
+
+          const auto &precomputed_data_coarse =
+            matrix_free_coarse->get_data(color, 0);
+          const auto &precomputed_data_fine =
+            matrix_free_fine->get_data(color, 0);
+
+          const auto n_cells = precomputed_data_fine.n_cells;
+
+          Functor cell_prolongator;
+
+          auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
+
+          p_mg_transfer::ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
+            apply_kernel(cell_prolongator,
+                         precomputed_data_coarse,
+                         precomputed_data_fine,
+                         this->prolongation_matrix_1d,
+                         this->weights_view_kokkos[color],
+                         this->boundary_dofs_mask_coarse[color],
+                         src,
+                         dst);
+
+          Kokkos::parallel_for("dealii::MatrixFree::prolongate_and_add_color_" +
+                                 std::to_string(color),
+                               team_policy,
+                               apply_kernel);
+        };
+
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 &&
+            matrix_free_fine->get_data(0, 0).n_cells > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 &&
+            matrix_free_fine->get_data(1, 0).n_cells > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 &&
+            matrix_free_fine->get_data(2, 0).n_cells > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        // Execute the loop on the cells
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            const auto &precomputed_data_coarse =
+              matrix_free_coarse->get_data(color, 0);
+            const auto &precomputed_data_fine =
+              matrix_free_fine->get_data(color, 0);
+
+            if (precomputed_data_fine.n_cells > 0)
+              {
+                using TeamPolicy = Kokkos::TeamPolicy<
+                  MemorySpace::Default::kokkos_space::execution_space>;
+
+
+                const auto n_cells = precomputed_data_fine.n_cells;
+
+                Functor cell_prolongator;
+
+                auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
+
+                p_mg_transfer::
+                  ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
+                    apply_kernel(cell_prolongator,
+                                 precomputed_data_coarse,
+                                 precomputed_data_fine,
+                                 this->prolongation_matrix_1d,
+                                 this->weights_view_kokkos[color],
+                                 this->boundary_dofs_mask_coarse[color],
+                                 src,
+                                 dst);
+
+                Kokkos::parallel_for(
+                  "dealii::MatrixFree::prolongate_and_add_color " +
+                    std::to_string(color),
+                  team_policy,
+                  apply_kernel);
+              }
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, int p_coarse, int p_fine, typename number>
+  void
+  PolynomialTransfer<dim, p_coarse, p_fine, number>::restrict_and_add_internal(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+    const
+  {
+    MemorySpace::Default::kokkos_space::execution_space exec;
+    using Functor =
+      p_mg_transfer::CellRestrictionKernel<dim, p_coarse, p_fine, number>;
+
+    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+
+    const unsigned int n_colors = colored_graph.size();
+
+    if (matrix_free_fine->use_overlap_communication_computation())
+      {
+        // helper to process one color
+        auto do_color = [&](const unsigned int color) {
+          using TeamPolicy = Kokkos::TeamPolicy<
+            MemorySpace::Default::kokkos_space::execution_space>;
+
+          const auto &precomputed_data_coarse =
+            matrix_free_coarse->get_data(color, 0);
+          const auto &precomputed_data_fine =
+            matrix_free_fine->get_data(color, 0);
+
+          const auto n_cells = precomputed_data_fine.n_cells;
+
+          Functor cell_restrictor;
+
+          auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
+
+          p_mg_transfer::ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
+            apply_kernel(cell_restrictor,
+                         precomputed_data_coarse,
+                         precomputed_data_fine,
+                         this->prolongation_matrix_1d,
+                         this->weights_view_kokkos[color],
+                         this->boundary_dofs_mask_coarse[color],
+                         src,
+                         dst);
+
+          Kokkos::parallel_for("dealii::MatrixFree::restrict_and_add_color_" +
+                                 std::to_string(color),
+                               team_policy,
+                               apply_kernel);
+        };
+
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 &&
+            matrix_free_fine->get_data(0, 0).n_cells > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 &&
+            matrix_free_fine->get_data(1, 0).n_cells > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 &&
+            matrix_free_fine->get_data(2, 0).n_cells > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        // Execute the loop on the cells
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            const auto &precomputed_data_coarse =
+              matrix_free_coarse->get_data(color, 0);
+            const auto &precomputed_data_fine =
+              matrix_free_fine->get_data(color, 0);
+
+            if (precomputed_data_fine.n_cells > 0)
+              {
+                using TeamPolicy = Kokkos::TeamPolicy<
+                  MemorySpace::Default::kokkos_space::execution_space>;
+
+                const auto n_cells = precomputed_data_fine.n_cells;
+
+                Functor cell_restrictor;
+
+                auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
+
+                p_mg_transfer::
+                  ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
+                    apply_kernel(cell_restrictor,
+                                 precomputed_data_coarse,
+                                 precomputed_data_fine,
+                                 this->prolongation_matrix_1d,
+                                 this->weights_view_kokkos[color],
+                                 this->boundary_dofs_mask_coarse[color],
+                                 src,
+                                 dst);
+
+                Kokkos::parallel_for(
+                  "dealii::MatrixFree::restrict_and_add_color " +
+                    std::to_string(color),
+                  team_policy,
+                  apply_kernel);
+              }
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
   }
 
   template <int dim, int p_coarse, int p_fine, typename number>
@@ -928,6 +1102,7 @@ namespace Portable
     FE_Q<1> fe_coarse_1d(p_coarse);
     FE_Q<1> fe_fine_1d(p_fine);
 
+    // lexicographic renumbering in 1d
     std::vector<unsigned int> renumbering_fine(fe_fine_1d.n_dofs_per_cell());
 
     renumbering_fine[0] = 0;
@@ -957,6 +1132,7 @@ namespace Portable
     FullMatrix<number> matrix(fe_fine_1d.n_dofs_per_cell(),
                               fe_coarse_1d.n_dofs_per_cell());
 
+    // 1d prolongation matrix
     FETools::get_projection_matrix(fe_coarse_1d, fe_fine_1d, matrix);
 
     this->prolongation_matrix_1d =
@@ -979,61 +1155,13 @@ namespace Portable
                       prolongation_matrix_1d_view);
     Kokkos::fence();
 
-    // map fine cells to coarse cells
-    const auto &tria =
-      this->matrix_free_coarse->get_dof_handler().get_triangulation();
-    std::vector<std::vector<unsigned int>> coarse_cell_ids(n_colors);
-
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        coarse_cell_ids[color].resize(tria.n_active_cells());
-
-        const auto &graph = colored_graph_coarse[color];
-
-        auto cell = graph.cbegin(), cell_end = graph.cend();
-
-        for (int cell_id = 0; cell != cell_end; ++cell, ++cell_id)
-          coarse_cell_ids[color][(*cell)->active_cell_index()] = cell_id;
-      }
-
-    this->cell_lists_fine_to_coarse.clear();
-    this->cell_lists_fine_to_coarse.resize(n_colors);
-
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        const auto &graph = colored_graph_fine[color];
-
-        this->cell_lists_fine_to_coarse[color] =
-          Kokkos::View<int *, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("cell_lists_fine_to_coarse_" +
-                                 std::to_string(p_coarse) + "_to_" +
-                                 std::to_string(p_fine) + "_color_" +
-                                 std::to_string(color),
-                               Kokkos::WithoutInitializing),
-            graph.size());
-
-        auto cell_list_host_view =
-          Kokkos::create_mirror_view(this->cell_lists_fine_to_coarse[color]);
-
-        auto cell = graph.cbegin(), cell_end = graph.cend();
-
-        for (int cell_id = 0; cell != cell_end; ++cell, ++cell_id)
-          cell_list_host_view[cell_id] =
-            coarse_cell_ids[color][(*cell)->active_cell_index()];
-
-        Kokkos::deep_copy(this->cell_lists_fine_to_coarse[color],
-                          cell_list_host_view);
-        Kokkos::fence();
-      }
-
-
-    setup_weights_and_boundary_dofs_masks();
+    setup_weights_and_boundary_dofs_mask_coarse();
   }
 
   template <int dim, int p_coarse, int p_fine, typename number>
   void
   PolynomialTransfer<dim, p_coarse, p_fine, number>::
-    setup_weights_and_boundary_dofs_masks()
+    setup_weights_and_boundary_dofs_mask_coarse()
   {
     const auto &dof_handler_fine   = matrix_free_fine->get_dof_handler();
     const auto &dof_handler_coarse = matrix_free_coarse->get_dof_handler();
@@ -1220,57 +1348,12 @@ namespace Portable
             Kokkos::fence();
           }
       }
-
-    this->boundary_dofs_mask_fine.clear();
-    this->boundary_dofs_mask_fine.resize(n_colors);
-
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        if (colored_graph_fine[color].size() > 0)
-          {
-            const auto &mf_data_fine = matrix_free_fine->get_data(color);
-
-            const auto &graph = colored_graph_fine[color];
-
-            this->boundary_dofs_mask_fine[color] =
-              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-                Kokkos::view_alloc("boundary_dofs_mask_fine_" +
-                                     std::to_string(color),
-                                   Kokkos::WithoutInitializing),
-                n_dofs_per_cell_fine,
-                mf_data_fine.n_cells);
-
-            auto dofs_mask_host =
-              Kokkos::create_mirror_view(this->boundary_dofs_mask_fine[color]);
-
-            auto cell = graph.cbegin(), end_cell = graph.cend();
-
-            for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
-              {
-                (*cell)->get_dof_indices(local_dof_indices_fine);
-
-                for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-                  {
-                    const auto global_dof =
-                      local_dof_indices_fine[lex_numbering_fine[i]];
-                    if (constraints_fine->is_constrained(global_dof))
-                      dofs_mask_host(i, cell_id) =
-                        numbers::invalid_unsigned_int;
-                    else
-                      dofs_mask_host(i, cell_id) = global_dof;
-                  }
-              }
-            Kokkos::deep_copy(this->boundary_dofs_mask_fine[color],
-                              dofs_mask_host);
-            Kokkos::fence();
-          }
-      }
   }
 
   class PolynomialTransferDispatchFactory
   {
   public:
-    static constexpr unsigned int max_degree = 9;
+    static constexpr unsigned int max_degree = 4;
 
     template <typename Runner>
     static bool
@@ -1313,7 +1396,6 @@ namespace Portable
           return recursive_dispatch<Runner, degree_fine - 2, degree_fine - 1>(
             runtime_p_coarse, runtime_p_fine, runner);
         }
-
       else
         {
           return false;
@@ -1326,3 +1408,4 @@ namespace Portable
 DEAL_II_NAMESPACE_CLOSE
 
 #endif
+

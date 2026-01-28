@@ -37,10 +37,9 @@ namespace Portable
            const AffineConstraints<number> &constraints_fine) = 0;
   };
 
-
-
 } // namespace Portable
 
 DEAL_II_NAMESPACE_CLOSE
 
 #endif
+

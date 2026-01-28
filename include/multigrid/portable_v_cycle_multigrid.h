@@ -150,6 +150,7 @@ namespace Portable
           // Accuracy on coarsest level should be comparable to overall level
           // accuracy (~1e-3)
           smooth(dst, src, mg_matrices.min_level());
+
           return;
         }
 
@@ -194,3 +195,4 @@ namespace Portable
 DEAL_II_NAMESPACE_CLOSE
 
 #endif
+
