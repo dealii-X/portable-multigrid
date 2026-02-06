@@ -46,7 +46,7 @@ project(${TARGET})
 deal_ii_invoke_autopilot()
 
 target_include_directories(${TARGET} PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
 
 
