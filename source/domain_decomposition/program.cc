@@ -105,6 +105,9 @@ private:
   create_dof_mapping();
 
   void
+  compute_interface_weights();
+
+  void
   setup_matrix_free();
 
   void
@@ -138,6 +141,8 @@ private:
 
   std::vector<types::global_dof_index> local_to_global_dof_map;
 
+  std::vector<double> interface_weights;
+
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
     global_solution_host;
 
@@ -147,7 +152,6 @@ private:
     subdomain_solution_device;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     subdomain_rhs_device;
-
 
   std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>> subdomain_matrix;
 
@@ -474,32 +478,79 @@ LaplaceProblem<dim, fe_degree>::create_dof_mapping()
       subdomain_dofs.interface_dofs_global.add_index(global_index);
     }
 
-  std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-            << " interface dofs: " << std::endl;
-  for (unsigned int i = 0; i < subdomain_dofs.local_interface_dofs.size(); ++i)
-    {
-      std::cout << subdomain_dofs.local_interface_dofs[i] << ", ";
-    }
-  std::cout << std::endl;
+  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
+  //           << " interface dofs: " << std::endl;
+  // for (unsigned int i = 0; i < subdomain_dofs.local_interface_dofs.size();
+  // ++i)
+  //   {
+  //     std::cout << subdomain_dofs.local_interface_dofs[i] << ", ";
+  //   }
+  // std::cout << std::endl;
 
-  std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-            << " physical boundary dofs: " << std::endl;
-  for (unsigned int i = 0;
-       i < subdomain_dofs.local_physical_boundary_dofs.size();
-       ++i)
-    {
-      std::cout << subdomain_dofs.local_physical_boundary_dofs[i] << ", ";
-    }
-  std::cout << std::endl;
+  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
+  //           << " physical boundary dofs: " << std::endl;
+  // for (unsigned int i = 0;
+  //      i < subdomain_dofs.local_physical_boundary_dofs.size();
+  //      ++i)
+  //   {
+  //     std::cout << subdomain_dofs.local_physical_boundary_dofs[i] << ", ";
+  //   }
+  // std::cout << std::endl;
 
-  std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-            << " local_to_global: " << std::endl;
+  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
+  //           << " local_to_global: " << std::endl;
+  // for (unsigned int i = 0;
+  //      i < subdomain_dofs.interface_local_to_global_map.size();
+  //      ++i)
+  //   {
+  //     std::cout << subdomain_dofs.interface_local_to_global_map[i] << ", ";
+  //   }
+  // std::cout << std::endl;
+}
+
+template <int dim, int fe_degree>
+void
+LaplaceProblem<dim, fe_degree>::compute_interface_weights()
+{
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_weights;
+  global_weights.reinit(locally_owned_dofs,
+                        locally_relevant_dofs,
+                        mpi_communicator);
+
   for (unsigned int i = 0;
        i < subdomain_dofs.interface_local_to_global_map.size();
        ++i)
     {
-      std::cout << subdomain_dofs.interface_local_to_global_map[i] << ", ";
+      global_weights[subdomain_dofs.interface_local_to_global_map[i]] += 1.0;
     }
+
+  global_weights.compress(VectorOperation::add);
+
+  global_weights.update_ghost_values();
+
+  this->interface_weights.resize(
+    subdomain_dofs.interface_local_to_global_map.size());
+
+  for (unsigned int i = 0;
+       i < subdomain_dofs.interface_local_to_global_map.size();
+       ++i)
+    {
+      interface_weights[i] =
+        1.0 / global_weights[subdomain_dofs.interface_local_to_global_map[i]];
+    }
+
+  std::cout << "On subdomain "
+            << Utilities::MPI::this_mpi_process(mpi_communicator)
+            << " interface weights: " << std::endl;
+
+
+  for (unsigned int i = 0;
+       i < subdomain_dofs.interface_local_to_global_map.size();
+       ++i)
+    {
+      std::cout << interface_weights[i] << " ";
+    }
+
   std::cout << std::endl;
 }
 
@@ -651,6 +702,8 @@ LaplaceProblem<dim, fe_degree>::run()
       setup_dofs();
 
       create_dof_mapping();
+
+      compute_interface_weights();
 
       setup_matrix_free();
 
