@@ -25,6 +25,13 @@ namespace Portable
             &src) const = 0;
 
     virtual void
+    vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+                    &src,
+          const bool ghost_exchange_on,
+          const bool computation_on) const = 0;
+
+    virtual void
     Tvmult(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
