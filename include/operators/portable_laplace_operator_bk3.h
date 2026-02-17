@@ -160,9 +160,6 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            const unsigned int numThreads      = n_cells;
-            const unsigned int threadsPerBlock = 1;
-
             Kokkos::fence();
 
             BK3::Parallel::
@@ -173,9 +170,7 @@ namespace Portable
                 src_device,
                 dst_device,
                 dof_indices_per_color[color],
-                n_cells,
-                numThreads,
-                threadsPerBlock);
+                n_cells);
 
             Kokkos::fence();
           }
@@ -216,9 +211,6 @@ namespace Portable
               {
                 const auto &precomputed_data = matrix_free.get_data(color);
 
-                // const unsigned int numThreads      = n_cells;
-                // const unsigned int threadsPerBlock = 1;
-
                 Kokkos::fence();
 
                 BK3::Parallel::KokkosKernel_1D_Block<dim,
@@ -232,8 +224,6 @@ namespace Portable
                   dst_device,
                   dof_indices_per_color[color],
                   n_cells);
-                // numThreads,
-                // threadsPerBlock);
 
                 Kokkos::fence();
               }
