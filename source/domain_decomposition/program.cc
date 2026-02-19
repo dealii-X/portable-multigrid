@@ -34,78 +34,17 @@
 #include <iostream>
 #include <memory>
 
+#include "domain_decomposition/subdomain_dof_handler.h"
+#include "domain_decomposition/subdomain_triangulation.h"
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_tranfer.h"
 #include "multigrid/portable_v_cycle_multigrid.h"
 #include "operators/portable_laplace_operator.h"
+#include "operators/portable_subdomain_laplace_operator.h"
+
 
 using namespace dealii;
 
-template <int dim>
-struct SubdomainTopologyInfo
-{
-  unsigned int            subdomain_id;
-  Triangulation<dim>      triangulation;
-  std::vector<Point<dim>> vertices;
-  std::vector<bool>       interface_vertex_ids;
-  std::vector<bool>       physical_boundary_vertex_ids;
-  types::boundary_id      interface_id;
-
-  void
-  clear()
-  {
-    subdomain_id = numbers::invalid_unsigned_int;
-    triangulation.clear();
-    vertices.clear();
-    interface_vertex_ids.clear();
-    physical_boundary_vertex_ids.clear();
-    interface_id = numbers::invalid_boundary_id;
-  }
-};
-
-struct SubdomainDoFInfo
-{
-  /*
-      Global interface DoFs in the global domain numbering.
-  */
-  IndexSet interface_dofs_global;
-
-  /*
-      Subdomain interface DoFs in the local subdomain numbering.
-  */
-  std::vector<unsigned int> local_interface_dofs;
-
-  /*
-      Subdomain interface DoFs in the global domain numbering.
-  */
-  std::vector<types::global_dof_index> interface_local_to_global_map;
-
-  /*
-      Local subdomain interface DoFs in the global interface numbering.
-  */
-  std::vector<unsigned int> subdomain_to_global_interface_map;
-
-  /*
-      Global interface DoFs to the local interface numbering.
-  */
-  std::map<types::global_dof_index, unsigned int>
-    global_to_sudomain_interface_map;
-
-  /*
-    Physical boundary DoFs in the local subdomain numbering.
-  */
-  std::vector<unsigned int> local_physical_boundary_dofs;
-
-  void
-  clear()
-  {
-    interface_dofs_global.clear();
-    local_interface_dofs.clear();
-    interface_local_to_global_map.clear();
-    global_to_sudomain_interface_map.clear();
-    local_physical_boundary_dofs.clear();
-  }
-};
 
 template <int dim, int fe_degree>
 class LaplaceProblem
@@ -125,9 +64,6 @@ private:
 
   void
   setup_dofs();
-
-  void
-  create_dof_maps();
 
   void
   compute_interface_weights();
@@ -156,13 +92,14 @@ private:
   IndexSet locally_owned_dofs;
   IndexSet locally_relevant_dofs;
 
-  SubdomainTopologyInfo<dim> subdomain_topology;
-  SubdomainDoFInfo           subdomain_dofs;
+  SubdomainTriangulation<dim> subdomain_triangulation;
+  SubdomainDoFHandler<dim>    subdomain_dof_handler;
 
   FE_Q<dim> fe;
 
-  DoFHandler<dim>           subdomain_dof_handler;
   AffineConstraints<double> subdomain_constraints;
+  AffineConstraints<double> subdomain_constraints_physical;
+
 
   std::vector<types::global_dof_index> local_to_global_dof_map;
 
@@ -175,12 +112,22 @@ private:
     subdomain_solution_host;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     subdomain_solution_device;
+
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     subdomain_rhs_device;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+    subdomain_rhs_interior;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+    subdomain_rhs_interface;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> schur_rhs;
 
   std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>> subdomain_matrix;
 
   ConditionalOStream pcout;
+
+  unsigned int n_subdomain_dofs;
+  unsigned int n_subdomain_interior_dofs;
+  unsigned int n_subdomain_interface_dofs;
 };
 
 template <int dim, int fe_degree>
@@ -204,158 +151,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations()
 {
-  this->subdomain_topology.clear();
-  this->subdomain_topology.subdomain_id =
-    Utilities::MPI::this_mpi_process(mpi_communicator);
-
-  this->subdomain_topology.interface_id =
-    100 + this->subdomain_topology.subdomain_id;
-
-  std::vector<CellData<dim>> subdomain_cell_data;
-  SubCellData                subcell_data;
-  std::vector<bool>          is_physical_boundary;
-
-  std::map<unsigned int, unsigned int> global_to_local_vertex_map;
-
-  for (const auto &cell : triangulation.active_cell_iterators())
-    {
-      if (cell->is_locally_owned())
-        {
-          CellData<dim> cell_data;
-          for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_cell;
-               ++v)
-            {
-              const unsigned int global_vertex_index = cell->vertex_index(v);
-
-              if (global_to_local_vertex_map.find(global_vertex_index) ==
-                  global_to_local_vertex_map.end())
-                {
-                  global_to_local_vertex_map[global_vertex_index] =
-                    this->subdomain_topology.vertices.size();
-                  this->subdomain_topology.vertices.push_back(cell->vertex(v));
-                }
-              cell_data.vertices[v] =
-                global_to_local_vertex_map[global_vertex_index];
-            }
-
-          cell_data.material_id = cell->material_id();
-          cell_data.manifold_id = cell->manifold_id();
-          subdomain_cell_data.push_back(cell_data);
-
-          for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f)
-            {
-              bool on_physical_boundary = cell->at_boundary(f);
-              bool on_interface         = false;
-
-              if (!on_physical_boundary)
-                {
-                  if (cell->neighbor(f)->is_ghost())
-                    on_interface = true;
-                }
-              if (on_physical_boundary || on_interface)
-                {
-                  CellData<dim - 1> face_data;
-                  for (unsigned int fv = 0;
-                       fv < GeometryInfo<dim>::vertices_per_face;
-                       ++fv)
-                    face_data.vertices[fv] =
-                      global_to_local_vertex_map[cell->face(f)->vertex_index(
-                        fv)];
-
-                  face_data.boundary_id =
-                    on_physical_boundary ?
-                      cell->face(f)->boundary_id() :
-                      this->subdomain_topology.interface_id;
-
-                  face_data.manifold_id = cell->face(f)->manifold_id();
-
-                  if constexpr (dim == 2)
-                    subcell_data.boundary_lines.push_back(face_data);
-
-                  if constexpr (dim == 3)
-                    subcell_data.boundary_quads.push_back(face_data);
-
-                  is_physical_boundary.push_back(true);
-                }
-            }
-        }
-    }
-
-  Assert(subcell_data.check_consistency(dim),
-         ExcMessage("Subcell data are not filled consistenly."));
-
-  GridTools::consistently_order_cells<dim>(subdomain_cell_data);
-
-  this->subdomain_topology.triangulation.create_triangulation(
-    this->subdomain_topology.vertices, subdomain_cell_data, subcell_data);
-
-  this->subdomain_topology.physical_boundary_vertex_ids.resize(
-    this->subdomain_topology.triangulation.n_vertices(), false);
-
-  for (auto &cell :
-       this->subdomain_topology.triangulation.active_cell_iterators())
-    {
-      if (!cell->is_locally_owned())
-        continue;
-
-      for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f)
-        {
-          if (!cell->at_boundary(f))
-            continue;
-
-          const auto bid = cell->face(f)->boundary_id();
-
-          if (bid != this->subdomain_topology.interface_id)
-            {
-              for (unsigned int fv = 0;
-                   fv < GeometryInfo<dim>::vertices_per_face;
-                   ++fv)
-                {
-                  const unsigned int vertex_idx =
-                    cell->face(f)->vertex_index(fv);
-                  this->subdomain_topology
-                    .physical_boundary_vertex_ids[vertex_idx] = true;
-                }
-            }
-        }
-    }
-
-  this->subdomain_topology.interface_vertex_ids.resize(
-    subdomain_topology.triangulation.n_vertices(), false);
-
-  for (auto &cell :
-       this->subdomain_topology.triangulation.active_cell_iterators())
-    {
-      if (!cell->is_locally_owned())
-        continue;
-
-      for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f)
-        {
-          if (!cell->at_boundary(f))
-            continue;
-
-          const auto bid = cell->face(f)->boundary_id();
-
-          if (bid == this->subdomain_topology.interface_id)
-            {
-              for (unsigned int fv = 0;
-                   fv < GeometryInfo<dim>::vertices_per_face;
-                   ++fv)
-                {
-                  const unsigned int vertex_idx =
-                    cell->face(f)->vertex_index(fv);
-
-                  if (!this->subdomain_topology
-                         .physical_boundary_vertex_ids[vertex_idx])
-                    this->subdomain_topology.interface_vertex_ids[vertex_idx] =
-                      true;
-                }
-            }
-        }
-    }
-
-  AssertDimension(this->subdomain_topology.triangulation.n_active_cells(),
-                  triangulation.n_locally_owned_active_cells());
+  this->subdomain_triangulation.create_subdomain_triangulation(triangulation);
 }
 
 template <int dim, int fe_degree>
@@ -368,165 +164,74 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
 
+  subdomain_dof_handler.reinit(subdomain_triangulation);
+  subdomain_dof_handler.distribute_subdomain_dofs(dof_handler);
+
   pcout << "  Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
 
-  subdomain_dof_handler.reinit(subdomain_topology.triangulation);
-  subdomain_dof_handler.distribute_dofs(fe);
-
   std::cout << "    Number of DoFs on subdomain "
-            << this->subdomain_topology.subdomain_id << ": "
-            << subdomain_dof_handler.n_dofs() << std::endl;
+            << subdomain_dof_handler.get_subdomain_id() << ": "
+            << subdomain_dof_handler.get_dof_handler().n_dofs() << std::endl;
 
+  {
+    Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
+    std::map<types::boundary_id, const Function<dim> *>
+      dirichlet_boundary_functions = {
+        {types::boundary_id(0), &homogeneous_dirichlet_bc},
+        {subdomain_dof_handler.get_interface_id(), &homogeneous_dirichlet_bc}};
 
-  Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
-  std::map<types::boundary_id, const Function<dim> *>
-    dirichlet_boundary_functions = {
-      {types::boundary_id(0), &homogeneous_dirichlet_bc}};
+    subdomain_constraints.clear();
 
-  subdomain_constraints.clear();
+    DoFTools::make_hanging_node_constraints(
+      subdomain_dof_handler.get_dof_handler(), subdomain_constraints);
 
-  DoFTools::make_hanging_node_constraints(subdomain_dof_handler,
-                                          subdomain_constraints);
+    VectorTools::interpolate_boundary_values(
+      subdomain_dof_handler.get_dof_handler(),
+      dirichlet_boundary_functions,
+      subdomain_constraints);
+    subdomain_constraints.close();
+  }
+  {
+    Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
 
-  VectorTools::interpolate_boundary_values(subdomain_dof_handler,
-                                           dirichlet_boundary_functions,
-                                           subdomain_constraints);
-  subdomain_constraints.close();
+    subdomain_constraints_physical.clear();
+    std::map<types::boundary_id, const Function<dim> *>
+      dirichlet_boundary_functions_physical = {
+        {types::boundary_id(0), &homogeneous_dirichlet_bc}};
+
+    DoFTools::make_hanging_node_constraints(
+      subdomain_dof_handler.get_dof_handler(), subdomain_constraints_physical);
+
+    VectorTools::interpolate_boundary_values(
+      subdomain_dof_handler.get_dof_handler(),
+      dirichlet_boundary_functions_physical,
+      subdomain_constraints_physical);
+    subdomain_constraints_physical.close();
+  }
 
   global_solution_host.reinit(locally_owned_dofs,
                               locally_relevant_dofs,
                               mpi_communicator);
 
-  subdomain_solution_host.reinit(subdomain_dof_handler.n_dofs());
-}
+  subdomain_solution_host.reinit(
+    subdomain_dof_handler.get_dof_handler().n_dofs());
 
+  const auto &sudomain_dof_info = subdomain_dof_handler.get_dof_info();
 
-
-template <int dim, int fe_degree>
-void
-LaplaceProblem<dim, fe_degree>::create_dof_maps()
-{
-  local_to_global_dof_map.resize(subdomain_dof_handler.n_dofs());
-  {
-    auto global_cell     = dof_handler.begin_active();
-    auto global_cell_end = dof_handler.end();
-
-    auto local_cell = subdomain_dof_handler.begin_active();
-
-    std::vector<types::global_dof_index> global_dof_indices(fe.dofs_per_cell);
-    std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
-
-    for (; global_cell != global_cell_end; ++global_cell)
-      {
-        if (global_cell->is_locally_owned())
-          {
-            global_cell->get_dof_indices(global_dof_indices);
-            local_cell->get_dof_indices(local_dof_indices);
-
-            for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
-              {
-                local_to_global_dof_map[local_dof_indices[i]] =
-                  global_dof_indices[i];
-              }
-
-            ++local_cell;
-          }
-      }
-  }
-
-  subdomain_dofs.clear();
-  subdomain_dofs.interface_dofs_global.set_size(dof_handler.n_dofs());
-
-  subdomain_dofs.subdomain_to_global_interface_map.resize(
-    subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
-
-  IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
-  IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
-
-  const unsigned int n_dofs_per_cell = fe.dofs_per_cell;
-
-  std::vector<types::global_dof_index> cell_dofs(n_dofs_per_cell);
-
-  for (const auto &cell : subdomain_dof_handler.active_cell_iterators())
-    {
-      if (!cell->at_boundary())
-        continue;
-
-      cell->get_dof_indices(cell_dofs);
-
-      for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f)
-        {
-          if (cell->at_boundary(f) &&
-              cell->face(f)->boundary_id() != subdomain_topology.interface_id)
-            {
-              for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
-                {
-                  if (fe.has_support_on_face(i, f))
-                    local_physical_boundary_dofs.add_index(cell_dofs[i]);
-                }
-            }
-        }
-    }
-
-  for (const auto &cell : subdomain_dof_handler.active_cell_iterators())
-    {
-      if (!cell->at_boundary())
-        continue;
-
-      cell->get_dof_indices(cell_dofs);
-
-      for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f)
-        {
-          if (cell->at_boundary(f) &&
-              cell->face(f)->boundary_id() == subdomain_topology.interface_id)
-            {
-              for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
-                {
-                  if (fe.has_support_on_face(i, f))
-                    local_interface_dofs.add_index(cell_dofs[i]);
-                }
-            }
-        }
-    }
-
-  local_interface_dofs.subtract_set(local_physical_boundary_dofs);
-
-  for (auto index : local_physical_boundary_dofs)
-    {
-      subdomain_dofs.local_physical_boundary_dofs.push_back(index);
-    }
-
-  subdomain_dofs.subdomain_to_global_interface_map.resize(
-    local_interface_dofs.size(), numbers::invalid_unsigned_int);
-
-  unsigned int interface_counter = 0;
-  for (auto index : local_interface_dofs)
-    {
-      const types::global_dof_index global_index =
-        local_to_global_dof_map[index];
-
-
-      subdomain_dofs.local_interface_dofs.push_back(index);
-      subdomain_dofs.interface_local_to_global_map.push_back(global_index);
-      subdomain_dofs.interface_dofs_global.add_index(global_index);
-
-      subdomain_dofs.subdomain_to_global_interface_map[index] =
-        interface_counter;
-
-      subdomain_dofs.global_to_sudomain_interface_map[global_index] =
-        interface_counter;
-
-      interface_counter++;
-    }
-
-  subdomain_dofs.interface_dofs_global.compress();
-
+  this->n_subdomain_dofs = subdomain_dof_handler.get_dof_handler().n_dofs();
+  this->n_subdomain_interior_dofs =
+    this->n_subdomain_dofs - sudomain_dof_info.local_interface_dofs.size() -
+    sudomain_dof_info.local_physical_boundary_dofs.size();
+  this->n_subdomain_interface_dofs =
+    sudomain_dof_info.local_interface_dofs.size();
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 {
+  const auto &subdomain_dofs = subdomain_dof_handler.get_dof_info();
+
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_weights;
   global_weights.reinit(locally_owned_dofs,
                         locally_relevant_dofs,
@@ -553,30 +258,18 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
       interface_weights[i] =
         1.0 / global_weights[subdomain_dofs.interface_local_to_global_map[i]];
     }
-
-  // std::cout << "On subdomain "
-  //           << Utilities::MPI::this_mpi_process(mpi_communicator)
-  //           << " interface weights: " << std::endl;
-
-
-  // for (unsigned int i = 0;
-  //      i < subdomain_dofs.interface_local_to_global_map.size();
-  //      ++i)
-  //   {
-  //     std::cout << interface_weights[i] << " ";
-  //   }
-
-  // std::cout << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 {
-  subdomain_matrix =
-    std::make_unique<Portable::LaplaceOperator<dim, fe_degree, double>>(
-      subdomain_dof_handler, subdomain_constraints, false);
-
+  subdomain_matrix = std::make_unique<
+    Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>(
+    subdomain_dof_handler.get_dof_handler(),
+    subdomain_constraints,
+    subdomain_constraints_physical,
+    false);
 
   subdomain_matrix->initialize_dof_vector(subdomain_solution_device);
   subdomain_rhs_device.reinit(subdomain_solution_device);
@@ -587,7 +280,7 @@ void
 LaplaceProblem<dim, fe_degree>::assemble_rhs()
 {
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> system_rhs_host(
-    subdomain_dof_handler.n_dofs());
+    subdomain_dof_handler.get_dof_handler().n_dofs());
 
   const QGauss<dim> quadrature_formula(fe_degree + 1);
 
@@ -602,7 +295,8 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-  for (const auto &cell : subdomain_dof_handler.active_cell_iterators())
+  for (const auto &cell :
+       subdomain_dof_handler.get_dof_handler().active_cell_iterators())
     {
       cell_rhs = 0;
 
@@ -614,16 +308,19 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
             (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
 
       cell->get_dof_indices(local_dof_indices);
-      subdomain_constraints.distribute_local_to_global(cell_rhs,
-                                                       local_dof_indices,
-                                                       system_rhs_host);
+      subdomain_constraints_physical.distribute_local_to_global(
+        cell_rhs, local_dof_indices, system_rhs_host);
     }
 
   LinearAlgebra::ReadWriteVector<double> rw_vector(
-    subdomain_dof_handler.n_dofs());
+    subdomain_dof_handler.get_dof_handler().n_dofs());
 
   rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
   subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
+    rhs_interior_host(this->n_subdomain_interior_dofs);
+
 }
 
 
@@ -642,7 +339,8 @@ LaplaceProblem<dim, fe_degree>::solve_subdomain()
            subdomain_rhs_device,
            PreconditionIdentity());
 
-  std::cout << "   On subdomain " << this->subdomain_topology.subdomain_id
+  std::cout << "   On subdomain "
+            << subdomain_triangulation.get_topology_info().subdomain_id
             << " solver converged in " << solver_control.last_step()
             << " iterations." << std::endl;
 }
@@ -652,11 +350,11 @@ void
 LaplaceProblem<dim, fe_degree>::post_process_subdomain_solution()
 {
   LinearAlgebra::ReadWriteVector<double> rw_vector(
-    subdomain_dof_handler.n_dofs());
+    subdomain_dof_handler.get_dof_handler().n_dofs());
   rw_vector.import_elements(subdomain_solution_device, VectorOperation::insert);
   subdomain_solution_host.import_elements(rw_vector, VectorOperation::insert);
 
-  subdomain_constraints.distribute(subdomain_solution_host);
+  subdomain_constraints_physical.distribute(subdomain_solution_host);
 }
 
 template <int dim, int fe_degree>
@@ -665,9 +363,12 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 {
   (void)cycle;
 
+  const auto subdomain_topology =
+    this->subdomain_triangulation.get_topology_info();
+
   DataOut<dim> data_out;
 
-  data_out.attach_dof_handler(subdomain_dof_handler);
+  data_out.attach_dof_handler(subdomain_dof_handler.get_dof_handler());
   data_out.add_data_vector(subdomain_solution_host, "solution");
   data_out.build_patches();
 
@@ -676,27 +377,26 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   data_out.set_flags(flags);
   data_out.write_vtu_with_pvtu_record(
     "./",
-    "solution_subdomain_" +
-      std::to_string(this->subdomain_topology.subdomain_id),
+    "solution_subdomain_" + std::to_string(subdomain_topology.subdomain_id),
     cycle,
     mpi_communicator);
 
 
   Vector<float> cellwise_norm(
-    this->subdomain_topology.triangulation.n_active_cells());
-  VectorTools::integrate_difference(subdomain_dof_handler,
+    subdomain_triangulation.get_triangulation().n_active_cells());
+  VectorTools::integrate_difference(subdomain_dof_handler.get_dof_handler(),
                                     subdomain_solution_host,
                                     Functions::ZeroFunction<dim>(),
                                     cellwise_norm,
                                     QGauss<dim>(fe.degree + 2),
                                     VectorTools::L2_norm);
 
-  const double global_norm =
-    VectorTools::compute_global_error(subdomain_topology.triangulation,
-                                      cellwise_norm,
-                                      VectorTools::L2_norm);
+  const double global_norm = VectorTools::compute_global_error(
+    subdomain_triangulation.get_triangulation(),
+    cellwise_norm,
+    VectorTools::L2_norm);
 
-  std::cout << "    On subdomain " << this->subdomain_topology.subdomain_id
+  std::cout << "    On subdomain " << subdomain_dof_handler.get_subdomain_id()
             << "  solution norm: " << global_norm << std::endl;
 }
 
@@ -706,6 +406,7 @@ void
 LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
+
   for (unsigned int cycle = 0; cycle < 1; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
@@ -715,8 +416,6 @@ LaplaceProblem<dim, fe_degree>::run()
       create_subdomain_triangulations();
 
       setup_dofs();
-
-      create_dof_maps();
 
       compute_interface_weights();
 

@@ -53,6 +53,12 @@ struct SubdomainDoFInfo
   std::vector<unsigned int> local_physical_boundary_dofs;
 
   /*
+  Local interior dofs with interface and physical boundary DoFs set to
+  numbers::invalid_unsigned_int.
+  */
+  std::vector<unsigned int> subdomain_interior_dofs;
+
+  /*
     Id's of the cells that contain faces on the interface.
   */
   std::vector<unsigned int> interface_cell_ids;
@@ -90,8 +96,11 @@ public:
   const SubdomainDoFInfo<dim> &
   get_dof_info() const;
 
-  unsigned int
+  types::boundary_id
   get_subdomain_id() const;
+
+  unsigned int
+  get_interface_id() const;
 
 private:
   SubdomainDoFInfo<dim> subdomain_dof_info;
@@ -100,7 +109,8 @@ private:
 
   ObserverPointer<const SubdomainTriangulation<dim>> subdomain_triangulation;
 
-  unsigned int subdomain_id;
+  unsigned int       subdomain_id;
+  types::boundary_id interface_id;
 };
 
 template <int dim>
@@ -121,6 +131,7 @@ SubdomainDoFHandler<dim>::reinit(
   subdomain_dof_handler.reinit(subdomain_triangulation.get_triangulation());
   subdomain_dof_info.clear();
   subdomain_id = subdomain_triangulation.get_topology_info().subdomain_id;
+  interface_id = subdomain_triangulation.get_topology_info().interface_id;
 }
 
 template <int dim>
@@ -128,6 +139,14 @@ unsigned int
 SubdomainDoFHandler<dim>::get_subdomain_id() const
 {
   return subdomain_id;
+}
+
+
+template <int dim>
+types::boundary_id
+SubdomainDoFHandler<dim>::get_interface_id() const
+{
+  return interface_id;
 }
 
 template <int dim>
@@ -199,6 +218,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
   IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
   IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
 
+
   const unsigned int n_dofs_per_cell = fe.dofs_per_cell;
 
   std::vector<types::global_dof_index> cell_dofs(n_dofs_per_cell);
@@ -259,6 +279,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
 
   local_interface_dofs.subtract_set(local_physical_boundary_dofs);
 
+
   for (auto index : local_physical_boundary_dofs)
     {
       subdomain_dof_info.local_physical_boundary_dofs.push_back(index);
@@ -288,6 +309,19 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
     }
 
   subdomain_dof_info.interface_dofs_global.compress();
+
+
+  IndexSet local_interior_dofs(subdomain_dof_handler.n_dofs());
+  local_interior_dofs.add_range(0, subdomain_dof_handler.n_dofs());
+  local_interior_dofs.subtract_set(local_physical_boundary_dofs);
+  local_interior_dofs.subtract_set(local_interface_dofs_set);
+
+  subdomain_dof_info.subdomain_interior_dofs.resize(
+    subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
+  for (auto index : local_interior_dofs)
+    {
+      subdomain_dof_info.subdomain_interior_dofs[index] = index;
+    }
 }
 
 DEAL_II_NAMESPACE_CLOSE
