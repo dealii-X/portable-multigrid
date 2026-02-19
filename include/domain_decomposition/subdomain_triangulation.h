@@ -1,6 +1,8 @@
 #ifndef subdomain_triangulation_h
 #define subdomain_triangulation_h
 
+#include <deal.II/base/enable_observer_pointer.h>
+
 #include <deal.II/distributed/tria.h>
 
 #include <deal.II/grid/tria.h>
@@ -29,7 +31,7 @@ struct SubdomainTopologyInfo
 };
 
 template <int dim>
-class SubdomainTriangulation
+class SubdomainTriangulation : public EnableObserverPointer
 {
 public:
   SubdomainTriangulation();
