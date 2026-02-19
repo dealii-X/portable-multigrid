@@ -65,11 +65,35 @@ struct SubdomainTopologyInfo
 
 struct SubdomainDoFInfo
 {
+  /*
+      Global interface DoFs in the global domain numbering.
+  */
   IndexSet interface_dofs_global;
 
-  std::vector<unsigned int>            local_interface_dofs;
+  /*
+      Subdomain interface DoFs in the local subdomain numbering.
+  */
+  std::vector<unsigned int> local_interface_dofs;
+
+  /*
+      Subdomain interface DoFs in the global domain numbering.
+  */
   std::vector<types::global_dof_index> interface_local_to_global_map;
 
+  /*
+      Local subdomain interface DoFs in the global interface numbering.
+  */
+  std::vector<unsigned int> subdomain_to_global_interface_map;
+
+  /*
+      Global interface DoFs to the local interface numbering.
+  */
+  std::map<types::global_dof_index, unsigned int>
+    global_to_sudomain_interface_map;
+
+  /*
+    Physical boundary DoFs in the local subdomain numbering.
+  */
   std::vector<unsigned int> local_physical_boundary_dofs;
 
   void
@@ -78,6 +102,7 @@ struct SubdomainDoFInfo
     interface_dofs_global.clear();
     local_interface_dofs.clear();
     interface_local_to_global_map.clear();
+    global_to_sudomain_interface_map.clear();
     local_physical_boundary_dofs.clear();
   }
 };
@@ -102,7 +127,7 @@ private:
   setup_dofs();
 
   void
-  create_dof_mapping();
+  create_dof_maps();
 
   void
   compute_interface_weights();
@@ -379,7 +404,7 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::create_dof_mapping()
+LaplaceProblem<dim, fe_degree>::create_dof_maps()
 {
   local_to_global_dof_map.resize(subdomain_dof_handler.n_dofs());
   {
@@ -411,6 +436,9 @@ LaplaceProblem<dim, fe_degree>::create_dof_mapping()
 
   subdomain_dofs.clear();
   subdomain_dofs.interface_dofs_global.set_size(dof_handler.n_dofs());
+
+  subdomain_dofs.subdomain_to_global_interface_map.resize(
+    subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
 
   IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
   IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
@@ -468,44 +496,31 @@ LaplaceProblem<dim, fe_degree>::create_dof_mapping()
       subdomain_dofs.local_physical_boundary_dofs.push_back(index);
     }
 
+  subdomain_dofs.subdomain_to_global_interface_map.resize(
+    local_interface_dofs.size(), numbers::invalid_unsigned_int);
+
+  unsigned int interface_counter = 0;
   for (auto index : local_interface_dofs)
     {
       const types::global_dof_index global_index =
         local_to_global_dof_map[index];
 
+
       subdomain_dofs.local_interface_dofs.push_back(index);
       subdomain_dofs.interface_local_to_global_map.push_back(global_index);
       subdomain_dofs.interface_dofs_global.add_index(global_index);
+
+      subdomain_dofs.subdomain_to_global_interface_map[index] =
+        interface_counter;
+
+      subdomain_dofs.global_to_sudomain_interface_map[global_index] =
+        interface_counter;
+
+      interface_counter++;
     }
 
-  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-  //           << " interface dofs: " << std::endl;
-  // for (unsigned int i = 0; i < subdomain_dofs.local_interface_dofs.size();
-  // ++i)
-  //   {
-  //     std::cout << subdomain_dofs.local_interface_dofs[i] << ", ";
-  //   }
-  // std::cout << std::endl;
+  subdomain_dofs.interface_dofs_global.compress();
 
-  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-  //           << " physical boundary dofs: " << std::endl;
-  // for (unsigned int i = 0;
-  //      i < subdomain_dofs.local_physical_boundary_dofs.size();
-  //      ++i)
-  //   {
-  //     std::cout << subdomain_dofs.local_physical_boundary_dofs[i] << ", ";
-  //   }
-  // std::cout << std::endl;
-
-  // std::cout << "On subdomain " << this->subdomain_topology.subdomain_id
-  //           << " local_to_global: " << std::endl;
-  // for (unsigned int i = 0;
-  //      i < subdomain_dofs.interface_local_to_global_map.size();
-  //      ++i)
-  //   {
-  //     std::cout << subdomain_dofs.interface_local_to_global_map[i] << ", ";
-  //   }
-  // std::cout << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -539,19 +554,19 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
         1.0 / global_weights[subdomain_dofs.interface_local_to_global_map[i]];
     }
 
-  std::cout << "On subdomain "
-            << Utilities::MPI::this_mpi_process(mpi_communicator)
-            << " interface weights: " << std::endl;
+  // std::cout << "On subdomain "
+  //           << Utilities::MPI::this_mpi_process(mpi_communicator)
+  //           << " interface weights: " << std::endl;
 
 
-  for (unsigned int i = 0;
-       i < subdomain_dofs.interface_local_to_global_map.size();
-       ++i)
-    {
-      std::cout << interface_weights[i] << " ";
-    }
+  // for (unsigned int i = 0;
+  //      i < subdomain_dofs.interface_local_to_global_map.size();
+  //      ++i)
+  //   {
+  //     std::cout << interface_weights[i] << " ";
+  //   }
 
-  std::cout << std::endl;
+  // std::cout << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -701,7 +716,7 @@ LaplaceProblem<dim, fe_degree>::run()
 
       setup_dofs();
 
-      create_dof_mapping();
+      create_dof_maps();
 
       compute_interface_weights();
 
@@ -724,7 +739,7 @@ main(int argc, char *argv[])
     {
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      constexpr int dim       = 3;
+      constexpr int dim       = 2;
       constexpr int fe_degree = 1;
 
       LaplaceProblem<dim, fe_degree> laplace_problem;
