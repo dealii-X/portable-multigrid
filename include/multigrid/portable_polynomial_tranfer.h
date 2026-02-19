@@ -33,17 +33,16 @@ namespace Portable
 
       const SharedView &prolongation_matrix;
 
-      const typename MatrixFree<dim, number>::PrecomputedData
-        precomputed_data_coarse;
-      const typename MatrixFree<dim, number>::PrecomputedData
-        precomputed_data_fine;
-
       const Kokkos::View<number **, MemorySpace::Default::kokkos_space>
         &weights;
 
       const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
-        &dirichlet_boundary_dofs_mask_coarse;
+        &dof_indices_coarse;
 
+      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+        &plain_dof_indices_fine;
+
+      const bool use_coloring;
       /**
        * Memory for dof values.
        */
@@ -75,35 +74,29 @@ namespace Portable
 
       ApplyCellKernel(
         Functor func,
-        const typename MatrixFree<dim, number>::PrecomputedData
-          precomputed_data_coarse,
-        const typename MatrixFree<dim, number>::PrecomputedData
-          precomputed_data_fine,
         const Kokkos::View<number *, MemorySpace::Default::kokkos_space>
           prolongation_matrix_shared_memory,
         const Kokkos::View<number **, MemorySpace::Default::kokkos_space>
           weights,
         const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
-          dirichlet_boundary_dofs_mask_coarse,
+          dof_indices_coarse,
+        const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+                   plain_dof_indices_fine,
+        const bool use_coloring,
         const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
                                                                          &src,
         LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst)
         : func(func)
-        , precomputed_data_coarse(precomputed_data_coarse)
-        , precomputed_data_fine(precomputed_data_fine)
         , prolongation_matrix_shared_memory(prolongation_matrix_shared_memory)
         , weights(weights)
-        , dirichlet_boundary_dofs_mask_coarse(
-            dirichlet_boundary_dofs_mask_coarse)
+        , dof_indices_coarse(dof_indices_coarse)
+        , plain_dof_indices_fine(plain_dof_indices_fine)
+        , use_coloring(use_coloring)
         , src(src.get_values(), src.locally_owned_size())
         , dst(dst.get_values(), dst.locally_owned_size())
       {}
 
       Functor func;
-
-      typename MatrixFree<dim, number>::PrecomputedData precomputed_data_coarse;
-      typename MatrixFree<dim, number>::PrecomputedData precomputed_data_fine;
-
 
       const Kokkos::View<number *, MemorySpace::Default::kokkos_space>
         prolongation_matrix_shared_memory;
@@ -111,7 +104,12 @@ namespace Portable
       const Kokkos::View<number **, MemorySpace::Default::kokkos_space> weights;
 
       const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
-        dirichlet_boundary_dofs_mask_coarse;
+        dof_indices_coarse;
+
+      const Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>
+        plain_dof_indices_fine;
+
+      const bool use_coloring;
 
       const DeviceVector<number> src;
       DeviceVector<number>       dst;
@@ -162,10 +160,10 @@ namespace Portable
         TransferData<dim, number> data{team_member,
                                        cell_index,
                                        prolongation_matrix_device,
-                                       precomputed_data_coarse,
-                                       precomputed_data_fine,
                                        weights,
-                                       dirichlet_boundary_dofs_mask_coarse,
+                                       dof_indices_coarse,
+                                       plain_dof_indices_fine,
+                                       use_coloring,
                                        values_coarse,
                                        values_fine,
                                        scratch_pad};
@@ -215,10 +213,6 @@ namespace Portable
       const int   cell_id     = transfer_data->cell_index;
       const auto &team_member = transfer_data->team_member;
 
-      const auto &precomputed_data_coarse =
-        transfer_data->precomputed_data_coarse;
-      const auto &precomputed_data_fine = transfer_data->precomputed_data_fine;
-
       const auto &prolongation_matrix = transfer_data->prolongation_matrix;
 
       auto &values_coarse = transfer_data->values_coarse;
@@ -229,12 +223,12 @@ namespace Portable
       Kokkos::parallel_for(
         Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
         [&](const int &i) {
-          if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i, cell_id) ==
+          if (transfer_data->dof_indices_coarse(i, cell_id) ==
               numbers::invalid_unsigned_int)
             values_coarse(i) = 0.;
           else
             values_coarse(i) =
-              src[precomputed_data_coarse.local_to_global(i, cell_id)];
+              src[transfer_data->dof_indices_coarse(i, cell_id)];
         });
       team_member.team_barrier();
 
@@ -417,11 +411,11 @@ namespace Portable
       team_member.team_barrier();
 
       // distribute fine dofs values
-      if (precomputed_data_fine.use_coloring)
+      if (transfer_data->use_coloring)
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
           [&](const int &i) {
-            dst[precomputed_data_fine.local_to_global(i, cell_id)] +=
+            dst[transfer_data->plain_dof_indices_fine(i, cell_id)] +=
               values_fine(i);
           });
       else
@@ -429,7 +423,7 @@ namespace Portable
           Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
           [&](const int &i) {
             Kokkos::atomic_add(
-              &dst[precomputed_data_fine.local_to_global(i, cell_id)],
+              &dst[transfer_data->plain_dof_indices_fine(i, cell_id)],
               values_fine(i));
           });
       team_member.team_barrier();
@@ -479,10 +473,6 @@ namespace Portable
       const int   cell_id     = transfer_data->cell_index;
       const auto &team_member = transfer_data->team_member;
 
-      const auto &precomputed_data_coarse =
-        transfer_data->precomputed_data_coarse;
-      const auto &precomputed_data_fine = transfer_data->precomputed_data_fine;
-
       const auto &prolongation_matrix = transfer_data->prolongation_matrix;
 
       auto &values_coarse = transfer_data->values_coarse;
@@ -494,7 +484,7 @@ namespace Portable
         Kokkos::TeamThreadRange(team_member, n_local_dofs_fine),
         [&](const int &i) {
           values_fine(i) =
-            src[precomputed_data_fine.local_to_global(i, cell_id)];
+            src[transfer_data->plain_dof_indices_fine(i, cell_id)];
         });
       team_member.team_barrier();
 
@@ -678,25 +668,23 @@ namespace Portable
         }
 
       // distribute coarse dofs values
-      if (precomputed_data_coarse.use_coloring)
+      if (transfer_data->use_coloring)
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
           [&](const int &i) {
-            if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i,
-                                                                   cell_id) !=
+            if (transfer_data->dof_indices_coarse(i, cell_id) !=
                 numbers::invalid_unsigned_int)
-              dst[precomputed_data_coarse.local_to_global(i, cell_id)] +=
+              dst[transfer_data->dof_indices_coarse(i, cell_id)] +=
                 values_coarse(i);
           });
       else
         Kokkos::parallel_for(
           Kokkos::TeamThreadRange(team_member, n_local_dofs_coarse),
           [&](const int &i) {
-            if (transfer_data->dirichlet_boundary_dofs_mask_coarse(i,
-                                                                   cell_id) !=
+            if (transfer_data->dof_indices_coarse(i, cell_id) !=
                 numbers::invalid_unsigned_int)
               Kokkos::atomic_add(
-                &dst[precomputed_data_coarse.local_to_global(i, cell_id)],
+                &dst[transfer_data->dof_indices_coarse(i, cell_id)],
                 values_coarse(i));
           });
       team_member.team_barrier();
@@ -741,7 +729,7 @@ namespace Portable
         &src) const;
 
     void
-    setup_weights_and_boundary_dofs_mask_coarse();
+    setup_weights_and_dof_indices();
 
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
     ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
@@ -757,7 +745,11 @@ namespace Portable
 
     std::vector<
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
-      boundary_dofs_mask_coarse;
+      dof_indices_coarse;
+
+    std::vector<
+      Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      plain_dof_indices_fine;
 
     std::vector<Kokkos::View<number **, MemorySpace::Default::kokkos_space>>
       weights_view_kokkos;
@@ -834,6 +826,11 @@ namespace Portable
 
     const unsigned int n_colors = colored_graph.size();
 
+    const bool use_coloring =
+      (n_colors > 0) ||
+      matrix_free_fine->use_overlap_communication_computation();
+
+
     if (matrix_free_fine->use_overlap_communication_computation())
       {
         // helper to process one color
@@ -841,24 +838,21 @@ namespace Portable
           using TeamPolicy = Kokkos::TeamPolicy<
             MemorySpace::Default::kokkos_space::execution_space>;
 
-          const auto &precomputed_data_coarse =
-            matrix_free_coarse->get_data(color, 0);
-          const auto &precomputed_data_fine =
-            matrix_free_fine->get_data(color, 0);
 
-          const auto n_cells = precomputed_data_fine.n_cells;
+          const auto n_cells = colored_graph[color].size();
 
           Functor cell_prolongator;
 
           auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
 
+
           p_mg_transfer::ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
             apply_kernel(cell_prolongator,
-                         precomputed_data_coarse,
-                         precomputed_data_fine,
                          this->prolongation_matrix_1d,
                          this->weights_view_kokkos[color],
-                         this->boundary_dofs_mask_coarse[color],
+                         this->dof_indices_coarse[color],
+                         this->plain_dof_indices_fine[color],
+                         use_coloring,
                          src,
                          dst);
 
@@ -906,18 +900,14 @@ namespace Portable
         // Execute the loop on the cells
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &precomputed_data_coarse =
-              matrix_free_coarse->get_data(color, 0);
-            const auto &precomputed_data_fine =
-              matrix_free_fine->get_data(color, 0);
+            const auto n_cells = colored_graph[color].size();
 
-            if (precomputed_data_fine.n_cells > 0)
+            if (n_cells > 0)
               {
                 using TeamPolicy = Kokkos::TeamPolicy<
                   MemorySpace::Default::kokkos_space::execution_space>;
 
 
-                const auto n_cells = precomputed_data_fine.n_cells;
 
                 Functor cell_prolongator;
 
@@ -926,11 +916,11 @@ namespace Portable
                 p_mg_transfer::
                   ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
                     apply_kernel(cell_prolongator,
-                                 precomputed_data_coarse,
-                                 precomputed_data_fine,
                                  this->prolongation_matrix_1d,
                                  this->weights_view_kokkos[color],
-                                 this->boundary_dofs_mask_coarse[color],
+                                 this->dof_indices_coarse[color],
+                                 this->plain_dof_indices_fine[color],
+                                 use_coloring,
                                  src,
                                  dst);
 
@@ -962,6 +952,11 @@ namespace Portable
 
     const unsigned int n_colors = colored_graph.size();
 
+    const bool use_coloring =
+      (n_colors > 0) ||
+      matrix_free_fine->use_overlap_communication_computation();
+
+
     if (matrix_free_fine->use_overlap_communication_computation())
       {
         // helper to process one color
@@ -969,12 +964,7 @@ namespace Portable
           using TeamPolicy = Kokkos::TeamPolicy<
             MemorySpace::Default::kokkos_space::execution_space>;
 
-          const auto &precomputed_data_coarse =
-            matrix_free_coarse->get_data(color, 0);
-          const auto &precomputed_data_fine =
-            matrix_free_fine->get_data(color, 0);
-
-          const auto n_cells = precomputed_data_fine.n_cells;
+          const auto n_cells = colored_graph[color].size();
 
           Functor cell_restrictor;
 
@@ -982,11 +972,11 @@ namespace Portable
 
           p_mg_transfer::ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
             apply_kernel(cell_restrictor,
-                         precomputed_data_coarse,
-                         precomputed_data_fine,
                          this->prolongation_matrix_1d,
                          this->weights_view_kokkos[color],
-                         this->boundary_dofs_mask_coarse[color],
+                         this->dof_indices_coarse[color],
+                         this->plain_dof_indices_fine[color],
+                         use_coloring,
                          src,
                          dst);
 
@@ -1034,17 +1024,12 @@ namespace Portable
         // Execute the loop on the cells
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            const auto &precomputed_data_coarse =
-              matrix_free_coarse->get_data(color, 0);
-            const auto &precomputed_data_fine =
-              matrix_free_fine->get_data(color, 0);
+            const auto n_cells = colored_graph[color].size();
 
-            if (precomputed_data_fine.n_cells > 0)
+            if (n_cells > 0)
               {
                 using TeamPolicy = Kokkos::TeamPolicy<
                   MemorySpace::Default::kokkos_space::execution_space>;
-
-                const auto n_cells = precomputed_data_fine.n_cells;
 
                 Functor cell_restrictor;
 
@@ -1053,11 +1038,11 @@ namespace Portable
                 p_mg_transfer::
                   ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
                     apply_kernel(cell_restrictor,
-                                 precomputed_data_coarse,
-                                 precomputed_data_fine,
                                  this->prolongation_matrix_1d,
                                  this->weights_view_kokkos[color],
-                                 this->boundary_dofs_mask_coarse[color],
+                                 this->dof_indices_coarse[color],
+                                 this->plain_dof_indices_fine[color],
+                                 use_coloring,
                                  src,
                                  dst);
 
@@ -1155,13 +1140,13 @@ namespace Portable
                       prolongation_matrix_1d_view);
     Kokkos::fence();
 
-    setup_weights_and_boundary_dofs_mask_coarse();
+    setup_weights_and_dof_indices();
   }
 
   template <int dim, int p_coarse, int p_fine, typename number>
   void
   PolynomialTransfer<dim, p_coarse, p_fine, number>::
-    setup_weights_and_boundary_dofs_mask_coarse()
+    setup_weights_and_dof_indices()
   {
     const auto &dof_handler_fine   = matrix_free_fine->get_dof_handler();
     const auto &dof_handler_coarse = matrix_free_coarse->get_dof_handler();
@@ -1202,152 +1187,237 @@ namespace Portable
       lex_numbering_coarse = shape_info.lexicographic_numbering;
     }
 
-    unsigned int n_cells_fine = 0;
-    for (const auto &cell : dof_handler_fine.active_cell_iterators())
-      if (cell->is_locally_owned())
-        ++n_cells_fine;
+    // setup weights
+    {
+      unsigned int n_cells_fine = 0;
+      for (const auto &cell : dof_handler_fine.active_cell_iterators())
+        if (cell->is_locally_owned())
+          ++n_cells_fine;
 
-    dealii::internal::MatrixFreeFunctions::
-      ConstraintInfo<dim, VectorizedArray<number>, types::global_dof_index>
-        constraint_info_fine;
+      dealii::internal::MatrixFreeFunctions::
+        ConstraintInfo<dim, VectorizedArray<number>, types::global_dof_index>
+          constraint_info_fine;
 
-    constraint_info_fine.reinit(dof_handler_fine, n_cells_fine);
 
-    constraint_info_fine.set_locally_owned_indices(
-      dof_handler_fine.locally_owned_dofs());
+      constraint_info_fine.reinit(dof_handler_fine, n_cells_fine);
 
-    std::vector<types::global_dof_index> local_dof_indices_fine(
-      n_dofs_per_cell_fine);
-    std::vector<types::global_dof_index> local_dof_indices_lex_fine(
-      n_dofs_per_cell_fine);
+      constraint_info_fine.set_locally_owned_indices(
+        dof_handler_fine.locally_owned_dofs());
 
-    int cell_counter = 0;
+      std::vector<types::global_dof_index> local_dof_indices_fine(
+        n_dofs_per_cell_fine);
+      std::vector<types::global_dof_index> local_dof_indices_lex_fine(
+        n_dofs_per_cell_fine);
 
-    for (unsigned int color = 0; color < n_colors; ++color)
-      for (const auto &cell : colored_graph_fine[color])
+      int cell_counter = 0;
+
+      for (unsigned int color = 0; color < n_colors; ++color)
+        for (const auto &cell : colored_graph_fine[color])
+          {
+            cell->get_dof_indices(local_dof_indices_fine);
+
+            for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
+              local_dof_indices_lex_fine[i] =
+                local_dof_indices_fine[lex_numbering_fine[i]];
+
+            constraint_info_fine.read_dof_indices(cell_counter,
+                                                  local_dof_indices_lex_fine,
+                                                  {});
+            ++cell_counter;
+          }
+
+      std::shared_ptr<const Utilities::MPI::Partitioner> partitioner_fine =
+        constraint_info_fine.finalize(dof_handler_fine.get_mpi_communicator());
+
+      LinearAlgebra::distributed::Vector<number> weight_vector;
+      weight_vector.reinit(partitioner_fine);
+
+      for (const auto i : constraint_info_fine.dof_indices)
+        weight_vector.local_element(i) += 1.0;
+
+      weight_vector.compress(VectorOperation::add);
+
+      for (unsigned int i = 0; i < weight_vector.locally_owned_size(); ++i)
+        if (weight_vector.local_element(i) > 0)
+          weight_vector.local_element(i) = 1.0 / weight_vector.local_element(i);
+
+      // ... clear constrained indices
+      for (const auto &constrained_dofs : constraints_fine->get_lines())
+        if (weight_vector.locally_owned_elements().is_element(
+              constrained_dofs.index))
+          weight_vector[constrained_dofs.index] = 0.0;
+
+      weight_vector.update_ghost_values();
+
+      weights_view_kokkos.clear();
+      weights_view_kokkos.resize(n_colors);
+
+      for (unsigned int color = 0; color < n_colors; ++color)
         {
-          cell->get_dof_indices(local_dof_indices_fine);
+          if (colored_graph_fine[color].size() > 0)
+            {
+              const auto &mf_data_fine = matrix_free_fine->get_data(color);
+              const auto &graph        = colored_graph_fine[color];
 
-          for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-            local_dof_indices_lex_fine[i] =
-              local_dof_indices_fine[lex_numbering_fine[i]];
+              weights_view_kokkos[color] =
+                Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
+                  Kokkos::view_alloc("weights_" + std::to_string(color),
+                                     Kokkos::WithoutInitializing),
+                  n_dofs_per_cell_fine,
+                  mf_data_fine.n_cells);
 
-          constraint_info_fine.read_dof_indices(cell_counter,
-                                                local_dof_indices_lex_fine,
-                                                {});
-          ++cell_counter;
+              auto weights_view_host =
+                Kokkos::create_mirror_view(weights_view_kokkos[color]);
+
+              auto cell = graph.cbegin(), end_cell = graph.cend();
+
+              for (unsigned int cell_id = 0; cell != end_cell;
+                   ++cell, ++cell_id)
+                {
+                  (*cell)->get_dof_indices(local_dof_indices_fine);
+
+                  for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
+                    {
+                      types::global_dof_index dof_index_lex =
+                        local_dof_indices_fine[lex_numbering_fine[i]];
+                      weights_view_host(i, cell_id) =
+                        weight_vector[dof_index_lex];
+                    }
+                }
+              Kokkos::deep_copy(weights_view_kokkos[color], weights_view_host);
+              Kokkos::fence();
+            }
         }
+    }
+    // setup coarse dof indices
+    {
+      std::vector<types::global_dof_index> local_dof_indices_coarse(
+        n_dofs_per_cell_coarse);
+      std::vector<types::global_dof_index> subdomain_dof_indices_coarse(
+        n_dofs_per_cell_coarse);
 
-    std::shared_ptr<const Utilities::MPI::Partitioner> partitioner_fine =
-      constraint_info_fine.finalize(dof_handler_fine.get_mpi_communicator());
+      this->dof_indices_coarse.clear();
+      this->dof_indices_coarse.resize(n_colors);
 
-    LinearAlgebra::distributed::Vector<number> weight_vector;
-    weight_vector.reinit(partitioner_fine);
+      const auto &partitioner_coarse =
+        matrix_free_coarse->get_vector_partitioner();
 
-    for (const auto i : constraint_info_fine.dof_indices)
-      weight_vector.local_element(i) += 1.0;
+      for (unsigned int color = 0; color < n_colors; ++color)
+        {
+          if (colored_graph_coarse[color].size() > 0)
+            {
+              const auto &mf_data_coarse = matrix_free_coarse->get_data(color);
 
-    weight_vector.compress(VectorOperation::add);
+              const auto &graph = colored_graph_coarse[color];
 
-    for (unsigned int i = 0; i < weight_vector.locally_owned_size(); ++i)
-      if (weight_vector.local_element(i) > 0)
-        weight_vector.local_element(i) = 1.0 / weight_vector.local_element(i);
+              this->dof_indices_coarse[color] =
+                Kokkos::View<unsigned int **,
+                             MemorySpace::Default::kokkos_space>(
+                  Kokkos::view_alloc("dof_indices_coarse_" +
+                                       std::to_string(color),
+                                     Kokkos::WithoutInitializing),
+                  n_dofs_per_cell_coarse,
+                  mf_data_coarse.n_cells);
 
-    // ... clear constrained indices
-    for (const auto &constrained_dofs : constraints_fine->get_lines())
-      if (weight_vector.locally_owned_elements().is_element(
-            constrained_dofs.index))
-        weight_vector[constrained_dofs.index] = 0.0;
+              auto dof_indices_coarse_host =
+                Kokkos::create_mirror_view(this->dof_indices_coarse[color]);
 
-    weight_vector.update_ghost_values();
+              for (unsigned int cell_id = 0; cell_id < mf_data_coarse.n_cells;
+                   ++cell_id)
+                {
+                  auto triacell = graph[cell_id];
 
-    weights_view_kokkos.clear();
-    weights_view_kokkos.resize(n_colors);
+                  typename DoFHandler<dim>::cell_iterator cell =
+                    triacell->as_dof_handler_iterator(dof_handler_coarse);
 
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        if (colored_graph_fine[color].size() > 0)
-          {
-            const auto &mf_data_fine = matrix_free_fine->get_data(color);
-            const auto &graph        = colored_graph_fine[color];
+                  cell->get_dof_indices(local_dof_indices_coarse);
 
-            weights_view_kokkos[color] =
-              Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
-                Kokkos::view_alloc("weights_" + std::to_string(color),
-                                   Kokkos::WithoutInitializing),
-                n_dofs_per_cell_fine,
-                mf_data_fine.n_cells);
+                  triacell->get_dof_indices(subdomain_dof_indices_coarse);
 
-            auto weights_view_host =
-              Kokkos::create_mirror_view(weights_view_kokkos[color]);
+                  if (partitioner_coarse)
+                    for (auto &index : local_dof_indices_coarse)
+                      index = partitioner_coarse->global_to_local(index);
 
-            auto cell = graph.cbegin(), end_cell = graph.cend();
+                  for (unsigned int i = 0; i < n_dofs_per_cell_coarse; ++i)
+                    {
+                      const auto global_dof =
+                        local_dof_indices_coarse[lex_numbering_coarse[i]];
 
-            for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
-              {
-                (*cell)->get_dof_indices(local_dof_indices_fine);
+                      const auto subdomain_local_dof =
+                        subdomain_dof_indices_coarse[lex_numbering_coarse[i]];
 
-                for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-                  {
-                    types::global_dof_index dof_index_lex =
-                      local_dof_indices_fine[lex_numbering_fine[i]];
-                    weights_view_host(i, cell_id) =
-                      weight_vector[dof_index_lex];
-                  }
-              }
-            Kokkos::deep_copy(weights_view_kokkos[color], weights_view_host);
-            Kokkos::fence();
-          }
-      }
+                      if (constraints_coarse->is_constrained(
+                            subdomain_local_dof))
+                        dof_indices_coarse_host(i, cell_id) =
+                          numbers::invalid_unsigned_int;
+                      dof_indices_coarse_host(i, cell_id) = global_dof;
+                    }
+                }
+              Kokkos::deep_copy(this->dof_indices_coarse[color],
+                                dof_indices_coarse_host);
+              Kokkos::fence();
+            }
+        }
+    }
 
-    // setup boundary dofs masks
-    std::vector<types::global_dof_index> local_dof_indices_coarse(
-      n_dofs_per_cell_coarse);
+    // setup fine plain dof indices
+    {
+      std::vector<types::global_dof_index> local_dof_indices_fine(
+        n_dofs_per_cell_fine);
 
-    this->boundary_dofs_mask_coarse.clear();
-    this->boundary_dofs_mask_coarse.resize(n_colors);
+      this->plain_dof_indices_fine.clear();
+      this->plain_dof_indices_fine.resize(n_colors);
 
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        if (colored_graph_fine[color].size() > 0)
-          {
-            const auto &mf_data_coarse = matrix_free_coarse->get_data(color);
-            ;
-            const auto &graph = colored_graph_coarse[color];
+      const auto &partitioner_fine = matrix_free_fine->get_vector_partitioner();
 
-            this->boundary_dofs_mask_coarse[color] =
-              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-                Kokkos::view_alloc("boundary_dofs_mask_coarse_" +
-                                     std::to_string(color),
-                                   Kokkos::WithoutInitializing),
-                n_dofs_per_cell_coarse,
-                mf_data_coarse.n_cells);
+      for (unsigned int color = 0; color < n_colors; ++color)
+        {
+          if (colored_graph_fine[color].size() > 0)
+            {
+              const auto &mf_data_fine = matrix_free_fine->get_data(color);
 
-            auto dofs_mask_host = Kokkos::create_mirror_view(
-              this->boundary_dofs_mask_coarse[color]);
+              const auto &graph = colored_graph_fine[color];
 
-            auto cell = graph.cbegin(), end_cell = graph.cend();
+              this->plain_dof_indices_fine[color] =
+                Kokkos::View<unsigned int **,
+                             MemorySpace::Default::kokkos_space>(
+                  Kokkos::view_alloc("plain_dof_indices_fine_" +
+                                       std::to_string(color),
+                                     Kokkos::WithoutInitializing),
+                  n_dofs_per_cell_fine,
+                  mf_data_fine.n_cells);
 
-            for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
-              {
-                (*cell)->get_dof_indices(local_dof_indices_coarse);
+              auto plain_dof_indices_fine_host =
+                Kokkos::create_mirror_view(this->plain_dof_indices_fine[color]);
 
-                for (unsigned int i = 0; i < n_dofs_per_cell_coarse; ++i)
-                  {
-                    const auto global_dof =
-                      local_dof_indices_coarse[lex_numbering_coarse[i]];
-                    if (constraints_coarse->is_constrained(global_dof))
-                      dofs_mask_host(i, cell_id) =
-                        numbers::invalid_unsigned_int;
-                    else
-                      dofs_mask_host(i, cell_id) = global_dof;
-                  }
-              }
-            Kokkos::deep_copy(this->boundary_dofs_mask_coarse[color],
-                              dofs_mask_host);
-            Kokkos::fence();
-          }
-      }
+              for (unsigned int cell_id = 0; cell_id < mf_data_fine.n_cells;
+                   ++cell_id)
+                {
+                  auto triacell = graph[cell_id];
+
+                  typename DoFHandler<dim>::cell_iterator cell =
+                    triacell->as_dof_handler_iterator(dof_handler_fine);
+
+                  cell->get_dof_indices(local_dof_indices_fine);
+
+                  if (partitioner_fine)
+                    for (auto &index : local_dof_indices_fine)
+                      index = partitioner_fine->global_to_local(index);
+
+                  for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
+                    {
+                      const auto global_dof =
+                        local_dof_indices_fine[lex_numbering_fine[i]];
+
+                      plain_dof_indices_fine_host(i, cell_id) = global_dof;
+                    }
+                }
+              Kokkos::deep_copy(this->plain_dof_indices_fine[color],
+                                plain_dof_indices_fine_host);
+              Kokkos::fence();
+            }
+        }
+    }
   }
 
   class PolynomialTransferDispatchFactory
@@ -1408,4 +1478,3 @@ namespace Portable
 DEAL_II_NAMESPACE_CLOSE
 
 #endif
-

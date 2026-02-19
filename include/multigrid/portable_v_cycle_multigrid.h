@@ -150,11 +150,6 @@ namespace Portable
   VCycleMultigrid<dim, number, TransferType>::vmult(VectorType       &dst,
                                                     const VectorType &src) const
   {
-    for (unsigned int level = minlevel; level < maxlevel; ++level)
-      {
-        defect[level] = 0;
-      }
-
     defect[maxlevel] = src;
 
     v_cycle(maxlevel);
