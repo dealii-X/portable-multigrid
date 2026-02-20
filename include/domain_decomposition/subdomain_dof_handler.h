@@ -19,7 +19,7 @@ struct SubdomainDoFInfo
   /*
      Local (serial) subdomain to global (distributed) DoFs map.
   */
-  std::vector<unsigned int> local_to_global_dof_map;
+  std::vector<types::global_dof_index> local_to_global_dof_map;
 
   /*
       Global interface DoFs in the global domain numbering.
@@ -27,9 +27,20 @@ struct SubdomainDoFInfo
   IndexSet interface_dofs_global;
 
   /*
-      Subdomain interface DoFs in the local subdomain numbering.
+  Subdomain interior dofs (i.e. DoFs that are not at the interface or the
+  physical (eventually Dirichlet) boundary) in the local subdomain numbering.
   */
-  std::vector<unsigned int> local_interface_dofs;
+  IndexSet subdomain_interior_dofs;
+
+  /*
+  Physical boundary DoFs in the local subdomain numbering.
+*/
+  IndexSet local_physical_boundary_dofs;
+
+  /*
+    Subdomain interface DoFs in the local subdomain numbering.
+*/
+  std::vector<unsigned int> subdomain_interface_dofs;
 
   /*
       Subdomain interface DoFs in the global domain numbering.
@@ -45,18 +56,7 @@ struct SubdomainDoFInfo
       Global interface DoFs to the local interface numbering.
   */
   std::map<types::global_dof_index, unsigned int>
-    global_to_sudomain_interface_map;
-
-  /*
-    Physical boundary DoFs in the local subdomain numbering.
-  */
-  std::vector<unsigned int> local_physical_boundary_dofs;
-
-  /*
-  Local interior dofs with interface and physical boundary DoFs set to
-  numbers::invalid_unsigned_int.
-  */
-  std::vector<unsigned int> subdomain_interior_dofs;
+    global_to_subdomain_interface_map;
 
   /*
     Id's of the cells that contain faces on the interface.
@@ -68,12 +68,14 @@ struct SubdomainDoFInfo
   clear()
   {
     local_to_global_dof_map.clear();
+    subdomain_interface_dofs.clear();
     interface_dofs_global.clear();
-    local_interface_dofs.clear();
     interface_local_to_global_map.clear();
-    global_to_sudomain_interface_map.clear();
+    global_to_subdomain_interface_map.clear();
+    subdomain_to_global_interface_map.clear();
     local_physical_boundary_dofs.clear();
     interface_cell_ids.clear();
+    subdomain_interior_dofs.clear();
   }
 };
 
@@ -96,10 +98,10 @@ public:
   const SubdomainDoFInfo<dim> &
   get_dof_info() const;
 
-  types::boundary_id
+  unsigned int
   get_subdomain_id() const;
 
-  unsigned int
+  types::boundary_id
   get_interface_id() const;
 
 private:
@@ -215,9 +217,10 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
   subdomain_dof_info.subdomain_to_global_interface_map.resize(
     subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
 
-  IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
-  IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.local_physical_boundary_dofs.set_size(
+    subdomain_dof_handler.n_dofs());
 
+  IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
 
   const unsigned int n_dofs_per_cell = fe.dofs_per_cell;
 
@@ -238,7 +241,8 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
               for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
                 {
                   if (fe.has_support_on_face(i, f))
-                    local_physical_boundary_dofs.add_index(cell_dofs[i]);
+                    subdomain_dof_info.local_physical_boundary_dofs.add_index(
+                      cell_dofs[i]);
                 }
             }
         }
@@ -277,51 +281,42 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
       ++interface_cell_counter;
     }
 
-  local_interface_dofs.subtract_set(local_physical_boundary_dofs);
+  local_interface_dofs.subtract_set(
+    subdomain_dof_info.local_physical_boundary_dofs);
 
+  {
+    unsigned int interface_counter = 0;
+    for (const auto &index : local_interface_dofs)
+      {
+        const types::global_dof_index global_index =
+          subdomain_dof_info.local_to_global_dof_map[index];
 
-  for (auto index : local_physical_boundary_dofs)
-    {
-      subdomain_dof_info.local_physical_boundary_dofs.push_back(index);
-    }
+        subdomain_dof_info.subdomain_interface_dofs.push_back(index);
 
-  subdomain_dof_info.subdomain_to_global_interface_map.resize(
-    local_interface_dofs.size(), numbers::invalid_unsigned_int);
+        subdomain_dof_info.interface_local_to_global_map.push_back(
+          global_index);
 
-  unsigned int interface_counter = 0;
-  for (auto index : local_interface_dofs)
-    {
-      const types::global_dof_index global_index =
-        subdomain_dof_info.local_to_global_dof_map[index];
+        subdomain_dof_info.interface_dofs_global.add_index(global_index);
 
+        subdomain_dof_info.subdomain_to_global_interface_map[index] =
+          interface_counter;
 
-      subdomain_dof_info.local_interface_dofs.push_back(index);
-      subdomain_dof_info.interface_local_to_global_map.push_back(global_index);
-      subdomain_dof_info.interface_dofs_global.add_index(global_index);
+        subdomain_dof_info.global_to_subdomain_interface_map[global_index] =
+          interface_counter;
 
-      subdomain_dof_info.subdomain_to_global_interface_map[index] =
-        interface_counter;
+        interface_counter++;
+      }
 
-      subdomain_dof_info.global_to_sudomain_interface_map[global_index] =
-        interface_counter;
+    subdomain_dof_info.interface_dofs_global.compress();
+  }
 
-      interface_counter++;
-    }
-
-  subdomain_dof_info.interface_dofs_global.compress();
-
-
-  IndexSet local_interior_dofs(subdomain_dof_handler.n_dofs());
-  local_interior_dofs.add_range(0, subdomain_dof_handler.n_dofs());
-  local_interior_dofs.subtract_set(local_physical_boundary_dofs);
-  local_interior_dofs.subtract_set(local_interface_dofs_set);
-
-  subdomain_dof_info.subdomain_interior_dofs.resize(
-    subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
-  for (auto index : local_interior_dofs)
-    {
-      subdomain_dof_info.subdomain_interior_dofs[index] = index;
-    }
+  subdomain_dof_info.subdomain_interior_dofs.set_size(
+    subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.subdomain_interior_dofs.add_range(
+    0, subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.subdomain_interior_dofs.subtract_set(
+    subdomain_dof_info.local_physical_boundary_dofs);
+  subdomain_dof_info.subdomain_interior_dofs.subtract_set(local_interface_dofs);
 }
 
 DEAL_II_NAMESPACE_CLOSE
