@@ -2,7 +2,9 @@
 #define subdomain_dof_handler_h
 
 #include <deal.II/base/enable_observer_pointer.h>
+#include <deal.II/base/mpi.h>
 #include <deal.II/base/observer_pointer.h>
+#include <deal.II/base/utilities.h>
 
 #include <deal.II/dofs/dof_handler.h>
 
@@ -19,7 +21,7 @@ struct SubdomainDoFInfo
   /*
      Local (serial) subdomain to global (distributed) DoFs map.
   */
-  std::vector<types::global_dof_index> local_to_global_dof_map;
+  std::vector<types::global_dof_index> subdomain_to_global_dof_map;
 
   /*
       Global interface DoFs in the global domain numbering.
@@ -30,12 +32,12 @@ struct SubdomainDoFInfo
   Subdomain interior dofs (i.e. DoFs that are not at the interface or the
   physical (eventually Dirichlet) boundary) in the local subdomain numbering.
   */
-  IndexSet subdomain_interior_dofs;
+  std::vector<unsigned int> subdomain_interior_dofs;
 
   /*
   Physical boundary DoFs in the local subdomain numbering.
 */
-  IndexSet local_physical_boundary_dofs;
+  std::vector<unsigned int> subdomain_physical_boundary_dofs;
 
   /*
     Subdomain interface DoFs in the local subdomain numbering.
@@ -67,13 +69,13 @@ struct SubdomainDoFInfo
   void
   clear()
   {
-    local_to_global_dof_map.clear();
+    subdomain_to_global_dof_map.clear();
     subdomain_interface_dofs.clear();
     interface_dofs_global.clear();
     interface_local_to_global_map.clear();
     global_to_subdomain_interface_map.clear();
     subdomain_to_global_interface_map.clear();
-    local_physical_boundary_dofs.clear();
+    subdomain_physical_boundary_dofs.clear();
     interface_cell_ids.clear();
     subdomain_interior_dofs.clear();
   }
@@ -87,10 +89,11 @@ public:
   SubdomainDoFHandler();
 
   void
-  reinit(const SubdomainTriangulation<dim> &subdomain_triangulation);
+  reinit(const SubdomainTriangulation<dim> &subdomain_triangulation,
+         const DoFHandler<dim>             &distributed_dof_handler);
 
   void
-  distribute_subdomain_dofs(const DoFHandler<dim> &distributed_dof_handler);
+  distribute_subdomain_dofs();
 
   const DoFHandler<dim> &
   get_dof_handler() const;
@@ -104,15 +107,45 @@ public:
   types::boundary_id
   get_interface_id() const;
 
+  MPI_Comm
+  get_mpi_communicator() const;
+
+  template <typename VectorType>
+  void
+  initialize_interface_dof_vector(VectorType &vec) const;
+
+  const std::shared_ptr<const Utilities::MPI::Partitioner> &
+  get_interface_vector_partitioner() const;
+
+  const IndexSet &
+  get_locally_relevant_interface_indices() const;
+
 private:
+  void
+  fill_dof_info();
+
   SubdomainDoFInfo<dim> subdomain_dof_info;
 
   DoFHandler<dim> subdomain_dof_handler;
 
   ObserverPointer<const SubdomainTriangulation<dim>> subdomain_triangulation;
+  ObserverPointer<const DoFHandler<dim>>             distributed_dof_handler;
 
   unsigned int       subdomain_id;
   types::boundary_id interface_id;
+
+  std::shared_ptr<const Utilities::MPI::Partitioner> interface_vector_partitioner;
+
+  IndexSet locally_owned_interface_indices;
+  IndexSet locally_relevant_interface_indices;
+
+  IndexSet locally_owned_interface_indices_global_numbering;
+  IndexSet locally_relevant_interface_indices_global_numbering;
+
+  std::map<types::global_dof_index, unsigned int>
+    global_numbering_to_interface_partitoner;
+
+  std::vector<types::global_dof_index> interface_partitoner_to_global_numbering;
 };
 
 template <int dim>
@@ -126,10 +159,13 @@ SubdomainDoFHandler<dim>::SubdomainDoFHandler()
 template <int dim>
 void
 SubdomainDoFHandler<dim>::reinit(
-  const SubdomainTriangulation<dim> &subdomain_triangulation)
+  const SubdomainTriangulation<dim> &subdomain_triangulation,
+  const DoFHandler<dim>             &distributed_dof_handler)
 
 {
   this->subdomain_triangulation = &subdomain_triangulation;
+  this->distributed_dof_handler = &distributed_dof_handler;
+
   subdomain_dof_handler.reinit(subdomain_triangulation.get_triangulation());
   subdomain_dof_info.clear();
   subdomain_id = subdomain_triangulation.get_topology_info().subdomain_id;
@@ -137,60 +173,167 @@ SubdomainDoFHandler<dim>::reinit(
 }
 
 template <int dim>
-unsigned int
-SubdomainDoFHandler<dim>::get_subdomain_id() const
+void
+SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 {
-  return subdomain_id;
-}
+  this->subdomain_dof_handler.distribute_dofs(
+    this->distributed_dof_handler->get_fe());
+
+  this->fill_dof_info();
+
+  IndexSet &local_interface_indices = subdomain_dof_info.interface_dofs_global;
+
+  std::vector<IndexSet> all_sets =
+    Utilities::MPI::all_gather(this->get_mpi_communicator(),
+                               local_interface_indices);
+
+  IndexSet all_interface_dofs(local_interface_indices.size());
+  for (const auto &set : all_sets)
+    {
+      all_interface_dofs.add_indices(set);
+    }
+  all_interface_dofs.compress();
+
+  const unsigned int n_global_interface_dofs = all_interface_dofs.n_elements();
+
+  const unsigned int n_ranks =
+    Utilities::MPI::n_mpi_processes(this->get_mpi_communicator());
+  const unsigned int my_rank =
+    Utilities::MPI::this_mpi_process(this->get_mpi_communicator());
+
+  this->locally_owned_interface_indices_global_numbering.clear();
+  this->locally_owned_interface_indices_global_numbering.set_size(
+    this->distributed_dof_handler->n_dofs());
+
+  for (const auto mesh_id : local_interface_indices)
+    {
+      std::vector<unsigned int> sharers;
+      for (unsigned int r = 0; r < n_ranks; ++r)
+        {
+          if (all_sets[r].is_element(mesh_id))
+            {
+              sharers.push_back(r);
+            }
+        }
+      std::sort(sharers.begin(), sharers.end());
+
+      unsigned int master_rank = sharers[0];
+
+      if (my_rank == master_rank)
+        {
+          locally_owned_interface_indices_global_numbering.add_index(mesh_id);
+        }
+    }
+
+  IndexSet ghost_interface_indices_global_numbering(local_interface_indices);
+  ghost_interface_indices_global_numbering.subtract_set(
+    locally_owned_interface_indices_global_numbering);
+
+  const unsigned int n_locally_owned =
+    locally_owned_interface_indices_global_numbering.n_elements();
+
+  std::vector<unsigned int> all_n_locally_owned =
+    Utilities::MPI::all_gather(this->get_mpi_communicator(), n_locally_owned);
+
+  std::vector<unsigned int> rank_offsets(n_ranks + 1, 0);
+  for (unsigned int r = 0; r < n_ranks; ++r)
+    rank_offsets[r + 1] = rank_offsets[r] + all_n_locally_owned[r];
+
+  const unsigned int total_interface_size = rank_offsets.back();
+
+  AssertDimension(total_interface_size, n_global_interface_dofs);
+
+  global_numbering_to_interface_partitoner.clear();
+  interface_partitoner_to_global_numbering.clear();
+
+  std::vector<unsigned int> rank_counter_ptr = rank_offsets;
+
+  for (unsigned int r = 0; r < n_ranks; ++r)
+    {
+      for (const auto global_index : all_sets[r])
+        {
+          unsigned int master_rank = n_ranks + 1;
+          for (unsigned int s = 0; s < n_ranks; ++s)
+            {
+              if (all_sets[s].is_element(global_index))
+                {
+                  master_rank = s;
+                  break;
+                }
+            }
+          if (master_rank == r)
+            {
+              global_numbering_to_interface_partitoner[global_index] =
+                rank_counter_ptr[r];
 
 
-template <int dim>
-types::boundary_id
-SubdomainDoFHandler<dim>::get_interface_id() const
-{
-  return interface_id;
-}
+              interface_partitoner_to_global_numbering.push_back(global_index);
 
-template <int dim>
-const DoFHandler<dim> &
-SubdomainDoFHandler<dim>::get_dof_handler() const
-{
-  return subdomain_dof_handler;
-}
+              ++rank_counter_ptr[r];
+            }
+        }
+    }
 
+  locally_owned_interface_indices.clear();
+  locally_owned_interface_indices.set_size(total_interface_size);
+  locally_owned_interface_indices.add_range(rank_offsets[my_rank],
+                                            rank_offsets[my_rank + 1]);
 
-template <int dim>
-const SubdomainDoFInfo<dim> &
-SubdomainDoFHandler<dim>::get_dof_info() const
-{
-  return subdomain_dof_info;
+  IndexSet ghost_interface_indices(total_interface_size);
+
+  for (const auto &index : local_interface_indices)
+    {
+      if (ghost_interface_indices_global_numbering.is_element(index))
+        ghost_interface_indices.add_index(
+          global_numbering_to_interface_partitoner[index]);
+    }
+
+  this->interface_vector_partitioner =
+    std::make_shared<Utilities::MPI::Partitioner>(
+      locally_owned_interface_indices,
+      ghost_interface_indices,
+      this->get_mpi_communicator());
+
+  locally_relevant_interface_indices.clear();
+  locally_relevant_interface_indices.set_size(total_interface_size);
+  locally_relevant_interface_indices.add_indices(
+    locally_owned_interface_indices);
+  locally_relevant_interface_indices.add_indices(ghost_interface_indices);
+
+  locally_relevant_interface_indices_global_numbering.clear();
+  locally_relevant_interface_indices_global_numbering.set_size(
+    this->distributed_dof_handler->n_dofs());
+  locally_relevant_interface_indices_global_numbering.add_indices(
+    locally_owned_interface_indices_global_numbering);
+  locally_relevant_interface_indices_global_numbering.add_indices(
+    ghost_interface_indices_global_numbering);
 }
 
 
 template <int dim>
 void
-SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
-  const DoFHandler<dim> &distributed_dof_handler)
+SubdomainDoFHandler<dim>::fill_dof_info()
 {
+  subdomain_dof_info.clear();
+
+  subdomain_dof_info.subdomain_to_global_dof_map.resize(
+    subdomain_dof_handler.n_dofs());
+
   const auto subdomain_topology =
     this->subdomain_triangulation->get_topology_info();
 
-  const auto &fe = distributed_dof_handler.get_fe();
+  const auto &fe = this->distributed_dof_handler->get_fe();
 
-  subdomain_dof_handler.distribute_dofs(fe);
+  const unsigned int n_dofs_per_cell = fe.dofs_per_cell;
 
-  subdomain_dof_info.clear();
-
-  subdomain_dof_info.local_to_global_dof_map.resize(
-    subdomain_dof_handler.n_dofs());
   {
-    auto global_cell     = distributed_dof_handler.begin_active();
-    auto global_cell_end = distributed_dof_handler.end();
+    auto global_cell     = this->distributed_dof_handler->begin_active();
+    auto global_cell_end = this->distributed_dof_handler->end();
 
     auto local_cell = subdomain_dof_handler.begin_active();
 
-    std::vector<types::global_dof_index> global_dof_indices(fe.dofs_per_cell);
-    std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
+    std::vector<types::global_dof_index> global_dof_indices(n_dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(n_dofs_per_cell);
 
     for (; global_cell != global_cell_end; ++global_cell)
       {
@@ -199,10 +342,10 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
             global_cell->get_dof_indices(global_dof_indices);
             local_cell->get_dof_indices(local_dof_indices);
 
-            for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
+            for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
               {
                 subdomain_dof_info
-                  .local_to_global_dof_map[local_dof_indices[i]] =
+                  .subdomain_to_global_dof_map[local_dof_indices[i]] =
                   global_dof_indices[i];
               }
 
@@ -212,17 +355,15 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
   }
 
   subdomain_dof_info.interface_dofs_global.set_size(
-    distributed_dof_handler.n_dofs());
+    this->distributed_dof_handler->n_dofs());
 
   subdomain_dof_info.subdomain_to_global_interface_map.resize(
-    subdomain_dof_handler.n_dofs(), numbers::invalid_unsigned_int);
-
-  subdomain_dof_info.local_physical_boundary_dofs.set_size(
-    subdomain_dof_handler.n_dofs());
+    this->distributed_dof_handler->n_dofs(), numbers::invalid_unsigned_int);
 
   IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
+  IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
+  IndexSet local_interior_dofs(subdomain_dof_handler.n_dofs());
 
-  const unsigned int n_dofs_per_cell = fe.dofs_per_cell;
 
   std::vector<types::global_dof_index> cell_dofs(n_dofs_per_cell);
 
@@ -241,8 +382,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
               for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
                 {
                   if (fe.has_support_on_face(i, f))
-                    subdomain_dof_info.local_physical_boundary_dofs.add_index(
-                      cell_dofs[i]);
+                    local_physical_boundary_dofs.add_index(cell_dofs[i]);
                 }
             }
         }
@@ -281,15 +421,30 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
       ++interface_cell_counter;
     }
 
-  local_interface_dofs.subtract_set(
-    subdomain_dof_info.local_physical_boundary_dofs);
+  local_interface_dofs.subtract_set(local_physical_boundary_dofs);
+
+  local_interior_dofs.add_range(0, subdomain_dof_handler.n_dofs());
+  local_interior_dofs.subtract_set(local_physical_boundary_dofs);
+  local_interior_dofs.subtract_set(local_interface_dofs);
+
+  for (unsigned int i = 0; i < subdomain_dof_handler.n_dofs(); ++i)
+    {
+      if (local_physical_boundary_dofs.is_element(i))
+        {
+          subdomain_dof_info.subdomain_physical_boundary_dofs.push_back(i);
+        }
+      else if (local_interior_dofs.is_element(i))
+        {
+          subdomain_dof_info.subdomain_interior_dofs.push_back(i);
+        }
+    }
 
   {
     unsigned int interface_counter = 0;
     for (const auto &index : local_interface_dofs)
       {
         const types::global_dof_index global_index =
-          subdomain_dof_info.local_to_global_dof_map[index];
+          subdomain_dof_info.subdomain_to_global_dof_map[index];
 
         subdomain_dof_info.subdomain_interface_dofs.push_back(index);
 
@@ -309,14 +464,64 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs(
 
     subdomain_dof_info.interface_dofs_global.compress();
   }
+}
 
-  subdomain_dof_info.subdomain_interior_dofs.set_size(
-    subdomain_dof_handler.n_dofs());
-  subdomain_dof_info.subdomain_interior_dofs.add_range(
-    0, subdomain_dof_handler.n_dofs());
-  subdomain_dof_info.subdomain_interior_dofs.subtract_set(
-    subdomain_dof_info.local_physical_boundary_dofs);
-  subdomain_dof_info.subdomain_interior_dofs.subtract_set(local_interface_dofs);
+
+template <int dim>
+unsigned int
+SubdomainDoFHandler<dim>::get_subdomain_id() const
+{
+  return subdomain_id;
+}
+
+template <int dim>
+types::boundary_id
+SubdomainDoFHandler<dim>::get_interface_id() const
+{
+  return interface_id;
+}
+
+template <int dim>
+const DoFHandler<dim> &
+SubdomainDoFHandler<dim>::get_dof_handler() const
+{
+  return subdomain_dof_handler;
+}
+
+template <int dim>
+const SubdomainDoFInfo<dim> &
+SubdomainDoFHandler<dim>::get_dof_info() const
+{
+  return subdomain_dof_info;
+}
+
+template <int dim>
+MPI_Comm
+SubdomainDoFHandler<dim>::get_mpi_communicator() const
+{
+  return this->distributed_dof_handler->get_mpi_communicator();
+}
+
+template <int dim>
+const std::shared_ptr<const Utilities::MPI::Partitioner> &
+SubdomainDoFHandler<dim>::get_interface_vector_partitioner() const
+{
+  return this->interface_vector_partitioner;
+}
+
+template <int dim>
+template <typename VectorType>
+void
+SubdomainDoFHandler<dim>::initialize_interface_dof_vector(VectorType &vec) const
+{
+  vec.reinit(this->interface_vector_partitioner);
+}
+
+template <int dim>
+const IndexSet &
+SubdomainDoFHandler<dim>::get_locally_relevant_interface_indices() const
+{
+  return locally_relevant_interface_indices;
 }
 
 DEAL_II_NAMESPACE_CLOSE

@@ -90,7 +90,8 @@ void
 SubdomainTriangulation<dim>::create_subdomain_triangulation(
   parallel::distributed::Triangulation<dim> &distributed_triangulation)
 {
-  this->topology_info.clear();
+
+  this->clear();
   this->topology_info.subdomain_id = Utilities::MPI::this_mpi_process(
     distributed_triangulation.get_mpi_communicator());
 

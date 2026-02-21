@@ -103,7 +103,8 @@ private:
 
   std::vector<types::global_dof_index> local_to_global_dof_map;
 
-  std::vector<double> interface_weights;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
+    global_interface_weights;
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
     global_solution_host;
@@ -164,10 +165,11 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
 
-  subdomain_dof_handler.reinit(subdomain_triangulation);
-  subdomain_dof_handler.distribute_subdomain_dofs(dof_handler);
+  subdomain_dof_handler.reinit(subdomain_triangulation, dof_handler);
+  subdomain_dof_handler.distribute_subdomain_dofs();
 
   pcout << "  Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
+
 
   std::cout << "    Number of DoFs on subdomain "
             << subdomain_dof_handler.get_subdomain_id() << ": "
@@ -215,49 +217,31 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
   subdomain_solution_host.reinit(
     subdomain_dof_handler.get_dof_handler().n_dofs());
-
-  const auto &sudomain_dof_info = subdomain_dof_handler.get_dof_info();
-
-  this->n_subdomain_dofs = subdomain_dof_handler.get_dof_handler().n_dofs();
-  this->n_subdomain_interior_dofs =
-    this->n_subdomain_dofs - sudomain_dof_info.local_interface_dofs.size() -
-    sudomain_dof_info.local_physical_boundary_dofs.size();
-  this->n_subdomain_interface_dofs =
-    sudomain_dof_info.local_interface_dofs.size();
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 {
-  const auto &subdomain_dofs = subdomain_dof_handler.get_dof_info();
+  // subdomain_dof_handler.initialize_interface_dof_vector(
+  //   global_interface_weights);
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_weights;
-  global_weights.reinit(locally_owned_dofs,
-                        locally_relevant_dofs,
-                        mpi_communicator);
+  global_interface_weights.reinit(
+    subdomain_dof_handler.get_interface_vector_partitioner());
+  for (const auto &index :
+       subdomain_dof_handler.get_locally_relevant_interface_indices())
+    global_interface_weights[index] += 1.0;
 
-  for (unsigned int i = 0;
-       i < subdomain_dofs.interface_local_to_global_map.size();
+  global_interface_weights.compress(VectorOperation::add);
+
+  for (unsigned int i = 0; i < global_interface_weights.locally_owned_size();
        ++i)
-    {
-      global_weights[subdomain_dofs.interface_local_to_global_map[i]] += 1.0;
-    }
+    global_interface_weights.local_element(i) =
+      1. / global_interface_weights.local_element(i);
 
-  global_weights.compress(VectorOperation::add);
+  global_interface_weights.update_ghost_values();
 
-  global_weights.update_ghost_values();
-
-  this->interface_weights.resize(
-    subdomain_dofs.interface_local_to_global_map.size());
-
-  for (unsigned int i = 0;
-       i < subdomain_dofs.interface_local_to_global_map.size();
-       ++i)
-    {
-      interface_weights[i] =
-        1.0 / global_weights[subdomain_dofs.interface_local_to_global_map[i]];
-    }
+  global_interface_weights.print(std::cout);
 }
 
 template <int dim, int fe_degree>
@@ -312,15 +296,35 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
         cell_rhs, local_dof_indices, system_rhs_host);
     }
 
+  // system_rhs_host.print(std::cout);
+
   LinearAlgebra::ReadWriteVector<double> rw_vector(
     subdomain_dof_handler.get_dof_handler().n_dofs());
 
   rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
   subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-    rhs_interior_host(this->n_subdomain_interior_dofs);
+  const auto &subdomain_dof_info = subdomain_dof_handler.get_dof_info();
 
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
+    rhs_interior_host(subdomain_dof_info.subdomain_interior_dofs.size());
+
+  unsigned int counter = 0;
+  for (const auto &index : subdomain_dof_info.subdomain_interior_dofs)
+    rhs_interior_host[counter++] = system_rhs_host[index];
+
+  // rhs_interior_host.print(std::cout);
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
+    rhs_interface_host(subdomain_dof_info.subdomain_interface_dofs.size());
+
+  for (unsigned int i = 0;
+       i < subdomain_dof_info.subdomain_interface_dofs.size();
+       ++i)
+    rhs_interface_host[i] =
+      system_rhs_host[subdomain_dof_info.subdomain_interface_dofs[i]];
+
+  // rhs_interface_host.print(std::cout);
 }
 
 
@@ -407,7 +411,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
 
-  for (unsigned int cycle = 0; cycle < 1; ++cycle)
+  for (unsigned int cycle = 0; cycle < 3; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
