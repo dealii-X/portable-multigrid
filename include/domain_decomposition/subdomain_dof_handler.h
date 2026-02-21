@@ -32,12 +32,12 @@ struct SubdomainDoFInfo
   Subdomain interior dofs (i.e. DoFs that are not at the interface or the
   physical (eventually Dirichlet) boundary) in the local subdomain numbering.
   */
-  std::vector<unsigned int> subdomain_interior_dofs;
+  IndexSet subdomain_interior_dofs;
 
   /*
   Physical boundary DoFs in the local subdomain numbering.
 */
-  std::vector<unsigned int> subdomain_physical_boundary_dofs;
+  IndexSet subdomain_physical_boundary_dofs;
 
   /*
     Subdomain interface DoFs in the local subdomain numbering.
@@ -134,7 +134,8 @@ private:
   unsigned int       subdomain_id;
   types::boundary_id interface_id;
 
-  std::shared_ptr<const Utilities::MPI::Partitioner> interface_vector_partitioner;
+  std::shared_ptr<const Utilities::MPI::Partitioner>
+    interface_vector_partitioner;
 
   IndexSet locally_owned_interface_indices;
   IndexSet locally_relevant_interface_indices;
@@ -361,8 +362,12 @@ SubdomainDoFHandler<dim>::fill_dof_info()
     this->distributed_dof_handler->n_dofs(), numbers::invalid_unsigned_int);
 
   IndexSet local_interface_dofs(subdomain_dof_handler.n_dofs());
-  IndexSet local_physical_boundary_dofs(subdomain_dof_handler.n_dofs());
-  IndexSet local_interior_dofs(subdomain_dof_handler.n_dofs());
+
+  subdomain_dof_info.subdomain_physical_boundary_dofs.set_size(
+    subdomain_dof_handler.n_dofs());
+
+  subdomain_dof_info.subdomain_interior_dofs.set_size(
+    subdomain_dof_handler.n_dofs());
 
 
   std::vector<types::global_dof_index> cell_dofs(n_dofs_per_cell);
@@ -382,7 +387,8 @@ SubdomainDoFHandler<dim>::fill_dof_info()
               for (unsigned int i = 0; i < n_dofs_per_cell; ++i)
                 {
                   if (fe.has_support_on_face(i, f))
-                    local_physical_boundary_dofs.add_index(cell_dofs[i]);
+                    subdomain_dof_info.subdomain_physical_boundary_dofs
+                      .add_index(cell_dofs[i]);
                 }
             }
         }
@@ -421,23 +427,14 @@ SubdomainDoFHandler<dim>::fill_dof_info()
       ++interface_cell_counter;
     }
 
-  local_interface_dofs.subtract_set(local_physical_boundary_dofs);
+  local_interface_dofs.subtract_set(
+    subdomain_dof_info.subdomain_physical_boundary_dofs);
 
-  local_interior_dofs.add_range(0, subdomain_dof_handler.n_dofs());
-  local_interior_dofs.subtract_set(local_physical_boundary_dofs);
-  local_interior_dofs.subtract_set(local_interface_dofs);
-
-  for (unsigned int i = 0; i < subdomain_dof_handler.n_dofs(); ++i)
-    {
-      if (local_physical_boundary_dofs.is_element(i))
-        {
-          subdomain_dof_info.subdomain_physical_boundary_dofs.push_back(i);
-        }
-      else if (local_interior_dofs.is_element(i))
-        {
-          subdomain_dof_info.subdomain_interior_dofs.push_back(i);
-        }
-    }
+  subdomain_dof_info.subdomain_interior_dofs.add_range(
+    0, subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.subdomain_interior_dofs.subtract_set(
+    subdomain_dof_info.subdomain_physical_boundary_dofs);
+  subdomain_dof_info.subdomain_interior_dofs.subtract_set(local_interface_dofs);
 
   {
     unsigned int interface_counter = 0;

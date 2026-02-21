@@ -170,7 +170,6 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
   pcout << "  Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
 
-
   std::cout << "    Number of DoFs on subdomain "
             << subdomain_dof_handler.get_subdomain_id() << ": "
             << subdomain_dof_handler.get_dof_handler().n_dofs() << std::endl;
@@ -223,11 +222,9 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 {
-  // subdomain_dof_handler.initialize_interface_dof_vector(
-  //   global_interface_weights);
+  subdomain_dof_handler.initialize_interface_dof_vector(
+    global_interface_weights);
 
-  global_interface_weights.reinit(
-    subdomain_dof_handler.get_interface_vector_partitioner());
   for (const auto &index :
        subdomain_dof_handler.get_locally_relevant_interface_indices())
     global_interface_weights[index] += 1.0;
@@ -250,10 +247,9 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 {
   subdomain_matrix = std::make_unique<
     Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>(
-    subdomain_dof_handler.get_dof_handler(),
+    subdomain_dof_handler,
     subdomain_constraints,
-    subdomain_constraints_physical,
-    false);
+    subdomain_constraints_physical);
 
   subdomain_matrix->initialize_dof_vector(subdomain_solution_device);
   subdomain_rhs_device.reinit(subdomain_solution_device);
