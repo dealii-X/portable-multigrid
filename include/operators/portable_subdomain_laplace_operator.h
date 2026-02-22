@@ -24,11 +24,9 @@ namespace Portable
   class SubdomainLaplaceOperator : public LaplaceOperatorBase<dim, number>
   {
   public:
-    SubdomainLaplaceOperator(
-      const SubdomainDoFHandler<dim>  &dof_handler,
-      const AffineConstraints<number> &constraints,
-      const AffineConstraints<number> &constraints_physical,
-      bool overlap_communication_computation = false);
+    SubdomainLaplaceOperator(const SubdomainDoFHandler<dim>  &dof_handler,
+                             const AffineConstraints<number> &constraints,
+                             bool overlap_communication_computation = false);
 
     void
     vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
@@ -48,6 +46,14 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
         &src) const;
+
+
+    void
+    assemble_rhs_schur(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &rhs_schur,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &rhs_subdomain) const;
 
     void
     vmult_schur(
@@ -143,7 +149,6 @@ namespace Portable
     ObserverPointer<const SubdomainDoFHandler<dim>> subdomain_dof_handler;
 
     ObserverPointer<const AffineConstraints<number>> constraints;
-    ObserverPointer<const AffineConstraints<number>> constraints_physical;
 
     static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
 
@@ -153,24 +158,33 @@ namespace Portable
 
     std::vector<
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      plain_dof_indices_per_color;
+
+    std::vector<
+      Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
       interior_dof_indices_per_color;
 
     std::vector<
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
       interface_cell_dof_indices_per_color;
 
+    Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>
+      interface_dof_indices_subdomain;
 
     Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>
-      interface_dof_indices;
+      interface_dof_indices_partitioner;
 
     Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>
-      interior_interface_cell_dof_indices;
+      physical_boundary_dof_indices;
 
     std::vector<
       Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>>
       interface_cell_ids_per_color;
 
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+    Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>
+      interface_cell_interior_dof_indices;
+
+    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
       temp_vector_src, temp_vector_dst, temp_vector_work;
   };
 
@@ -178,7 +192,6 @@ namespace Portable
   SubdomainLaplaceOperator<dim, fe_degree, number>::SubdomainLaplaceOperator(
     const SubdomainDoFHandler<dim>  &subdomain_dof_handler,
     const AffineConstraints<number> &constraints,
-    const AffineConstraints<number> &constraints_physical,
     bool                             overlap_communication_computation)
   {
     const MappingQ<dim> mapping(fe_degree);
@@ -186,15 +199,16 @@ namespace Portable
     typename MatrixFree<dim, number>::AdditionalData additional_data;
 
     this->constraints           = &constraints;
-    this->constraints_physical  = &constraints_physical;
     this->subdomain_dof_handler = &subdomain_dof_handler;
 
     additional_data.mapping_update_flags =
       update_gradients | update_JxW_values | update_quadrature_points;
+
     additional_data.overlap_communication_computation =
       overlap_communication_computation;
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
+
     matrix_free.reinit(mapping,
                        subdomain_dof_handler.get_dof_handler(),
                        constraints,
@@ -227,6 +241,85 @@ namespace Portable
 
   template <int dim, int fe_degree, typename number>
   void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::assemble_rhs_schur(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_schur,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+      &rhs_subdomain) const
+  {
+    Assert(
+      rhs_schur.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+
+    rhs_schur = 0.;
+
+    temp_vector_src = 0.;
+    temp_vector_dst = 0.;
+
+    DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(),
+                                            rhs_subdomain.size());
+    DeviceVector<number> rhs_schur_view(
+      rhs_schur.get_values(), interface_dof_indices_partitioner.size());
+    DeviceVector<number> t_src_view(temp_vector_src.get_values(),
+                                    temp_vector_src.size());
+    DeviceVector<number> t_dst_view(temp_vector_dst.get_values(),
+                                    temp_vector_dst.size());
+
+    temp_vector_dst = rhs_subdomain;
+    temp_vector_dst *= -1.0;
+
+    std::cout << "BEFORE INTERIOR SOLVE\n";
+    std::cout << std::endl;
+
+
+    // solve interior
+    dirichlet_solve_local(temp_vector_src, temp_vector_dst);
+
+    std::cout << "AFTER INTERIOR SOLVE\n";
+    std::cout << std::endl;
+
+    // read interface values
+    Kokkos::parallel_for(
+      "work",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const int i) {
+        const auto idx  = interface_dof_indices_subdomain(i);
+        t_src_view(idx) = rhs_subdomain_view(idx);
+      });
+
+    std::cout << "AFTER READ INTERFACE VALUES SOLVE\n";
+    std::cout << std::endl;
+
+    vmult_range(temp_vector_dst, temp_vector_src);
+
+    std::cout << "AFTER VMULT RANGE INTERFACE VALUES SOLVE\n";
+    std::cout << std::endl;
+
+    MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
+    Kokkos::parallel_for(
+      "distribute_interface_dofs",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const int i) {
+        const auto idx_subdomain   = interface_dof_indices_subdomain(i);
+        Kokkos::atomic_add(&rhs_schur_view(i),
+                           t_dst_view(idx_subdomain));
+      });
+
+    MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
+
+    std::cout << "BEFORE COMPRESS\n";
+    std::cout << std::endl;
+
+
+    rhs_schur.compress(VectorOperation::add);
+    std::cout << "AFTER COMPRESS\n";
+    std::cout << std::endl;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
   SubdomainLaplaceOperator<dim, fe_degree, number>::vmult_schur(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
@@ -245,57 +338,62 @@ namespace Portable
         "This function expects a vector initialized by SubdomainDoFHandler's \
         interface vector partitioner."));
 
-    MemorySpace::Default::kokkos_space::execution_space exec;
+    // MemorySpace::Default::kokkos_space::execution_space exec;
 
-    dst = 0.;
+    // dst = 0.;
 
-    temp_vector_src  = 0.;
-    temp_vector_work = 0.;
+    // src.update_ghost_values();
 
-    src.update_ghost_values();
-
-    DeviceVector<number> src_view(src.get_values(), src.locally_owned_size());
-    DeviceVector<number> dst_view(dst.get_values(), src.locally_owned_size());
-    DeviceVector<number> t_src(temp_vector_src.get_values(),
-                               temp_vector_src.locally_owned_size());
-    DeviceVector<number> t_dst(temp_vector_dst.get_values(),
-                               temp_vector_dst.locally_owned_size());
-    DeviceVector<number> t_work(temp_vector_work.get_values(),
-                                temp_vector_work.locally_owned_size());
+    // temp_vector_src  = 0.;
+    // temp_vector_work = 0.;
 
 
-    Kokkos::parallel_for(
-      "read_src_interface",
-      interface_dof_indices.size(),
-      KOKKOS_LAMBDA(const int i) {
-        t_src[interface_dof_indices[i]] = src_view[i];
-      });
+    // DeviceVector<number> src_view(src.get_values(),
+    // src.locally_owned_size()); DeviceVector<number>
+    // dst_view(dst.get_values(), src.locally_owned_size());
+    // DeviceVector<number> t_src(temp_vector_src.get_values(),
+    //                            temp_vector_src.locally_owned_size());
+    // DeviceVector<number> t_dst(temp_vector_dst.get_values(),
+    //                            temp_vector_dst.locally_owned_size());
+    // DeviceVector<number> t_work(temp_vector_work.get_values(),
+    //                             temp_vector_work.locally_owned_size());
 
-    vmult_range(temp_vector_dst, temp_vector_src);
 
-    Kokkos::parallel_for(
-      "work",
-      interior_interface_cell_dof_indices.size(),
-      KOKKOS_LAMBDA(const int i) {
-        const auto idx = interior_interface_cell_dof_indices(i);
-        t_work[idx]    = t_dst[idx];
-      });
+    // Kokkos::parallel_for(
+    //   "read_src_interface",
+    //   interface_dof_indices_partitioner.size(),
+    //   KOKKOS_LAMBDA(const int i) {
+    //     t_src(interface_dof_indices_subdomain(i)) =
+    //     src_view(interface_dof_indices_partitioner(i));
+    //   });
 
-    dirichlet_solve_local(temp_vector_src, temp_vector_work);
+    // vmult_range(temp_vector_dst, temp_vector_src);
 
-    vmult_range(temp_vector_work, temp_vector_src);
+    // Kokkos::parallel_for(
+    //   "work",
+    //   interface_cell_interior_dof_indices.size(),
+    //   KOKKOS_LAMBDA(const int i) {
+    //     const auto idx = interface_dof_indices_subdomain(i);
+    //     t_work(idx)    = t_dst(idx);
+    //   });
 
-    Kokkos::parallel_for(
-      "distribute_interface_dofs",
-      interface_dof_indices.size(),
-      KOKKOS_LAMBDA(const int i) {
-        dst_view[i] =
-          t_dst[interface_dof_indices[i]] - t_work[interface_dof_indices[i]];
-      });
+    // dirichlet_solve_local(temp_vector_src, temp_vector_work);
 
-    dst.compress(VectorOperation::add);
-    src.zero_out_ghost_values();
+    // vmult_range(temp_vector_work, temp_vector_src);
+
+    // Kokkos::parallel_for(
+    //   "distribute_interface_dofs",
+    //   interface_dof_indices.size(),
+    //   KOKKOS_LAMBDA(const int i) {
+    //     const auto idx = interface_dof_indices(i);
+    //     dst_view(i)    = t_dst(idx) - t_work(idx);
+    //   });
+
+    // dst.compress(VectorOperation::add);
+    // src.zero_out_ghost_values();
   }
+
+
 
   template <int dim, int fe_degree, typename number>
   void
@@ -324,10 +422,10 @@ namespace Portable
 
     LocalLaplaceOperator<dim, fe_degree, number> cell_operator;
 
-    this->cell_loop_range(cell_operator, src, dst);
+    this->cell_range_loop(cell_operator, src, dst);
+
+    matrix_free.copy_constrained_values(src, dst);
   }
-
-
 
   template <int dim, int fe_degree, typename number>
   void
@@ -456,15 +554,17 @@ namespace Portable
           using TeamPolicy = Kokkos::TeamPolicy<
             MemorySpace::Default::kokkos_space::execution_space>;
 
-
           const auto &gpu_data = matrix_free.get_data(color, 0);
 
-          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+          const unsigned int n_interface_cells =
+            this->interface_cell_ids_per_color[color].size();
+
+          auto team_policy = TeamPolicy(exec, n_interface_cells, Kokkos::AUTO);
 
           internal::ApplyCellKernelRange<dim, number, Functor> apply_kernel(
             cell_operator,
             gpu_data,
-            this->interface_cell_dof_indices_per_color[color],
+            this->plain_dof_indices_per_color[color],
             this->interface_cell_ids_per_color[color],
             src,
             dst);
@@ -512,22 +612,25 @@ namespace Portable
         for (unsigned int color = 0; color < n_colors; ++color)
           {
             const auto &gpu_data = matrix_free.get_data(color, 0);
-            if (gpu_data.n_cells > 0)
+
+            const unsigned int n_interface_cells =
+              this->interface_cell_ids_per_color[color].size();
+
+            if (n_interface_cells > 0)
               {
                 using TeamPolicy = Kokkos::TeamPolicy<
                   MemorySpace::Default::kokkos_space::execution_space>;
 
                 auto team_policy =
-                  TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+                  TeamPolicy(exec, n_interface_cells, Kokkos::AUTO);
 
                 internal::ApplyCellKernelRange<dim, number, Functor>
-                  apply_kernel(
-                    cell_operator,
-                    gpu_data,
-                    this->interface_cell_dof_indices_per_color[color],
-                    this->interface_cell_ids_per_color[color],
-                    src,
-                    dst);
+                  apply_kernel(cell_operator,
+                               gpu_data,
+                               this->plain_dof_indices_per_color[color],
+                               this->interface_cell_ids_per_color[color],
+                               src,
+                               dst);
                 Kokkos::parallel_for(
                   "dealii::MatrixFree::distributed_cell_loop color " +
                     std::to_string(color),
@@ -695,8 +798,6 @@ namespace Portable
     const unsigned int n_colors      = colored_graph.size();
     const auto        &partitioner   = matrix_free.get_vector_partitioner();
 
-
-
     const auto &dof_handler = matrix_free.get_dof_handler();
 
     std::vector<unsigned int> lex_numbering(n_local_dofs);
@@ -713,6 +814,9 @@ namespace Portable
     {
       this->interior_dof_indices_per_color.clear();
       this->interior_dof_indices_per_color.resize(n_colors);
+
+      this->plain_dof_indices_per_color.clear();
+      this->plain_dof_indices_per_color.resize(n_colors);
 
       std::vector<types::global_dof_index> local_dof_indices(n_local_dofs);
       std::vector<types::global_dof_index> subdomain_local_dof_indices(
@@ -739,6 +843,18 @@ namespace Portable
               auto dof_indices_host = Kokkos::create_mirror_view(
                 this->interior_dof_indices_per_color[color]);
 
+
+              this->plain_dof_indices_per_color[color] =
+                Kokkos::View<unsigned int **,
+                             MemorySpace::Default::kokkos_space>(
+                  Kokkos::view_alloc("plain_dof_indices_" +
+                                       std::to_string(color),
+                                     Kokkos::WithoutInitializing),
+                  n_local_dofs,
+                  mf_data.n_cells);
+
+              auto plain_dof_indices_host = Kokkos::create_mirror_view(
+                this->plain_dof_indices_per_color[color]);
 
               for (unsigned int cell_id = 0; cell_id < mf_data.n_cells;
                    ++cell_id)
@@ -768,6 +884,8 @@ namespace Portable
                           numbers::invalid_unsigned_int;
                       else
                         dof_indices_host(i, cell_id) = global_dof;
+
+                      plain_dof_indices_host(i, cell_id) = global_dof;
                     }
                 }
 
@@ -775,28 +893,87 @@ namespace Portable
                                 this->interior_dof_indices_per_color[color],
                                 dof_indices_host);
               Kokkos::fence();
+
+              Kokkos::deep_copy(exec_space,
+                                this->plain_dof_indices_per_color[color],
+                                plain_dof_indices_host);
+              Kokkos::fence();
             }
         }
     }
+
     {
-      const auto &interface_dofs =
-        this->subdomain_dof_handler->get_dof_info().subdomain_interface_dofs;
+      const unsigned int n_locally_relevant_interface_indices =
+        this->subdomain_dof_handler->n_locally_relevant_interface_indices();
 
-      this->interface_dof_indices =
+      this->interface_dof_indices_partitioner =
         Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>(
-          Kokkos::view_alloc("interface_dof_indices",
+          Kokkos::view_alloc("interface_dof_indices_partitioner",
                              Kokkos::WithoutInitializing),
-          interface_dofs.size());
+          n_locally_relevant_interface_indices);
 
-      auto interface_dof_indices_host =
-        Kokkos::create_mirror_view(this->interface_dof_indices);
 
-      for (unsigned int i = 0; i < interface_dofs.size(); ++i)
-        interface_dof_indices_host(i) = interface_dofs[i];
+      this->interface_dof_indices_subdomain =
+        Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("interface_dof_indices_subdomain",
+                             Kokkos::WithoutInitializing),
+          n_locally_relevant_interface_indices);
+
+      auto interface_dof_indices_partitioner_host =
+        Kokkos::create_mirror_view(this->interface_dof_indices_partitioner);
+
+
+      auto interface_dof_indices_subdomain_host =
+        Kokkos::create_mirror_view(this->interface_dof_indices_subdomain);
+
+      for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
+        {
+          unsigned int local_index =
+            this->subdomain_dof_handler->local_to_global_interface_partitioner(
+              i);
+          unsigned int subdomain_index =
+            this->subdomain_dof_handler->local_interface_to_subdomain(i);
+
+
+          interface_dof_indices_partitioner_host(i) = local_index;
+
+          interface_dof_indices_subdomain_host(i) = subdomain_index;
+        }
 
       Kokkos::deep_copy(exec_space,
-                        this->interface_dof_indices,
-                        interface_dof_indices_host);
+                        this->interface_dof_indices_partitioner,
+                        interface_dof_indices_partitioner_host);
+
+      Kokkos::fence();
+      Kokkos::deep_copy(exec_space,
+                        this->interface_dof_indices_subdomain,
+                        interface_dof_indices_subdomain_host);
+      Kokkos::fence();
+    }
+
+    {
+      const auto &physical_boundary_dofs =
+        this->subdomain_dof_handler->get_dof_info()
+          .subdomain_physical_boundary_dofs;
+
+      this->physical_boundary_dof_indices =
+        Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("physical_boundary_dof_indices",
+                             Kokkos::WithoutInitializing),
+          physical_boundary_dofs.n_elements());
+
+      auto boundary_dof_indices_host =
+        Kokkos::create_mirror_view(this->physical_boundary_dof_indices);
+
+      unsigned int counter = 0;
+      for (const auto &index : physical_boundary_dofs)
+        {
+          boundary_dof_indices_host(counter) = index;
+          ++counter;
+        }
+      Kokkos::deep_copy(exec_space,
+                        this->physical_boundary_dof_indices,
+                        boundary_dof_indices_host);
     }
 
     {
@@ -904,9 +1081,9 @@ namespace Portable
             }
         }
       {
-        this->interior_interface_cell_dof_indices =
+        this->interface_cell_interior_dof_indices =
           Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("interior_interface_cell_dof_indices",
+            Kokkos::view_alloc("interface_cell_interior_dof_indices",
                                Kokkos::WithoutInitializing),
             interior_dofs_interface.size());
 
@@ -917,7 +1094,7 @@ namespace Portable
                     interior_dofs_interface.size());
 
         Kokkos::deep_copy(exec_space,
-                          this->interior_interface_cell_dof_indices,
+                          this->interface_cell_interior_dof_indices,
                           host_view);
         Kokkos::fence();
       }
