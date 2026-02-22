@@ -122,13 +122,10 @@ private:
     subdomain_rhs_interface;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default> schur_rhs;
 
-  std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>> subdomain_matrix;
+  std::unique_ptr<Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>
+    subdomain_matrix;
 
   ConditionalOStream pcout;
-
-  unsigned int n_subdomain_dofs;
-  unsigned int n_subdomain_interior_dofs;
-  unsigned int n_subdomain_interface_dofs;
 };
 
 template <int dim, int fe_degree>
@@ -225,9 +222,12 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
   subdomain_dof_handler.initialize_interface_dof_vector(
     global_interface_weights);
 
-  for (const auto &index :
-       subdomain_dof_handler.get_locally_relevant_interface_indices())
-    global_interface_weights[index] += 1.0;
+  const unsigned int n_locally_relevant_interface_indices =
+    this->subdomain_dof_handler.n_locally_relevant_interface_indices();
+  for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
+    global_interface_weights[this->subdomain_dof_handler
+                               .local_to_global_interface_partitioner(i)] +=
+      1.0;
 
   global_interface_weights.compress(VectorOperation::add);
 
@@ -238,7 +238,22 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 
   global_interface_weights.update_ghost_values();
 
-  global_interface_weights.print(std::cout);
+  // LinearAlgebra::distributed::Vector<double> vec(
+  //   this->subdomain_dof_handler.get_interface_vector_partitioner());
+  // std::cout << "On subdomain " <<
+  // this->subdomain_dof_handler.get_subdomain_id()
+  //           << ": ";
+  // for (unsigned int i = 0;
+  //      i < vec.locally_owned_size() +
+  //            this->subdomain_dof_handler.get_interface_vector_partitioner()
+  //              ->n_ghost_indices();
+  //      ++i)
+  //   std::cout << i << " /  "
+  //             <<
+  //             this->subdomain_dof_handler.get_interface_vector_partitioner()
+  //                  ->local_to_global(i)
+  //             << " ; ";
+  // std::cout << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -247,12 +262,10 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 {
   subdomain_matrix = std::make_unique<
     Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>(
-    subdomain_dof_handler,
-    subdomain_constraints,
-    subdomain_constraints_physical);
+    subdomain_dof_handler, subdomain_constraints);
 
   subdomain_matrix->initialize_dof_vector(subdomain_solution_device);
-  subdomain_rhs_device.reinit(subdomain_solution_device);
+  subdomain_matrix->initialize_dof_vector(subdomain_rhs_device);
 }
 
 template <int dim, int fe_degree>
@@ -261,6 +274,9 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 {
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> system_rhs_host(
     subdomain_dof_handler.get_dof_handler().n_dofs());
+
+  std::cout << "Before assembly process \n";
+
 
   const QGauss<dim> quadrature_formula(fe_degree + 1);
 
@@ -288,39 +304,62 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
             (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
 
       cell->get_dof_indices(local_dof_indices);
-      subdomain_constraints_physical.distribute_local_to_global(
-        cell_rhs, local_dof_indices, system_rhs_host);
+
+      for (unsigned int i = 0; i < dofs_per_cell; ++i)
+        system_rhs_host[local_dof_indices[i]] += cell_rhs[i];
     }
 
-  // system_rhs_host.print(std::cout);
+  std::cout << "Before physical bondary dofs\n";
+  std::cout << std::endl;
+
+  for (const auto &index :
+       subdomain_dof_handler.get_dof_info().subdomain_physical_boundary_dofs)
+    system_rhs_host[index] = 0.;
+
 
   LinearAlgebra::ReadWriteVector<double> rw_vector(
     subdomain_dof_handler.get_dof_handler().n_dofs());
 
+  std::cout << "Before import\n";
+  std::cout << std::endl;
+
+
   rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
   subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
 
-  const auto &subdomain_dof_info = subdomain_dof_handler.get_dof_info();
+  std::cout << "after import\n";
+  std::cout << std::endl;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-    rhs_interior_host(subdomain_dof_info.subdomain_interior_dofs.size());
 
-  unsigned int counter = 0;
-  for (const auto &index : subdomain_dof_info.subdomain_interior_dofs)
-    rhs_interior_host[counter++] = system_rhs_host[index];
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+    rhs_schur_device(
+      this->subdomain_dof_handler.get_interface_vector_partitioner());
 
-  // rhs_interior_host.print(std::cout);
+  std::cout << "after create schur\n";
+  std::cout << std::endl;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-    rhs_interface_host(subdomain_dof_info.subdomain_interface_dofs.size());
 
-  for (unsigned int i = 0;
-       i < subdomain_dof_info.subdomain_interface_dofs.size();
-       ++i)
-    rhs_interface_host[i] =
-      system_rhs_host[subdomain_dof_info.subdomain_interface_dofs[i]];
 
-  // rhs_interface_host.print(std::cout);
+  this->subdomain_matrix->assemble_rhs_schur(rhs_schur_device,
+                                             subdomain_rhs_device);
+
+  rhs_schur_device.update_ghost_values();
+
+  std::cout << "after assemble schur\n";
+  std::cout << std::endl;
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> rhs_schur_host(
+    this->subdomain_dof_handler.get_interface_vector_partitioner());
+
+
+  rw_vector.reinit(rhs_schur_device.locally_owned_elements());
+  // rw_vector.import_elements(rhs_schur_device, VectorOperation::insert);
+
+
+  // rhs_schur_host.import_elements(rw_vector, VectorOperation::add);
+  // rhs_schur_host.update_ghost_values();
+
+  // rhs_schur_host.print(std::cout);
 }
 
 
@@ -415,19 +454,46 @@ LaplaceProblem<dim, fe_degree>::run()
 
       create_subdomain_triangulations();
 
+
+      std::cout << "after create tria\n";
+      std::cout << std::endl;
+
       setup_dofs();
+
+
+      std::cout << "after setup dofs\n";
+      std::cout << std::endl;
 
       compute_interface_weights();
 
+
+      std::cout << "after compute weights\n";
+      std::cout << std::endl;
+
       setup_matrix_free();
+
+      std::cout << "after setup MF\n";
+      std::cout << std::endl;
 
       assemble_rhs();
 
-      solve_subdomain();
 
-      post_process_subdomain_solution();
+      std::cout << "after assmble RHS\n";
+      std::cout << std::endl;
 
-      output_results(cycle);
+      // solve_subdomain();
+
+
+      // std::cout << "after solve\n";
+      // std::cout << std::endl;
+
+      // post_process_subdomain_solution();
+
+
+      // std::cout << "after post_process \n";
+      // std::cout << std::endl;
+
+      // output_results(cycle);
     }
 }
 

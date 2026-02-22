@@ -26,7 +26,7 @@ namespace Portable
     TeamHandle team_member;
 
     const unsigned int n_q_points;
-    const int          cell_index;
+    const unsigned int          cell_index;
 
     const typename MatrixFree<dim, number>::PrecomputedData &precomputed_data;
 
@@ -116,7 +116,7 @@ namespace Portable
       void
       operator()(const TeamHandle &team_member) const
       {
-        const int cell_index = team_member.league_rank();
+        const unsigned int cell_index = team_member.league_rank();
 
         SharedViewValues values(team_member.team_shmem(), Functor::n_q_points);
         SharedViewGradients  gradients(team_member.team_shmem(),
@@ -210,7 +210,7 @@ namespace Portable
       void
       operator()(const TeamHandle &team_member) const
       {
-        const int thread_id = team_member.league_rank();
+        const unsigned int thread_id = team_member.league_rank();
 
         const unsigned int cell_index = cell_range_ids[thread_id];
 
