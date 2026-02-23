@@ -275,9 +275,6 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> system_rhs_host(
     subdomain_dof_handler.get_dof_handler().n_dofs());
 
-  std::cout << "Before assembly process \n";
-
-
   const QGauss<dim> quadrature_formula(fe_degree + 1);
 
   FEValues<dim> fe_values(fe,
@@ -309,9 +306,6 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
         system_rhs_host[local_dof_indices[i]] += cell_rhs[i];
     }
 
-  std::cout << "Before physical bondary dofs\n";
-  std::cout << std::endl;
-
   for (const auto &index :
        subdomain_dof_handler.get_dof_info().subdomain_physical_boundary_dofs)
     system_rhs_host[index] = 0.;
@@ -320,46 +314,28 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   LinearAlgebra::ReadWriteVector<double> rw_vector(
     subdomain_dof_handler.get_dof_handler().n_dofs());
 
-  std::cout << "Before import\n";
-  std::cout << std::endl;
-
-
   rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
   subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
-
-  std::cout << "after import\n";
-  std::cout << std::endl;
 
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     rhs_schur_device(
       this->subdomain_dof_handler.get_interface_vector_partitioner());
 
-  std::cout << "after create schur\n";
-  std::cout << std::endl;
-
-
-
   this->subdomain_matrix->assemble_rhs_schur(rhs_schur_device,
                                              subdomain_rhs_device);
 
   rhs_schur_device.update_ghost_values();
 
-  std::cout << "after assemble schur\n";
-  std::cout << std::endl;
-
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> rhs_schur_host(
     this->subdomain_dof_handler.get_interface_vector_partitioner());
 
-
   rw_vector.reinit(rhs_schur_device.locally_owned_elements());
-  // rw_vector.import_elements(rhs_schur_device, VectorOperation::insert);
+  rw_vector.import_elements(rhs_schur_device, VectorOperation::insert);
 
+  rhs_schur_host.import_elements(rw_vector, VectorOperation::add);
+  rhs_schur_host.update_ghost_values();
 
-  // rhs_schur_host.import_elements(rw_vector, VectorOperation::add);
-  // rhs_schur_host.update_ghost_values();
-
-  // rhs_schur_host.print(std::cout);
 }
 
 
@@ -446,7 +422,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
 
-  for (unsigned int cycle = 0; cycle < 3; ++cycle)
+  for (unsigned int cycle = 0; cycle < 1; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -454,32 +430,13 @@ LaplaceProblem<dim, fe_degree>::run()
 
       create_subdomain_triangulations();
 
-
-      std::cout << "after create tria\n";
-      std::cout << std::endl;
-
       setup_dofs();
-
-
-      std::cout << "after setup dofs\n";
-      std::cout << std::endl;
 
       compute_interface_weights();
 
-
-      std::cout << "after compute weights\n";
-      std::cout << std::endl;
-
       setup_matrix_free();
 
-      std::cout << "after setup MF\n";
-      std::cout << std::endl;
-
       assemble_rhs();
-
-
-      std::cout << "after assmble RHS\n";
-      std::cout << std::endl;
 
       // solve_subdomain();
 

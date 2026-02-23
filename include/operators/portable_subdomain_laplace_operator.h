@@ -267,55 +267,36 @@ namespace Portable
     DeviceVector<number> t_dst_view(temp_vector_dst.get_values(),
                                     temp_vector_dst.size());
 
+    // read subdomain rhs values into temp vector
     temp_vector_dst = rhs_subdomain;
-    temp_vector_dst *= -1.0;
 
-    std::cout << "BEFORE INTERIOR SOLVE\n";
-    std::cout << std::endl;
-
-
-    // solve interior
-    dirichlet_solve_local(temp_vector_src, temp_vector_dst);
-
-    std::cout << "AFTER INTERIOR SOLVE\n";
-    std::cout << std::endl;
-
-    // read interface values
+    // zero out interface values
     Kokkos::parallel_for(
-      "work",
+      "read_src_subdomain",
       interface_dof_indices_subdomain.size(),
       KOKKOS_LAMBDA(const int i) {
         const auto idx  = interface_dof_indices_subdomain(i);
-        t_src_view(idx) = rhs_subdomain_view(idx);
+        t_dst_view(idx) = 0;
       });
 
-    std::cout << "AFTER READ INTERFACE VALUES SOLVE\n";
-    std::cout << std::endl;
+    // solve interior, A_II^{-1} * F_I
+    dirichlet_solve_local(temp_vector_src, temp_vector_dst);
 
+    // multiply by A_GI *A_II^{-1} * F_I
     vmult_range(temp_vector_dst, temp_vector_src);
 
-    std::cout << "AFTER VMULT RANGE INTERFACE VALUES SOLVE\n";
-    std::cout << std::endl;
-
-    MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
+    // distribute interface dofs into rhs_schur: F_G - A_GI *A_II^{-1} * F_I
     Kokkos::parallel_for(
       "distribute_interface_dofs",
       interface_dof_indices_subdomain.size(),
       KOKKOS_LAMBDA(const int i) {
-        const auto idx_subdomain   = interface_dof_indices_subdomain(i);
-        Kokkos::atomic_add(&rhs_schur_view(i),
-                           t_dst_view(idx_subdomain));
+        const auto idx_subdomain = interface_dof_indices_subdomain(i);
+        number     output_value =
+          rhs_subdomain_view(idx_subdomain) - t_dst_view(idx_subdomain);
+        Kokkos::atomic_add(&rhs_schur_view(i), output_value);
       });
 
-    MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
-
-    std::cout << "BEFORE COMPRESS\n";
-    std::cout << std::endl;
-
-
     rhs_schur.compress(VectorOperation::add);
-    std::cout << "AFTER COMPRESS\n";
-    std::cout << std::endl;
   }
 
   template <int dim, int fe_degree, typename number>
@@ -424,7 +405,7 @@ namespace Portable
 
     this->cell_range_loop(cell_operator, src, dst);
 
-    matrix_free.copy_constrained_values(src, dst);
+    // matrix_free.copy_constrained_values(src, dst);
   }
 
   template <int dim, int fe_degree, typename number>
@@ -985,7 +966,8 @@ namespace Portable
       const auto &interior_dofs_set =
         this->subdomain_dof_handler->get_dof_info().subdomain_interior_dofs;
 
-      std::vector<unsigned int> interior_dofs_interface;
+      IndexSet interior_dofs_interface(
+        this->subdomain_dof_handler->get_dof_handler().n_dofs());
 
       std::vector<types::global_dof_index> local_dof_indices(n_local_dofs);
 
@@ -1028,7 +1010,7 @@ namespace Portable
                               interface_cell_dof_indices.push_back(global_dof);
 
                               if (interior_dofs_set.is_element(global_dof))
-                                interior_dofs_interface.push_back(global_dof);
+                                interior_dofs_interface.add_index(global_dof);
                             }
 
                           break;
@@ -1085,13 +1067,20 @@ namespace Portable
           Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>(
             Kokkos::view_alloc("interface_cell_interior_dof_indices",
                                Kokkos::WithoutInitializing),
-            interior_dofs_interface.size());
+            interior_dofs_interface.n_elements());
+
+        std::vector<unsigned int> interior_dofs_interface_vec;
+
+        for (auto index : interior_dofs_interface)
+          {
+            interior_dofs_interface_vec.push_back(index);
+          }
 
         Kokkos::View<unsigned int *,
                      Kokkos::HostSpace,
                      Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-          host_view(interior_dofs_interface.data(),
-                    interior_dofs_interface.size());
+          host_view(interior_dofs_interface_vec.data(),
+                    interior_dofs_interface_vec.size());
 
         Kokkos::deep_copy(exec_space,
                           this->interface_cell_interior_dof_indices,
