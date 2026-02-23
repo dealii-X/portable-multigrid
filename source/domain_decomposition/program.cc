@@ -34,6 +34,7 @@
 #include <iostream>
 #include <memory>
 
+#include "domain_decomposition/portable_interface_solver.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "domain_decomposition/subdomain_triangulation.h"
 #include "multigrid/portable_geometric_transfer.h"
@@ -72,10 +73,13 @@ private:
   setup_matrix_free();
 
   void
+  setup_interface_system();
+
+  void
   assemble_rhs();
 
   void
-  solve_subdomain();
+  solve_interface();
 
   void
   post_process_subdomain_solution();
@@ -125,7 +129,19 @@ private:
   std::unique_ptr<Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>
     subdomain_matrix;
 
+  std::unique_ptr<Portable::InterfaceSolver<dim, fe_degree, double>>
+    interface_solver;
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+    rhs_schur_device;
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+    solution_interface_device;
+
+
+  double             setup_time;
   ConditionalOStream pcout;
+  ConditionalOStream time_details;
 };
 
 template <int dim, int fe_degree>
@@ -134,28 +150,49 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem()
   , triangulation(mpi_communicator)
   , dof_handler(triangulation)
   , fe(fe_degree)
+  , setup_time(0.)
   , pcout(std::cout, Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+  , time_details(std::cout,
+                 true &&
+                   Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+
 {}
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_grid()
 {
+  Timer time;
+  setup_time = 0;
+
   GridGenerator::hyper_cube(triangulation, 0., 1.);
   triangulation.refine_global(2);
+
+  setup_time += time.wall_time();
+  time_details << "           Distributed triangulation created    (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations()
 {
+  Timer time;
   this->subdomain_triangulation.create_subdomain_triangulation(triangulation);
+
+  setup_time += time.wall_time();
+  time_details << "           Subdomain triangulations extracted    (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_dofs()
 {
+  Timer time;
+
   dof_handler.reinit(triangulation);
   dof_handler.distribute_dofs(fe);
 
@@ -165,11 +202,7 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   subdomain_dof_handler.reinit(subdomain_triangulation, dof_handler);
   subdomain_dof_handler.distribute_subdomain_dofs();
 
-  pcout << "  Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
-
-  std::cout << "    Number of DoFs on subdomain "
-            << subdomain_dof_handler.get_subdomain_id() << ": "
-            << subdomain_dof_handler.get_dof_handler().n_dofs() << std::endl;
+  pcout << "           Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
 
   {
     Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
@@ -211,14 +244,26 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
                               locally_relevant_dofs,
                               mpi_communicator);
 
+  time_details << "           Distributed DoFs setup              (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
+  time.restart();
+
   subdomain_solution_host.reinit(
     subdomain_dof_handler.get_dof_handler().n_dofs());
+
+  setup_time += time.wall_time();
+
+  time_details << "           Subdomain DoFs setup                (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 {
+  Timer time;
   subdomain_dof_handler.initialize_interface_dof_vector(
     global_interface_weights);
 
@@ -238,40 +283,61 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
 
   global_interface_weights.update_ghost_values();
 
-  // LinearAlgebra::distributed::Vector<double> vec(
-  //   this->subdomain_dof_handler.get_interface_vector_partitioner());
-  // std::cout << "On subdomain " <<
-  // this->subdomain_dof_handler.get_subdomain_id()
-  //           << ": ";
-  // for (unsigned int i = 0;
-  //      i < vec.locally_owned_size() +
-  //            this->subdomain_dof_handler.get_interface_vector_partitioner()
-  //              ->n_ghost_indices();
-  //      ++i)
-  //   std::cout << i << " /  "
-  //             <<
-  //             this->subdomain_dof_handler.get_interface_vector_partitioner()
-  //                  ->local_to_global(i)
-  //             << " ; ";
-  // std::cout << std::endl;
+  setup_time += time.wall_time();
+  time_details << "           Interface weights computed          (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 {
+  Timer time;
   subdomain_matrix = std::make_unique<
     Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>(
     subdomain_dof_handler, subdomain_constraints);
 
   subdomain_matrix->initialize_dof_vector(subdomain_solution_device);
   subdomain_matrix->initialize_dof_vector(subdomain_rhs_device);
+
+  setup_time += time.wall_time();
+  time_details << "           Matrix-free operator setup          (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
+}
+
+template <int dim, int fe_degree>
+void
+LaplaceProblem<dim, fe_degree>::setup_interface_system()
+{
+  Kokkos::fence();
+  Timer time;
+
+  interface_solver =
+    std::make_unique<Portable::InterfaceSolver<dim, fe_degree, double>>(
+      subdomain_dof_handler, subdomain_constraints, *subdomain_matrix);
+
+  rhs_schur_device.reinit(
+    this->subdomain_dof_handler.get_interface_vector_partitioner());
+
+  solution_interface_device.reinit(
+    this->subdomain_dof_handler.get_interface_vector_partitioner());
+
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           Interface system setup              (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::assemble_rhs()
 {
+  Timer time;
+  Kokkos::fence();
+
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> system_rhs_host(
     subdomain_dof_handler.get_dof_handler().n_dofs());
 
@@ -317,102 +383,153 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
   subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
 
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           RHS assembled                       (CPU/wall) " << time.cpu_time() << "s/"
+               << time.wall_time() << 's' << std::endl;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    rhs_schur_device(
-      this->subdomain_dof_handler.get_interface_vector_partitioner());
-
+  Kokkos::fence();
   this->subdomain_matrix->assemble_rhs_schur(rhs_schur_device,
                                              subdomain_rhs_device);
-
-  rhs_schur_device.update_ghost_values();
-
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> rhs_schur_host(
-    this->subdomain_dof_handler.get_interface_vector_partitioner());
-
-  rw_vector.reinit(rhs_schur_device.locally_owned_elements());
-  rw_vector.import_elements(rhs_schur_device, VectorOperation::insert);
-
-  rhs_schur_host.import_elements(rw_vector, VectorOperation::add);
-  rhs_schur_host.update_ghost_values();
-
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           Schur RHS assembled                 (CPU/wall) " << time.cpu_time()
+               << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::solve_subdomain()
+LaplaceProblem<dim, fe_degree>::solve_interface()
 {
-  SolverControl solver_control(subdomain_rhs_device.size(),
-                               1e-12 * subdomain_rhs_device.l2_norm());
+  Timer time;
+  Kokkos::fence();
+  SolverControl solver_control(rhs_schur_device.size(),
+                               1e-12 * rhs_schur_device.l2_norm());
 
   SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
     solver_control);
 
-  cg.solve(*subdomain_matrix,
-           subdomain_solution_device,
-           subdomain_rhs_device,
+  solution_interface_device = 0.;
+  cg.solve(*interface_solver,
+           solution_interface_device,
+           rhs_schur_device,
            PreconditionIdentity());
 
-  std::cout << "   On subdomain "
-            << subdomain_triangulation.get_topology_info().subdomain_id
-            << " solver converged in " << solver_control.last_step()
-            << " iterations." << std::endl;
+  solution_interface_device.update_ghost_values();
+
+  Kokkos::fence();
+  time_details << "           Interface solver converged in "
+               << solver_control.last_step() << " iterations.    (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::post_process_subdomain_solution()
 {
+  Timer time;
+  Kokkos::fence();
+  this->subdomain_matrix->reconstruct_subdomain_solution_from_interface(
+    subdomain_solution_device, solution_interface_device, subdomain_rhs_device);
+
   LinearAlgebra::ReadWriteVector<double> rw_vector(
     subdomain_dof_handler.get_dof_handler().n_dofs());
   rw_vector.import_elements(subdomain_solution_device, VectorOperation::insert);
   subdomain_solution_host.import_elements(rw_vector, VectorOperation::insert);
 
+  subdomain_solution_host.update_ghost_values();
+
   subdomain_constraints_physical.distribute(subdomain_solution_host);
+
+  const auto &subdomain_to_global_dof_map =
+    subdomain_dof_handler.get_dof_info().subdomain_to_global_dof_map;
+
+  for (unsigned int i = 0; i < subdomain_to_global_dof_map.size(); ++i)
+    {
+      const auto global_index = subdomain_to_global_dof_map[i];
+
+      global_solution_host[global_index] = subdomain_solution_host[i];
+    }
+
+  global_solution_host.compress(VectorOperation::add);
+
+  for (unsigned int i = 0;
+       i < subdomain_dof_handler.n_locally_relevant_interface_indices();
+       ++i)
+    {
+      const auto subdomain_index =
+        subdomain_dof_handler.local_interface_to_subdomain(i);
+      const auto global_index = subdomain_to_global_dof_map[subdomain_index];
+      global_solution_host[global_index] *=
+        global_interface_weights[subdomain_dof_handler
+                                   .local_to_global_interface_partitioner(i)];
+    }
+
+  global_solution_host.update_ghost_values();
+
+  Kokkos::fence();
+  time_details << "           Subdomain solution post-processed    (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 {
+  Kokkos::fence();
+  Timer time;
   (void)cycle;
 
-  const auto subdomain_topology =
-    this->subdomain_triangulation.get_topology_info();
+  // DataOut<dim> data_out;
 
-  DataOut<dim> data_out;
+  // data_out.attach_dof_handler(dof_handler);
+  // data_out.add_data_vector(global_solution_host, "solution");
+  // data_out.build_patches();
 
-  data_out.attach_dof_handler(subdomain_dof_handler.get_dof_handler());
-  data_out.add_data_vector(subdomain_solution_host, "solution");
-  data_out.build_patches();
+  // DataOutBase::VtkFlags flags;
+  // flags.compression_level = DataOutBase::CompressionLevel::best_speed;
+  // data_out.set_flags(flags);
+  // data_out.write_vtu_with_pvtu_record(
+  //   "./", "solution", cycle, mpi_communicator, 2);
 
-  DataOutBase::VtkFlags flags;
-  flags.compression_level = DataOutBase::CompressionLevel::best_speed;
-  data_out.set_flags(flags);
-  data_out.write_vtu_with_pvtu_record(
-    "./",
-    "solution_subdomain_" + std::to_string(subdomain_topology.subdomain_id),
-    cycle,
-    mpi_communicator);
-
-
-  Vector<float> cellwise_norm(
-    subdomain_triangulation.get_triangulation().n_active_cells());
-  VectorTools::integrate_difference(subdomain_dof_handler.get_dof_handler(),
-                                    subdomain_solution_host,
+  Vector<float> cellwise_norm(triangulation.n_active_cells());
+  VectorTools::integrate_difference(dof_handler,
+                                    global_solution_host,
                                     Functions::ZeroFunction<dim>(),
                                     cellwise_norm,
                                     QGauss<dim>(fe.degree + 2),
                                     VectorTools::L2_norm);
+  const double global_norm =
+    VectorTools::compute_global_error(triangulation,
+                                      cellwise_norm,
+                                      VectorTools::L2_norm);
 
-  const double global_norm = VectorTools::compute_global_error(
-    subdomain_triangulation.get_triangulation(),
-    cellwise_norm,
-    VectorTools::L2_norm);
+  pcout << "        solution norm: " << global_norm << std::endl;
 
-  std::cout << "    On subdomain " << subdomain_dof_handler.get_subdomain_id()
-            << "  solution norm: " << global_norm << std::endl;
+  Kokkos::fence();
+  time_details << "           Output results    (CPU/wall) " << time.cpu_time()
+               << "s/" << time.wall_time() << 's' << std::endl;
+
+  // Vector<float> cellwise_norm_subdomain(
+  //   subdomain_triangulation.get_triangulation().n_active_cells());
+  // VectorTools::integrate_difference(subdomain_dof_handler.get_dof_handler(),
+  //                                   subdomain_solution_host,
+  //                                   Functions::ZeroFunction<dim>(),
+  //                                   cellwise_norm_subdomain,
+  //                                   QGauss<dim>(fe.degree + 2),
+  //                                   VectorTools::L2_norm);
+  // const double subdomain_norm = VectorTools::compute_global_error(
+  //   subdomain_triangulation.get_triangulation(),
+  //   cellwise_norm_subdomain,
+  //   VectorTools::L2_norm);
+
+
+  // std::cout << " solution norm on subdomain "
+  //           << subdomain_dof_handler.get_subdomain_id() << ": "
+  //           << subdomain_norm << std::endl;
 }
 
 
@@ -422,7 +539,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
 
-  for (unsigned int cycle = 0; cycle < 1; ++cycle)
+  for (unsigned int cycle = 0; cycle < 8; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -436,21 +553,17 @@ LaplaceProblem<dim, fe_degree>::run()
 
       setup_matrix_free();
 
+      setup_interface_system();
+
       assemble_rhs();
 
-      // solve_subdomain();
+      pcout << "           setup time: " << setup_time << "s" << std::endl;
 
+      solve_interface();
 
-      // std::cout << "after solve\n";
-      // std::cout << std::endl;
+      post_process_subdomain_solution();
 
-      // post_process_subdomain_solution();
-
-
-      // std::cout << "after post_process \n";
-      // std::cout << std::endl;
-
-      // output_results(cycle);
+      output_results(cycle);
     }
 }
 
@@ -462,7 +575,7 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
       constexpr int dim       = 2;
-      constexpr int fe_degree = 1;
+      constexpr int fe_degree = 3;
 
       LaplaceProblem<dim, fe_degree> laplace_problem;
       laplace_problem.run();

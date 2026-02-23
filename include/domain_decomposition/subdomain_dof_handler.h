@@ -111,7 +111,7 @@ public:
   const std::shared_ptr<const Utilities::MPI::Partitioner> &
   get_interface_vector_partitioner() const;
 
-    unsigned int
+  unsigned int
   local_to_global_interface_partitioner(const unsigned int local_index) const;
 
   types::global_dof_index
@@ -121,7 +121,7 @@ public:
   local_interface_to_global_interface(const unsigned int local_index) const;
 
   unsigned int
-n_locally_relevant_interface_indices() const;
+  n_locally_relevant_interface_indices() const;
 
 
 private:
@@ -326,7 +326,6 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 
       this->interface_indices_partitioner_to_global_numbering[i] = global_index;
     }
-
 }
 
 
@@ -530,15 +529,17 @@ template <int dim>
 unsigned int
 SubdomainDoFHandler<dim>::n_locally_relevant_interface_indices() const
 {
-  return this->interface_vector_partitioner->locally_owned_size()+this->interface_vector_partitioner->n_ghost_indices();}
+  return this->interface_vector_partitioner->locally_owned_size() +
+         this->interface_vector_partitioner->n_ghost_indices();
+}
 
 template <int dim>
 unsigned int
-SubdomainDoFHandler<dim>::
-  local_to_global_interface_partitioner(const unsigned int local_index) const
-  {
-    return this->interface_vector_partitioner->local_to_global(local_index);
-  }
+SubdomainDoFHandler<dim>::local_to_global_interface_partitioner(
+  const unsigned int local_index) const
+{
+  return this->interface_vector_partitioner->local_to_global(local_index);
+}
 
 
 template <int dim>
