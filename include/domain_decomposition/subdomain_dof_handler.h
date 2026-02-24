@@ -123,6 +123,8 @@ public:
   unsigned int
   n_locally_relevant_interface_indices() const;
 
+  unsigned int n_subdomains() const;
+
 
 private:
   void
@@ -495,6 +497,13 @@ unsigned int
 SubdomainDoFHandler<dim>::get_subdomain_id() const
 {
   return subdomain_id;
+}
+
+template <int dim>
+unsigned int
+SubdomainDoFHandler<dim>::n_subdomains() const
+{
+  return Utilities::MPI::n_mpi_processes(this->get_mpi_communicator());
 }
 
 template <int dim>

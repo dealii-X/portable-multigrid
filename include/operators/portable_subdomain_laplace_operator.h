@@ -42,10 +42,21 @@ namespace Portable
       const bool computation_on) const override;
 
     void
-    dirichlet_solve_local(
+    dirichlet_solve_subdomain(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
         &src) const;
+
+    void
+    neumann_solve_subdomain(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const;
+
+    void
+    apply_interface_weights(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst)
+      const;
 
 
     void
@@ -107,6 +118,21 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
         &rhs) const;
 
+    void
+    coarse_to_subdomain_interface(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+                   &interface_vector,
+      const number &coarse_value_subdomain) const;
+
+    void
+    subdomain_interface_to_coarse(
+      number &coarse_subdomain_value,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &interface_vector) const;
+
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &
+    get_interface_weights() const;
+
   private:
     using TeamHandle = Kokkos::TeamPolicy<
       MemorySpace::Default::kokkos_space::execution_space>::member_type;
@@ -126,7 +152,20 @@ namespace Portable
         &src) const;
 
     void
+    vmult_neumann(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &src) const;
+
+    void
     cell_loop(
+      const LocalLaplaceOperator<dim, fe_degree, number> &cell_operator,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+                                                                       &src,
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst)
+      const;
+    void
+    cell_range_loop(
       const LocalLaplaceOperator<dim, fe_degree, number> &cell_operator,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
                                                                        &src,
@@ -134,7 +173,7 @@ namespace Portable
       const;
 
     void
-    cell_range_loop(
+    cell_loop_neumann(
       const LocalLaplaceOperator<dim, fe_degree, number> &cell_operator,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
                                                                        &src,
@@ -149,6 +188,9 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
       const bool ghost_exchange_on,
       const bool computation_on) const;
+
+    void
+    compute_interface_weights();
 
     static constexpr unsigned int n_local_dofs =
       Utilities::pow(fe_degree + 1, dim);
@@ -195,6 +237,27 @@ namespace Portable
 
     mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
       temp_vector_src, temp_vector_dst, temp_vector_work;
+
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+      interface_weights;
+
+    struct NeumannSubdomainOperator
+    {
+      NeumannSubdomainOperator(const SubdomainLaplaceOperator &op)
+        : op(op)
+      {}
+
+      void
+      vmult(
+        LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
+        const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+          &src) const
+      {
+        op.vmult_neumann(dst, src);
+      }
+
+      const SubdomainLaplaceOperator &op;
+    };
   };
 
   template <int dim, int fe_degree, typename number>
@@ -229,11 +292,77 @@ namespace Portable
     matrix_free.initialize_dof_vector(temp_vector_work);
 
     setup_dof_indices_per_color();
+
+    compute_interface_weights();
   }
 
   template <int dim, int fe_degree, typename number>
   void
-  SubdomainLaplaceOperator<dim, fe_degree, number>::dirichlet_solve_local(
+  SubdomainLaplaceOperator<dim, fe_degree, number>::
+    coarse_to_subdomain_interface(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+                   &interface_vector,
+      const number &coarse_value_subdomain) const
+  {
+    Assert(
+      interface_vector.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+
+    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+                                               interface_vector.size());
+
+    DeviceVector<number> weights_view(interface_weights.get_values(),
+                                      interface_weights.size());
+
+    Kokkos::parallel_for(
+      "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const unsigned int i) {
+        interface_vector_view(i) = coarse_value_subdomain * weights_view(i);
+      });
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::
+    subdomain_interface_to_coarse(
+      number &coarse_subdomain_value,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
+        &interface_vector) const
+  {
+    Assert(
+      interface_vector.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+
+    interface_vector.update_ghost_values();
+    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+                                               interface_vector.size());
+
+    DeviceVector<number> weights_view(interface_weights.get_values(),
+                                      interface_weights.size());
+
+    coarse_subdomain_value = 0.;
+
+    Kokkos::parallel_reduce(
+      "SubdomainLaplaceOperator::subdomain_interface_to_coarse",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const unsigned int i, number &coarse_value) {
+        coarse_value += interface_vector_view(i) * weights_view(i);
+      },
+      coarse_subdomain_value);
+
+    interface_vector.zero_out_ghost_values();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::dirichlet_solve_subdomain(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
     const
@@ -247,6 +376,109 @@ namespace Portable
     cg.solve(*this, dst, src, PreconditionIdentity());
   }
 
+
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::neumann_solve_subdomain(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+    const
+  {
+    Assert(
+      dst.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+    Assert(
+      src.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+
+    NeumannSubdomainOperator neumann_operator(*this);
+
+    src.update_ghost_values();
+
+    dst              = 0.;
+    temp_vector_src  = 0;
+    temp_vector_dst  = 0;
+    temp_vector_work = 0;
+
+    DeviceVector<number> src_view(src.get_values(), src.size());
+    DeviceVector<number> dst_view(dst.get_values(), dst.size());
+    DeviceVector<number> t_src(temp_vector_src.get_values(),
+                               temp_vector_src.size());
+    DeviceVector<number> t_dst(temp_vector_dst.get_values(),
+                               temp_vector_dst.size());
+
+    DeviceVector<number> t_work(temp_vector_work.get_values(),
+                                temp_vector_work.size());
+
+
+    Kokkos::parallel_for(
+      "read_src_subdomain_neumann",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const int i) {
+        t_src(interface_dof_indices_subdomain(i)) = src_view(i);
+      });
+
+
+    temp_vector_dst = 0.;
+    SolverControl solver_control(temp_vector_src.size(),
+                                 1e-12 * temp_vector_src.l2_norm());
+
+    SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+      cg(solver_control);
+
+    cg.solve(neumann_operator,
+             temp_vector_dst,
+             temp_vector_src,
+             PreconditionIdentity());
+
+    std::cout << "  Neumann solve on subdomain "
+              << this->subdomain_dof_handler->get_subdomain_id()
+              << " converged in " << solver_control.last_step()
+              << " iterations." << std::endl;
+
+
+    Kokkos::parallel_for(
+      "write_dst_subdomain_neumann",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const int i) {
+        dst_view(i) = t_dst(interface_dof_indices_subdomain(i));
+      });
+
+    dst.compress(VectorOperation::add);
+    // dst.update_ghost_values();
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::apply_interface_weights(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst) const
+  {
+    Assert(
+      dst.get_partitioner() ==
+        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      ExcMessage(
+        "This function expects a vector initialized by SubdomainDoFHandler's \
+         interface vector partitioner."));
+
+    DeviceVector<number> dst_view(dst.get_values(), dst.locally_owned_size());
+    DeviceVector<number> weights_view(interface_weights.get_values(),
+                                      interface_weights.locally_owned_size());
+
+    Kokkos::parallel_for(
+      "SubdomainLaplaceOperator::apply_interface_weights",
+      interface_weights.locally_owned_size(),
+      KOKKOS_LAMBDA(const int i) { dst_view(i) *= weights_view(i); });
+
+    // dst.compress(VectorOperation::add);
+    // dst.update_ghost_values();
+  }
 
   template <int dim, int fe_degree, typename number>
   void
@@ -289,7 +521,7 @@ namespace Portable
       });
 
     // solve interior, A_II^{-1} * F_I
-    dirichlet_solve_local(temp_vector_src, temp_vector_dst);
+    dirichlet_solve_subdomain(temp_vector_src, temp_vector_dst);
 
     // multiply by A_GI *A_II^{-1} * F_I
     vmult_range(temp_vector_dst, temp_vector_src);
@@ -364,7 +596,7 @@ namespace Portable
     vmult_range(temp_vector_dst, temp_vector_src);
 
     // solve interior A_II^{-1} * A_IG * src_interface
-    dirichlet_solve_local(temp_vector_work, temp_vector_dst);
+    dirichlet_solve_subdomain(temp_vector_work, temp_vector_dst);
 
     // zero out dst entries corresponding to interface dofs
     Kokkos::parallel_for(
@@ -447,9 +679,9 @@ namespace Portable
     temp_vector_src -= temp_vector_work;
 
     // solve interior, A_II^{-1} * (F_I-A_IG * src_interface)
-    dirichlet_solve_local(subdomain_solution, temp_vector_src);
+    dirichlet_solve_subdomain(subdomain_solution, temp_vector_src);
 
-    // distribute interface dofs into subdomain solution 
+    // distribute interface dofs into subdomain solution
     Kokkos::parallel_for(
       "distribute_interface_dofs",
       interface_dof_indices_subdomain.size(),
@@ -463,6 +695,40 @@ namespace Portable
     subdomain_solution.update_ghost_values();
   }
 
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::compute_interface_weights()
+  {
+    this->interface_weights.reinit(
+      this->subdomain_dof_handler->get_interface_vector_partitioner());
+
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Host>
+      interface_weights_host(
+        this->subdomain_dof_handler->get_interface_vector_partitioner());
+
+    const unsigned int n_locally_relevant_interface_indices =
+      this->subdomain_dof_handler->n_locally_relevant_interface_indices();
+
+    for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
+      interface_weights_host[this->subdomain_dof_handler
+                               ->local_to_global_interface_partitioner(i)] +=
+        1.0;
+
+    interface_weights_host.compress(VectorOperation::add);
+
+    for (unsigned int i = 0; i < interface_weights.locally_owned_size(); ++i)
+      interface_weights_host.local_element(i) =
+        1. / interface_weights_host.local_element(i);
+
+    interface_weights_host.update_ghost_values();
+
+    LinearAlgebra::ReadWriteVector<number> rw_vector(
+      interface_weights_host.locally_owned_elements());
+    rw_vector.import_elements(interface_weights_host, VectorOperation::insert);
+    interface_weights.import_elements(rw_vector, VectorOperation::insert);
+
+    interface_weights.update_ghost_values();
+  }
 
 
   template <int dim, int fe_degree, typename number>
@@ -483,6 +749,32 @@ namespace Portable
 
   template <int dim, int fe_degree, typename number>
   void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::vmult_neumann(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+    const
+  {
+    dst = 0.;
+
+    LocalLaplaceOperator<dim, fe_degree, number> cell_operator;
+
+    this->cell_loop_neumann(cell_operator, src, dst);
+
+    DeviceVector<number> t_dst(dst.get_values(), dst.size());
+    DeviceVector<number> t_src(src.get_values(), src.size());
+
+    if (physical_boundary_dof_indices.size() > 0)
+      Kokkos::parallel_for(
+        "work",
+        physical_boundary_dof_indices.size(),
+        KOKKOS_LAMBDA(const int i) {
+          const auto idx = physical_boundary_dof_indices(i);
+          t_dst(idx)     = t_src(idx);
+        });
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
   SubdomainLaplaceOperator<dim, fe_degree, number>::vmult_range(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
@@ -498,7 +790,7 @@ namespace Portable
     DeviceVector<number> t_dst(dst.get_values(), dst.size());
     DeviceVector<number> t_src(src.get_values(), src.size());
 
-    if (this->subdomain_dof_handler->get_subdomain_id() == 0)
+    if (physical_boundary_dof_indices.size() > 0)
       Kokkos::parallel_for(
         "work",
         physical_boundary_dof_indices.size(),
@@ -613,6 +905,110 @@ namespace Portable
     src.zero_out_ghost_values();
   }
 
+  template <int dim, int fe_degree, typename number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, number>::cell_loop_neumann(
+    const LocalLaplaceOperator<dim, fe_degree, number> &cell_operator,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst) const
+
+  {
+    MemorySpace::Default::kokkos_space::execution_space exec;
+    using Functor = LocalLaplaceOperator<dim, fe_degree, number>;
+
+    const auto &colored_graph = matrix_free.get_colored_graph();
+
+    const unsigned int n_colors = colored_graph.size();
+
+    if (matrix_free.use_overlap_communication_computation())
+      {
+        // helper to process one colorportable_laplace_operator_quad
+        auto do_color = [&](const unsigned int color) {
+          using TeamPolicy = Kokkos::TeamPolicy<
+            MemorySpace::Default::kokkos_space::execution_space>;
+
+
+          const auto &gpu_data = matrix_free.get_data(color, 0);
+
+          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+
+          internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+            cell_operator,
+            gpu_data,
+            this->plain_dof_indices_per_color[color],
+            src,
+            dst);
+
+          Kokkos::parallel_for(
+            "dealii::MatrixFree::distributed_cell_loop color " +
+              std::to_string(color),
+            team_policy,
+            apply_kernel);
+        };
+
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 && matrix_free.get_data(0, 0).n_cells > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 && matrix_free.get_data(1, 0).n_cells > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 && matrix_free.get_data(2, 0).n_cells > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        // Execute the loop on the cells
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            const auto &gpu_data = matrix_free.get_data(color, 0);
+            if (gpu_data.n_cells > 0)
+              {
+                using TeamPolicy = Kokkos::TeamPolicy<
+                  MemorySpace::Default::kokkos_space::execution_space>;
+
+                auto team_policy =
+                  TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+
+                internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+                  cell_operator,
+                  gpu_data,
+                  this->plain_dof_indices_per_color[color],
+                  src,
+                  dst);
+
+                Kokkos::parallel_for(
+                  "dealii::MatrixFree::distributed_cell_loop color " +
+                    std::to_string(color),
+                  team_policy,
+                  apply_kernel);
+              }
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+  }
   template <int dim, int fe_degree, typename number>
   void
   SubdomainLaplaceOperator<dim, fe_degree, number>::cell_range_loop(
@@ -866,8 +1262,13 @@ namespace Portable
     if (ghost_exchange_on)
       src.zero_out_ghost_values();
   }
-
-
+  template <int dim, int fe_degree, typename number>
+  const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &
+  SubdomainLaplaceOperator<dim, fe_degree, number>::get_interface_weights()
+    const
+  {
+    return this->interface_weights;
+  }
 
   template <int dim, int fe_degree, typename number>
   void

@@ -34,6 +34,7 @@
 #include <iostream>
 #include <memory>
 
+#include "domain_decomposition/portable_bnn_preconditioner.h"
 #include "domain_decomposition/portable_interface_solver.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "domain_decomposition/subdomain_triangulation.h"
@@ -76,6 +77,9 @@ private:
   setup_interface_system();
 
   void
+  setup_bnn_preconditioner();
+
+  void
   assemble_rhs();
 
   void
@@ -86,6 +90,9 @@ private:
 
   void
   output_results(const unsigned int cycle) const;
+
+  void
+  test_coarse_problem();
 
   MPI_Comm mpi_communicator;
 
@@ -120,10 +127,6 @@ private:
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     subdomain_rhs_device;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    subdomain_rhs_interior;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    subdomain_rhs_interface;
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default> schur_rhs;
 
   std::unique_ptr<Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>
@@ -131,6 +134,10 @@ private:
 
   std::unique_ptr<Portable::InterfaceSolver<dim, fe_degree, double>>
     interface_solver;
+
+  std::unique_ptr<Portable::BNNPreconditioner<dim, fe_degree, double>>
+    bnn_preconditioner;
+
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     rhs_schur_device;
@@ -202,7 +209,8 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   subdomain_dof_handler.reinit(subdomain_triangulation, dof_handler);
   subdomain_dof_handler.distribute_subdomain_dofs();
 
-  pcout << "           Total number of DoFs: " << dof_handler.n_dofs() << std::endl;
+  pcout << "           Total number of DoFs: " << dof_handler.n_dofs()
+        << std::endl;
 
   {
     Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
@@ -333,6 +341,33 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
 
 template <int dim, int fe_degree>
 void
+LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
+{
+  Kokkos::fence();
+  Timer time;
+
+  interface_solver->setup_coarse_matrix();
+
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           Coarse matrix for BNN computed      (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
+
+  Kokkos::fence();
+  time.restart();
+  this->bnn_preconditioner =
+    std::make_unique<Portable::BNNPreconditioner<dim, fe_degree, double>>(
+      subdomain_dof_handler, *interface_solver, *subdomain_matrix);
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           BNN preconditioner setup            (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
+}
+
+template <int dim, int fe_degree>
+void
 LaplaceProblem<dim, fe_degree>::assemble_rhs()
 {
   Timer time;
@@ -385,16 +420,18 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           RHS assembled                       (CPU/wall) " << time.cpu_time() << "s/"
-               << time.wall_time() << 's' << std::endl;
+  time_details << "           RHS assembled                       (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 
   Kokkos::fence();
   this->subdomain_matrix->assemble_rhs_schur(rhs_schur_device,
                                              subdomain_rhs_device);
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Schur RHS assembled                 (CPU/wall) " << time.cpu_time()
-               << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Schur RHS assembled                 (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 }
 
 
@@ -414,7 +451,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   cg.solve(*interface_solver,
            solution_interface_device,
            rhs_schur_device,
-           PreconditionIdentity());
+           *bnn_preconditioner);
 
   solution_interface_device.update_ghost_values();
 
@@ -532,6 +569,23 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   //           << subdomain_norm << std::endl;
 }
 
+template <int dim, int fe_degree>
+void
+LaplaceProblem<dim, fe_degree>::test_coarse_problem()
+{
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> test_src(
+    this->subdomain_dof_handler.get_interface_vector_partitioner()),
+    test_dst(this->subdomain_dof_handler.get_interface_vector_partitioner());
+
+  test_src = 1.0;
+  test_src.update_ghost_values();
+
+  bnn_preconditioner->vmult(test_dst, test_src);
+
+  test_dst.update_ghost_values();
+
+  // test_dst.print(std::cout);
+}
 
 template <int dim, int fe_degree>
 void
@@ -539,7 +593,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
 
-  for (unsigned int cycle = 0; cycle < 8; ++cycle)
+  for (unsigned int cycle = 0; cycle < 1; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -555,15 +609,19 @@ LaplaceProblem<dim, fe_degree>::run()
 
       setup_interface_system();
 
+      setup_bnn_preconditioner();
+
       assemble_rhs();
 
       pcout << "           setup time: " << setup_time << "s" << std::endl;
 
       solve_interface();
 
-      post_process_subdomain_solution();
+      test_coarse_problem();
 
-      output_results(cycle);
+      // post_process_subdomain_solution();
+
+      // output_results(cycle);
     }
 }
 
@@ -575,7 +633,7 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
       constexpr int dim       = 2;
-      constexpr int fe_degree = 3;
+      constexpr int fe_degree = 1;
 
       LaplaceProblem<dim, fe_degree> laplace_problem;
       laplace_problem.run();
