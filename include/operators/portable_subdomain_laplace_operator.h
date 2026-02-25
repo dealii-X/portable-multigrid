@@ -453,6 +453,9 @@ namespace Portable
     SolverControl solver_control(temp_vector_src.size(),
                                  1e-12 * temp_vector_src.l2_norm());
 
+    number mean_value_src = temp_vector_src.mean_value();
+    temp_vector_src.add(-mean_value_src);
+
     SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
       cg(solver_control);
 
@@ -461,10 +464,10 @@ namespace Portable
              temp_vector_src,
              PreconditionIdentity());
 
-    std::cout << "  Neumann solve on subdomain "
-              << this->subdomain_dof_handler->get_subdomain_id()
-              << " converged in " << solver_control.last_step()
-              << " iterations." << std::endl;
+    // std::cout << "  Neumann solve on subdomain "
+    //           << this->subdomain_dof_handler->get_subdomain_id()
+    //           << " converged in " << solver_control.last_step()
+    //           << " iterations." << std::endl;
 
 
     Kokkos::parallel_for(
@@ -592,6 +595,8 @@ namespace Portable
     dst = 0.;
 
     src.update_ghost_values();
+
+    // src.print(std::cout);
 
     temp_vector_src  = 0.;
     temp_vector_work = 0.;

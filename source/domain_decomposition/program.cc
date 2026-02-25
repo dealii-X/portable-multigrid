@@ -36,6 +36,7 @@
 
 #include "domain_decomposition/portable_bnn_preconditioner.h"
 #include "domain_decomposition/portable_interface_solver.h"
+#include "domain_decomposition/portable_solver_projected_cg.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "domain_decomposition/subdomain_triangulation.h"
 #include "multigrid/portable_geometric_transfer.h"
@@ -444,13 +445,19 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   SolverControl solver_control(rhs_schur_device.size(),
                                1e-12 * rhs_schur_device.l2_norm());
 
-  SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
-    solver_control);
+  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+  // cg(
+  //   solver_control);
+
+  Portable::SolverProjectedCG<
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+    cg(solver_control);
 
   solution_interface_device = 0.;
   cg.solve(*interface_solver,
            solution_interface_device,
            rhs_schur_device,
+           //  PreconditionIdentity());
            *bnn_preconditioner);
 
   solution_interface_device.update_ghost_values();
@@ -580,11 +587,29 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
   test_src = 1.0;
   test_src.update_ghost_values();
 
-  bnn_preconditioner->vmult(test_dst, test_src);
+  // bnn_preconditioner->vmult(test_dst, test_src);
 
-  test_dst.update_ghost_values();
+  // bnn_preconditioner->project(test_dst, test_src);
+
+  // test_dst.update_ghost_values();
 
   // test_dst.print(std::cout);
+
+  // rhs_schur_device.print(std::cout);
+
+  SolverControl solver_control(1000, 1e-12 * rhs_schur_device.l2_norm());
+
+
+  Portable::SolverProjectedCG<
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+    cg(solver_control);
+
+  solution_interface_device = 0.;
+  cg.solve(*interface_solver,
+           solution_interface_device,
+           rhs_schur_device,
+           //  PreconditionIdentity());
+           *bnn_preconditioner);
 }
 
 template <int dim, int fe_degree>
@@ -593,7 +618,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid();
 
-  for (unsigned int cycle = 0; cycle < 1; ++cycle)
+  for (unsigned int cycle = 0; cycle < 7; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -615,9 +640,9 @@ LaplaceProblem<dim, fe_degree>::run()
 
       pcout << "           setup time: " << setup_time << "s" << std::endl;
 
-      // solve_interface();
+      solve_interface();
 
-      test_coarse_problem();
+      // test_coarse_problem();
 
       // post_process_subdomain_solution();
 
