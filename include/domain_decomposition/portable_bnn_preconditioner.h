@@ -88,53 +88,33 @@ namespace Portable
     // tmp = S*u_coarse1 = S*Q*src
     this->subdomain_operator->vmult_schur(tmp, u_coarse1);
 
-
     // r_bal = (I-Q*S)*src
     r_bal.add(1., src, -1., tmp);
-    // r_bal.update_ghost_values();
 
-
-    // rbal = D*(I-Q*S)*src
-    this->subdomain_operator->apply_interface_weights(r_bal);
-
-    // r_bal.update_ghost_values();
-
-    // u_loc = Si^{-1}*D*(I-Q*S)*src
-    this->subdomain_operator->neumann_solve_subdomain(u_loc, r_bal);
-
+    // r_bal.print(std::cout);
 
     // u_loc = D*Si^{-1}*D*(I-Q*S)*src = P_local*(I-Q*S)*src
-    this->subdomain_operator->apply_interface_weights(u_loc);
+    this->subdomain_operator->neumann_solve_subdomain(u_loc, r_bal);
 
-    u_loc.compress(VectorOperation::add);
     // u_loc.update_ghost_values();
-
-    // u_loc.print(std::cout);
-
 
     // tmp = S*P_local*(I-Q*S)*src
     this->subdomain_operator->vmult_schur(tmp, u_loc);
 
-
     // tmp = Q*S*P_local*(I-Q*S)*src
     this->interface_solver->apply_coarse_preconditioner(u_coarse2, tmp);
-
-
 
     // dst = (I -Q*S)*P_local*(I-Q*S)*src
     dst.add(1., u_loc, -1., u_coarse2);
 
-    // dst.update_ghost_values();
     // dst.print(std::cout);
+
     // dst = u_coarse1 + (I -Q*S)*P_local*(I-Q*S)*src
     dst.add(1., u_coarse1);
 
-
-
-    dst.compress(VectorOperation::add);
-    src.zero_out_ghost_values();
-
     // dst.print(std::cout);
+
+    src.zero_out_ghost_values();
   }
 
 

@@ -317,12 +317,31 @@ namespace Portable
     DeviceVector<number> weights_view(interface_weights.get_values(),
                                       interface_weights.size());
 
+    // if (this->subdomain_dof_handler->get_subdomain_id() == 1)
+    //   std::cout << "On subdomain "
+    //             << this->subdomain_dof_handler->get_subdomain_id() << ": "
+    //             << coarse_value_subdomain;
+    // std::cout << std::endl;
+
     Kokkos::parallel_for(
       "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
       interface_dof_indices_subdomain.size(),
       KOKKOS_LAMBDA(const unsigned int i) {
         interface_vector_view(i) = coarse_value_subdomain * weights_view(i);
       });
+
+    // if (this->subdomain_dof_handler->get_subdomain_id() == 1)
+    //   Kokkos::parallel_for(
+    //     "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
+    //     interface_dof_indices_subdomain.size(),
+    //     KOKKOS_LAMBDA(const unsigned int i) {
+    //       Kokkos::printf("i = %d, coarse = %f, interface = %f \n",
+    //                      i,
+    //                      coarse_value_subdomain,
+    //                      interface_vector_view(i));
+    //     });
+
+    // std::cout << std::endl << std::endl;
   }
 
   template <int dim, int fe_degree, typename number>
@@ -408,6 +427,10 @@ namespace Portable
 
     DeviceVector<number> src_view(src.get_values(), src.size());
     DeviceVector<number> dst_view(dst.get_values(), dst.size());
+
+    DeviceVector<number> weights_view(interface_weights.get_values(),
+                                      interface_weights.size());
+
     DeviceVector<number> t_src(temp_vector_src.get_values(),
                                temp_vector_src.size());
     DeviceVector<number> t_dst(temp_vector_dst.get_values(),
@@ -421,7 +444,8 @@ namespace Portable
       "read_src_subdomain_neumann",
       interface_dof_indices_subdomain.size(),
       KOKKOS_LAMBDA(const int i) {
-        t_src(interface_dof_indices_subdomain(i)) = src_view(i);
+        t_src(interface_dof_indices_subdomain(i)) =
+          weights_view(i) * src_view(i);
       });
 
 
@@ -447,7 +471,8 @@ namespace Portable
       "write_dst_subdomain_neumann",
       interface_dof_indices_subdomain.size(),
       KOKKOS_LAMBDA(const int i) {
-        dst_view(i) = t_dst(interface_dof_indices_subdomain(i));
+        dst_view(i) =
+          weights_view(i) * t_dst(interface_dof_indices_subdomain(i));
       });
 
     dst.compress(VectorOperation::add);
@@ -591,12 +616,52 @@ namespace Portable
       });
 
 
+
     // apply Schur complement operators A_GG*src_interface and A_IG *
     // src_interface
     vmult_range(temp_vector_dst, temp_vector_src);
 
+    // if (this->subdomain_dof_handler->get_subdomain_id() == 0)
+    //   Kokkos::parallel_for(
+    //     "distribute_interface_dofs",
+    //     interface_dof_indices_subdomain.size(),
+    //     KOKKOS_LAMBDA(const int i) {
+    //       const auto idx = interface_dof_indices_subdomain(i);
+    //       Kokkos::printf("idx = %d, value = %f\n", idx, t_dst(idx));
+    //     });
+
+    // if (this->subdomain_dof_handler->get_subdomain_id() == 0)
+    //   Kokkos::parallel_for(
+    //     "distribute_interface_dofs",
+    //     this->matrix_free.get_data(0).n_cells,
+    //     KOKKOS_LAMBDA(const unsigned int cell_id) {
+    //       for (unsigned int i = 0; i < n_local_dofs; ++i)
+    //         {
+    //           const auto idx = interior_dof_indices_per_color[0](i, cell_id);
+    //           if (idx != numbers::invalid_unsigned_int)
+    //             Kokkos::printf("idx = %d, value = %f\n", idx, t_dst(idx));
+    //         }
+    //     });
+
+    // temp_vector_dst.print(std::cout);
+
+
+
     // solve interior A_II^{-1} * A_IG * src_interface
     dirichlet_solve_subdomain(temp_vector_work, temp_vector_dst);
+
+    //   if (this->subdomain_dof_handler->get_subdomain_id() == 0)
+    // Kokkos::parallel_for(
+    //   "distribute_interface_dofs",
+    //   this->matrix_free.get_data(0).n_cells,
+    //   KOKKOS_LAMBDA(const unsigned int cell_id) {
+    //     for (unsigned int i = 0; i < n_local_dofs; ++i)
+    //       {
+    //         const auto idx = interior_dof_indices_per_color[0](i, cell_id);
+    //         if (idx != numbers::invalid_unsigned_int)
+    //           Kokkos::printf("idx = %d, value = %f\n", idx, t_work(idx));
+    //       }
+    //   });
 
     // zero out dst entries corresponding to interface dofs
     Kokkos::parallel_for(
@@ -610,6 +675,8 @@ namespace Portable
     // apply A_GI * A_II^{-1} * A_IG * src_interface
     vmult_range(temp_vector_src, temp_vector_work);
 
+
+
     Kokkos::parallel_for(
       "distribute_interface_dofs",
       interface_dof_indices_subdomain.size(),
@@ -618,6 +685,16 @@ namespace Portable
         number     output_value = t_dst(idx) - t_src(idx);
         Kokkos::atomic_add(&dst_view(i), output_value);
       });
+
+    // if (this->subdomain_dof_handler->get_subdomain_id() == 0)
+    //   Kokkos::parallel_for(
+    //     "distribute_interface_dofs",
+    //     interface_dof_indices_subdomain.size(),
+    //     KOKKOS_LAMBDA(const int i) {
+    //       const auto idx = interface_dof_indices_subdomain(i);
+    //       Kokkos::printf("idx = %d, value = %f\n", idx, dst_view(i));
+    //     });
+
 
     dst.compress(VectorOperation::add);
     src.zero_out_ghost_values();

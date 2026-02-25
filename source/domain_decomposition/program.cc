@@ -615,7 +615,7 @@ LaplaceProblem<dim, fe_degree>::run()
 
       pcout << "           setup time: " << setup_time << "s" << std::endl;
 
-      solve_interface();
+      // solve_interface();
 
       test_coarse_problem();
 

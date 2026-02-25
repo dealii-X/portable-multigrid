@@ -14,7 +14,7 @@ namespace Portable
 {
 
   template <int dim, int fe_degree, typename number>
-  class InterfaceSolver: public EnableObserverPointer
+  class InterfaceSolver : public EnableObserverPointer
   {
   public:
     InterfaceSolver(const SubdomainDoFHandler<dim>  &subdomain_dof_handler,
@@ -170,12 +170,26 @@ namespace Portable
       all_coarse_values,
       this->coarse_problem_rank);
 
+    // for (unsigned int i = 0; i < all_coarse_values.size(); i++)
+    //   {
+    //     std::cout << "On subdomain " << this_subdomain << ": "
+    //               << subdomain_value;
+    //     std::cout << std::endl;
+    //   }
+
     interface_vector = 0.;
 
     this->subdomain_operator->coarse_to_subdomain_interface(interface_vector,
                                                             subdomain_value);
     interface_vector.compress(VectorOperation::add);
     interface_vector.update_ghost_values();
+
+    // interface_vector.print(std::cout);
+
+    //     if (this->subdomain_dof_handler->get_subdomain_id() == 3)
+    //   for (unsigned int i = 0; i < all_coarse_values.size(); i++)
+    //     std::cout << all_coarse_values[i] << " ";
+    // std::cout << std::endl;
   }
 
 
@@ -269,26 +283,31 @@ namespace Portable
 
         this->global_interface_to_coarse(coarse_column, S_phi_j);
 
+        // coarse_column.print(std::cout);
+
         rw_vector.reinit(coarse_column.size());
         rw_vector.import_elements(coarse_column, VectorOperation::insert);
         coarse_column_host.import_elements(rw_vector, VectorOperation::insert);
+
 
         if (this->this_subdomain == this->coarse_problem_rank)
           for (unsigned int i = 0; i < this->n_subdomains; ++i)
             coarse_matrix(i, j) = coarse_column_host[i];
       }
+    // MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
+
+    // if (this->this_subdomain == this->coarse_problem_rank)
+    //   coarse_matrix.print_formatted(std::cout, 3, true, 0, "0.00e+00");
 
     if (this->this_subdomain == this->coarse_problem_rank)
       {
         coarse_matrix.compute_inverse_svd(1e-12);
+
         std::cout << "Singular values of the coarse matrix: " << std::endl;
         for (unsigned int i = 0; i < this->n_subdomains; ++i)
           std::cout << coarse_matrix.singular_value(i) << " ";
         std::cout << std::endl;
       }
-
-    // if (this->this_subdomain == this->coarse_problem_rank)
-    // coarse_matrix.print_formatted(std::cout, 3, true, 0, "0.00e+00");
   }
 
 
