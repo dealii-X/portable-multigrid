@@ -293,6 +293,8 @@ namespace Portable
       {
         it++;
 
+        // std::cout << "Iteration " << it << std::endl;
+
         // const number old_alpha = alpha;
         const number old_r_dot_preconditioner_dot_r =
           r_dot_preconditioner_dot_r;
@@ -337,7 +339,8 @@ namespace Portable
         // x.print(std::cout);
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
-        // std::cout << "residual_norm = " << residual_norm << std::endl;
+        if (A.enable_printing())
+          std::cout << "residual_norm = " << residual_norm << std::endl;
 
 
 

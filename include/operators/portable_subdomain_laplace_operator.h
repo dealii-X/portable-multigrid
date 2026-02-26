@@ -317,11 +317,7 @@ namespace Portable
     DeviceVector<number> weights_view(interface_weights.get_values(),
                                       interface_weights.size());
 
-    // if (this->subdomain_dof_handler->get_subdomain_id() == 1)
-    //   std::cout << "On subdomain "
-    //             << this->subdomain_dof_handler->get_subdomain_id() << ": "
-    //             << coarse_value_subdomain;
-    // std::cout << std::endl;
+    interface_vector = 0.;
 
     Kokkos::parallel_for(
       "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
@@ -329,19 +325,6 @@ namespace Portable
       KOKKOS_LAMBDA(const unsigned int i) {
         interface_vector_view(i) = coarse_value_subdomain * weights_view(i);
       });
-
-    // if (this->subdomain_dof_handler->get_subdomain_id() == 1)
-    //   Kokkos::parallel_for(
-    //     "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
-    //     interface_dof_indices_subdomain.size(),
-    //     KOKKOS_LAMBDA(const unsigned int i) {
-    //       Kokkos::printf("i = %d, coarse = %f, interface = %f \n",
-    //                      i,
-    //                      coarse_value_subdomain,
-    //                      interface_vector_view(i));
-    //     });
-
-    // std::cout << std::endl << std::endl;
   }
 
   template <int dim, int fe_degree, typename number>

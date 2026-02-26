@@ -60,7 +60,7 @@ public:
 
 private:
   void
-  setup_grid();
+  setup_grid(unsigned int cycle);
 
   void
   create_subdomain_triangulations();
@@ -161,20 +161,22 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem()
   , setup_time(0.)
   , pcout(std::cout, Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
   , time_details(std::cout,
-                 true &&
+                 false &&
                    Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
 
 {}
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::setup_grid()
+LaplaceProblem<dim, fe_degree>::setup_grid(unsigned int cycle)
 {
   Timer time;
   setup_time = 0;
 
+  triangulation.clear();
+
   GridGenerator::hyper_cube(triangulation, 0., 1.);
-  triangulation.refine_global(2);
+  triangulation.refine_global(cycle);
 
   setup_time += time.wall_time();
   time_details << "           Distributed triangulation created    (CPU/wall) "
@@ -443,11 +445,15 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   Timer time;
   Kokkos::fence();
   SolverControl solver_control(rhs_schur_device.size(),
-                               1e-12 * rhs_schur_device.l2_norm());
+                               1e-9 * rhs_schur_device.l2_norm());
 
   // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
   // cg(
   //   solver_control);
+
+  // pcout << "RHS Schur norm = " << rhs_schur_device.l2_norm() << std::endl;
+
+  // rhs_schur_device.print(std::cout);
 
   Portable::SolverProjectedCG<
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
@@ -463,10 +469,10 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   solution_interface_device.update_ghost_values();
 
   Kokkos::fence();
-  time_details << "           Interface solver converged in "
-               << solver_control.last_step() << " iterations.    (CPU/wall) "
-               << time.cpu_time() << "s/" << time.wall_time() << 's'
-               << std::endl;
+
+  pcout << "           Interface solver converged in "
+        << solver_control.last_step() << " iterations.    (CPU/wall) "
+        << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -597,7 +603,11 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
 
   // rhs_schur_device.print(std::cout);
 
-  SolverControl solver_control(1000, 1e-12 * rhs_schur_device.l2_norm());
+  // ReductionControl solver_control(rhs_schur_device.size(),
+  //                                 1e-9 * rhs_schur_device.l2_norm());
+
+  ReductionControl solver_control(rhs_schur_device.size(),1e-16, 1e-9);
+
 
 
   Portable::SolverProjectedCG<
@@ -608,7 +618,6 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
   cg.solve(*interface_solver,
            solution_interface_device,
            rhs_schur_device,
-           //  PreconditionIdentity());
            *bnn_preconditioner);
 }
 
@@ -616,15 +625,18 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  setup_grid();
+  setup_grid(2);
 
-  for (unsigned int cycle = 0; cycle < 7; ++cycle)
+  for (unsigned int cycle = 0; cycle < 9; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
       triangulation.refine_global(1);
 
       create_subdomain_triangulations();
+
+      pcout << "N_cells = " << triangulation.n_global_active_cells()
+            << std::endl;
 
       setup_dofs();
 
