@@ -214,8 +214,12 @@ namespace Portable
 
     Vector<number> e_j(this->n_subdomains), coarse_column(this->n_subdomains);
 
+    std::cout << "START SETUP COARSE MATRIX" << std::endl;
+
     for (unsigned int j = 0; j < this->n_subdomains; ++j)
       {
+        std::cout << "START SETUP COARSE MATRIX BASIS " << j << std::endl;
+
         e_j = 0.;
 
         if (this->this_subdomain == this->coarse_problem_rank)
@@ -223,16 +227,28 @@ namespace Portable
 
         this->coarse_to_global_interface(phi_j, e_j);
 
+        std::cout << "BEFORE LOCAL SOLVE SETUP COARSE MATRIX BASIS " << j
+                  << std::endl;
+
+
         this->subdomain_operator->vmult_schur(S_phi_j, phi_j);
+
+        MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
+        
+        std::cout << "AFTER LOCAL SOLVE SETUP COARSE MATRIX BASIS " << j
+                  << std::endl;
+
 
         this->global_interface_to_coarse(coarse_column, S_phi_j);
 
         if (this->this_subdomain == this->coarse_problem_rank)
           for (unsigned int i = 0; i < this->n_subdomains; ++i)
             coarse_matrix(i, j) = coarse_column[i];
+
+        std::cout << "END SETUP COARSE MATRIX BASIS " << j << std::endl;
       }
 
-      if (this->this_subdomain == this->coarse_problem_rank)
+    if (this->this_subdomain == this->coarse_problem_rank)
       {
         coarse_matrix.compute_inverse_svd(1e-12);
 
@@ -241,6 +257,8 @@ namespace Portable
         //   std::cout << coarse_matrix.singular_value(i) << " ";
         // std::cout << std::endl;
       }
+
+    MPI_Barrier(this->subdomain_dof_handler->get_mpi_communicator());
   }
 
 
