@@ -1,0 +1,745 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) Stages/2026
+0: Settings of parameters: 
+0: Number of MPI ranks:            4
+0: Polynomial degree:              4
+0: Minimum size:                   10000
+0: Maximum size:                   100000000000
+0: Number of pre-smoother iters:   3
+0: Number of post-smoother iters:  3
+0: Use doubling mesh:              1
+0: 
+0: Testing FE_Q<3>(4)
+0: Cycle 0
+0: Cycle 1
+0: Cycle 2
+0: Cycle 3
+0: Cycle 4
+0: Cycle 5
+0: Cycle 6
+0: Cycle 7
+0: Cycle 8
+0: Coarse triangulations created  (CPU/wall)0.003085s/0.115598s
+0: Number of degrees of freedom: 18513 = (6 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.020917s/0.167589s
+0: Setup matrices   (CPU/wall) 0.013879s/0.356863s
+0: Setup transfers   (CPU/wall) 0.003958s/0.0256629s
+0: Setup smoothers   (CPU/wall) 0.032752s/0.136549s
+0: Compute rhs   (CPU/wall) 0.001128s/0.00886349s
+0: Total setup time: 0.811012
+0: Memory stats [MB]: 448.129 [p3] 450.452 452.207 [p1]
+0: Time solve CG              0.288219
+0: Time solve CG              0.154192
+0: Time solve CG              0.159839
+0: Time solve CG              0.153437
+0: Time solve CG              0.153954
+0: Time solve CG              0.151111
+0: Time solve CG              0.153869
+0: Time solve CG              0.153231
+0: Time solve CG              0.153257
+0: Time solve CG              0.155343
+0: matvec time dp 0.000258281 [p1] 0.000258346 0.000258404 [p3] DoFs/s: 7.16437e+07
+0: matvec time dp 0.000259048 [p0] 0.000259137 0.000259176 [p1] DoFs/s: 7.14302e+07
+0: matvec time dp 0.000258488 [p0] 0.000258562 0.000258603 [p1] DoFs/s: 7.15886e+07
+0: matvec time dp 0.000258805 [p0] 0.000258878 0.000258914 [p1] DoFs/s: 7.15026e+07
+0: matvec time dp 0.000258602 [p0] 0.000258693 0.00025873 [p3] DoFs/s: 7.15535e+07
+0: Best timings for ndof = 18513   mv 0.000258404    mv smooth 0.000257642   cg-mg 0.151111
+0: Best timings for ndof = 18513   on level 1|  restriction = 0.000608216   prolongation  =  0.000499428
+0: Best timings for ndof = 18513   on level 2|  restriction = 0.0036783   prolongation  =  0.00335426
+0: Best timings for ndof = 18513   on level 3|  restriction = 0.000175869   prolongation  =  0.000194304
+0: Best timings for ndof = 18513   on level 4|  restriction = 0.000196392   prolongation  =  0.000190521
+0: Best timings for ndof = 18513   on level 5|  restriction = 0.000191838   prolongation  =  0.000191646
+0: 
+0: Cycle 9
+0: Coarse triangulations created  (CPU/wall)0.005939s/0.00600383s
+0: Number of degrees of freedom: 35937 = (8 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.011185s/0.0458503s
+0: Setup matrices   (CPU/wall) 0.01716s/0.0284334s
+0: Setup transfers   (CPU/wall) 0.005864s/0.00594048s
+0: Setup smoothers   (CPU/wall) 0.017078s/0.036704s
+0: Compute rhs   (CPU/wall) 0.005666s/0.0140493s
+0: Total setup time: 0.13694
+0: Memory stats [MB]: 458.613 [p0] 462.485 464.207 [p1]
+0: Time solve CG              0.238755
+0: Time solve CG              0.131858
+0: Time solve CG              0.13091
+0: Time solve CG              0.129517
+0: Time solve CG              0.130987
+0: Time solve CG              0.130238
+0: Time solve CG              0.131176
+0: Time solve CG              0.131564
+0: Time solve CG              0.16277
+0: Time solve CG              0.131073
+0: matvec time dp 0.000259628 [p0] 0.000259675 0.000259706 [p1] DoFs/s: 1.38376e+08
+0: matvec time dp 0.00025959 [p0] 0.00025967 0.000259716 [p1] DoFs/s: 1.3837e+08
+0: matvec time dp 0.000259113 [p0] 0.000259186 0.000259222 [p2] DoFs/s: 1.38634e+08
+0: matvec time dp 0.000260063 [p0] 0.000260138 0.000260172 [p1] DoFs/s: 1.38128e+08
+0: matvec time dp 0.000259426 [p0] 0.000259494 0.000259525 [p1] DoFs/s: 1.38472e+08
+0: Best timings for ndof = 35937   mv 0.000259222    mv smooth 0.000259165   cg-mg 0.129516
+0: Best timings for ndof = 35937   on level 1|  restriction = 0.000283788   prolongation  =  0.000289475
+0: Best timings for ndof = 35937   on level 2|  restriction = 0.000889256   prolongation  =  0.000715976
+0: Best timings for ndof = 35937   on level 3|  restriction = 0.00145551   prolongation  =  0.00121237
+0: Best timings for ndof = 35937   on level 4|  restriction = 0.000187444   prolongation  =  0.000191286
+0: Best timings for ndof = 35937   on level 5|  restriction = 0.000196033   prolongation  =  0.000193132
+0: Best timings for ndof = 35937   on level 6|  restriction = 0.000193943   prolongation  =  0.000192416
+0: 
+0: Cycle 10
+0: Coarse triangulations created  (CPU/wall)0.007962s/0.0262426s
+0: Number of degrees of freedom: 70785 = (10 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.031767s/0.0479063s
+0: Setup matrices   (CPU/wall) 0.033597s/0.0462578s
+0: Setup transfers   (CPU/wall) 0.008793s/0.0121541s
+0: Setup smoothers   (CPU/wall) 0.029254s/0.0487646s
+0: Compute rhs   (CPU/wall) 0.006944s/0.0175097s
+0: Total setup time: 0.198783
+0: Memory stats [MB]: 467.949 [p3] 470.861 472.73 [p2]
+0: Time solve CG              0.26421
+0: Time solve CG              0.138227
+0: Time solve CG              0.137834
+0: Time solve CG              0.138898
+0: Time solve CG              0.139301
+0: Time solve CG              0.138375
+0: Time solve CG              0.139166
+0: Time solve CG              0.139484
+0: Time solve CG              0.139921
+0: Time solve CG              0.138253
+0: matvec time dp 0.000260572 [p0] 0.000260621 0.000260649 [p2] DoFs/s: 2.71572e+08
+0: matvec time dp 0.000260989 [p0] 0.000261067 0.000261124 [p1] DoFs/s: 2.71078e+08
+0: matvec time dp 0.000261899 [p0] 0.000261958 0.000261996 [p1] DoFs/s: 2.70176e+08
+0: matvec time dp 0.000261168 [p0] 0.000261238 0.000261277 [p1] DoFs/s: 2.70919e+08
+0: matvec time dp 0.000261481 [p0] 0.000261537 0.000261563 [p1] DoFs/s: 2.70623e+08
+0: Best timings for ndof = 70785   mv 0.000260649    mv smooth 0.000260966   cg-mg 0.137833
+0: Best timings for ndof = 70785   on level 1|  restriction = 0.000278646   prolongation  =  0.000286364
+0: Best timings for ndof = 70785   on level 2|  restriction = 0.00091468   prolongation  =  0.000767539
+0: Best timings for ndof = 70785   on level 3|  restriction = 0.00157479   prolongation  =  0.00138623
+0: Best timings for ndof = 70785   on level 4|  restriction = 0.00019345   prolongation  =  0.000205639
+0: Best timings for ndof = 70785   on level 5|  restriction = 0.000197221   prolongation  =  0.000193881
+0: Best timings for ndof = 70785   on level 6|  restriction = 0.000193817   prolongation  =  0.000192939
+0: 
+0: cells dofs  mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256 18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512 35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024 70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0: 
+0: 
+0: Cycle 11
+0: Coarse triangulations created  (CPU/wall)0.011959s/0.0311051s
+0: Number of degrees of freedom: 139425 = (12 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.035382s/0.0586074s
+0: Setup matrices   (CPU/wall) 0.062963s/0.0757755s
+0: Setup transfers   (CPU/wall) 0.015014s/0.0173172s
+0: Setup smoothers   (CPU/wall) 0.033421s/0.0540283s
+0: Compute rhs   (CPU/wall) 0.009809s/0.0207706s
+0: Total setup time: 0.257541
+0: Memory stats [MB]: 471.176 [p3] 474.486 476.535 [p2]
+0: Time solve CG              0.328448
+0: Time solve CG              0.19919
+0: Time solve CG              0.200194
+0: Time solve CG              0.199068
+0: Time solve CG              0.201295
+0: Time solve CG              0.200384
+0: Time solve CG              0.19971
+0: Time solve CG              0.217611
+0: Time solve CG              0.200193
+0: Time solve CG              0.20048
+0: matvec time dp 0.000264284 [p0] 0.00026432 0.000264352 [p2] DoFs/s: 5.27423e+08
+0: matvec time dp 0.000263687 [p0] 0.000263782 0.000263826 [p1] DoFs/s: 5.28474e+08
+0: matvec time dp 0.000264148 [p0] 0.000264242 0.000264282 [p1] DoFs/s: 5.27561e+08
+0: matvec time dp 0.000264046 [p0] 0.00026417 0.000264351 [p2] DoFs/s: 5.27424e+08
+0: matvec time dp 0.000264476 [p0] 0.000264577 0.000264681 [p2] DoFs/s: 5.26766e+08
+0: Best timings for ndof = 139425   mv 0.000263826    mv smooth 0.000261217   cg-mg 0.199067
+0: Best timings for ndof = 139425   on level 1|  restriction = 0.000711347   prolongation  =  0.000535689
+0: Best timings for ndof = 139425   on level 2|  restriction = 0.00355505   prolongation  =  0.00338255
+0: Best timings for ndof = 139425   on level 3|  restriction = 0.00143447   prolongation  =  0.00130898
+0: Best timings for ndof = 139425   on level 4|  restriction = 0.000199919   prolongation  =  0.000209056
+0: Best timings for ndof = 139425   on level 5|  restriction = 0.000198606   prolongation  =  0.000195341
+0: Best timings for ndof = 139425   on level 6|  restriction = 0.000195849   prolongation  =  0.000194247
+0: 
+0: cells  dofs  mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256  18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512  35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024  70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048 139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0: 
+0: 
+0: Cycle 12
+0: Coarse triangulations created  (CPU/wall)0.022902s/0.0230266s
+0: Number of degrees of freedom: 274625 = (16 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.031492s/0.0743616s
+0: Setup matrices   (CPU/wall) 0.103303s/0.125098s
+0: Setup transfers   (CPU/wall) 0.021582s/0.0325627s
+0: Setup smoothers   (CPU/wall) 0.034772s/0.0594567s
+0: Compute rhs   (CPU/wall) 0.017678s/0.03161s
+0: Total setup time: 0.346042
+0: Memory stats [MB]: 476.453 [p3] 480.039 482.707 [p2]
+0: Time solve CG              0.363671
+0: Time solve CG              0.22164
+0: Time solve CG              0.222423
+0: Time solve CG              0.221915
+0: Time solve CG              0.225744
+0: Time solve CG              0.220577
+0: Time solve CG              0.221784
+0: Time solve CG              0.222444
+0: Time solve CG              0.222313
+0: Time solve CG              0.220546
+0: matvec time dp 0.000305037 [p0] 0.000305093 0.000305121 [p1] DoFs/s: 9.00052e+08
+0: matvec time dp 0.000305675 [p0] 0.000305777 0.000305831 [p2] DoFs/s: 8.97963e+08
+0: matvec time dp 0.000305517 [p0] 0.000305589 0.000305633 [p1] DoFs/s: 8.98545e+08
+0: matvec time dp 0.00030338 [p0] 0.000303499 0.000303573 [p2] DoFs/s: 9.04643e+08
+0: matvec time dp 0.000301613 [p0] 0.000301734 0.000301807 [p1] DoFs/s: 9.09934e+08
+0: Best timings for ndof = 274625   mv 0.000301807    mv smooth 0.000271038   cg-mg 0.220546
+0: Best timings for ndof = 274625   on level 1|  restriction = 0.000274024   prolongation  =  0.000281684
+0: Best timings for ndof = 274625   on level 2|  restriction = 0.000790086   prolongation  =  0.000698423
+0: Best timings for ndof = 274625   on level 3|  restriction = 0.00157287   prolongation  =  0.00137337
+0: Best timings for ndof = 274625   on level 4|  restriction = 0.00410792   prolongation  =  0.00381926
+0: Best timings for ndof = 274625   on level 5|  restriction = 0.000190565   prolongation  =  0.000193767
+0: Best timings for ndof = 274625   on level 6|  restriction = 0.000194233   prolongation  =  0.000194057
+0: Best timings for ndof = 274625   on level 7|  restriction = 0.000200744   prolongation  =  0.000199383
+0: 
+0: cells  dofs  mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256  18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512  35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024  70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048 139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:  4096 274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0: 
+0: 
+0: Cycle 13
+0: Coarse triangulations created  (CPU/wall)0.03756s/0.0420449s
+0: Number of degrees of freedom: 545025 = (20 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.040425s/0.0695957s
+0: Setup matrices   (CPU/wall) 0.193775s/0.221129s
+0: Setup transfers   (CPU/wall) 0.038663s/0.0503211s
+0: Setup smoothers   (CPU/wall) 0.06028s/0.0900826s
+0: Compute rhs   (CPU/wall) 0.032934s/0.0454645s
+0: Total setup time: 0.518529
+0: Memory stats [MB]: 487.34 [p3] 490.966 492.996 [p1]
+0: Time solve CG              0.406407
+0: Time solve CG              0.23727
+0: Time solve CG              0.236579
+0: Time solve CG              0.238644
+0: Time solve CG              0.237269
+0: Time solve CG              0.237168
+0: Time solve CG              0.237935
+0: Time solve CG              0.23924
+0: Time solve CG              0.267864
+0: Time solve CG              0.237693
+0: matvec time dp 0.00034874 [p0] 0.000349359 0.000350541 [p2] DoFs/s: 1.55481e+09
+0: matvec time dp 0.000349082 [p0] 0.000349181 0.000349228 [p1] DoFs/s: 1.56066e+09
+0: matvec time dp 0.000348951 [p0] 0.000349054 0.000349109 [p2] DoFs/s: 1.56119e+09
+0: matvec time dp 0.000347447 [p0] 0.00034754 0.000347655 [p2] DoFs/s: 1.56772e+09
+0: matvec time dp 0.000334438 [p1] 0.000334446 0.000334456 [p0] DoFs/s: 1.62958e+09
+0: Best timings for ndof = 545025   mv 0.000334456    mv smooth 0.000306865   cg-mg 0.236578
+0: Best timings for ndof = 545025   on level 1|  restriction = 0.0002724   prolongation  =  0.000281573
+0: Best timings for ndof = 545025   on level 2|  restriction = 0.00100012   prolongation  =  0.000785231
+0: Best timings for ndof = 545025   on level 3|  restriction = 0.00165327   prolongation  =  0.00139163
+0: Best timings for ndof = 545025   on level 4|  restriction = 0.00424497   prolongation  =  0.00442516
+0: Best timings for ndof = 545025   on level 5|  restriction = 0.000194312   prolongation  =  0.000198943
+0: Best timings for ndof = 545025   on level 6|  restriction = 0.000200846   prolongation  =  0.000199779
+0: Best timings for ndof = 545025   on level 7|  restriction = 0.00021407   prolongation  =  0.000209064
+0: 
+0: cells  dofs  mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256  18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512  35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024  70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048 139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:  4096 274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:  8192 545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0: 
+0: 
+0: Cycle 14
+0: Coarse triangulations created  (CPU/wall)0.05971s/0.0708268s
+0: Number of degrees of freedom: 1081665 = (25 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.056277s/0.0813102s
+0: Setup matrices   (CPU/wall) 0.365964s/0.400051s
+0: Setup transfers   (CPU/wall) 0.065191s/0.0828417s
+0: Setup smoothers   (CPU/wall) 0.107844s/0.139993s
+0: Compute rhs   (CPU/wall) 0.061926s/0.0748025s
+0: Total setup time: 0.849683
+0: Memory stats [MB]: 509.379 [p3] 513.548 517.836 [p2]
+0: Time solve CG              0.472916
+0: Time solve CG              0.293871
+0: Time solve CG              0.296604
+0: Time solve CG              0.293186
+0: Time solve CG              0.2974
+0: Time solve CG              0.295641
+0: Time solve CG              0.295364
+0: Time solve CG              0.297766
+0: Time solve CG              0.292658
+0: Time solve CG              0.328009
+0: matvec time dp 0.00045457 [p3] 0.000454855 0.000455179 [p1] DoFs/s: 2.37635e+09
+0: matvec time dp 0.000454777 [p0] 0.000454909 0.000454974 [p1] DoFs/s: 2.37742e+09
+0: matvec time dp 0.000451218 [p0] 0.000451351 0.00045149 [p2] DoFs/s: 2.39577e+09
+0: matvec time dp 0.000414838 [p3] 0.000414856 0.000414869 [p0] DoFs/s: 2.60725e+09
+0: matvec time dp 0.00039944 [p0] 0.000399508 0.000399544 [p2] DoFs/s: 2.70725e+09
+0: Best timings for ndof = 1081665   mv 0.000399544    mv smooth 0.000394573   cg-mg 0.292657
+0: Best timings for ndof = 1081665   on level 1|  restriction = 0.000740592   prolongation  =  0.00058232
+0: Best timings for ndof = 1081665   on level 2|  restriction = 0.00372766   prolongation  =  0.0035459
+0: Best timings for ndof = 1081665   on level 3|  restriction = 0.00152444   prolongation  =  0.00134082
+0: Best timings for ndof = 1081665   on level 4|  restriction = 0.00429291   prolongation  =  0.00396571
+0: Best timings for ndof = 1081665   on level 5|  restriction = 0.000199218   prolongation  =  0.000203323
+0: Best timings for ndof = 1081665   on level 6|  restriction = 0.000209674   prolongation  =  0.000207637
+0: Best timings for ndof = 1081665   on level 7|  restriction = 0.000225408   prolongation  =  0.000224152
+0: 
+0: cells  dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256   18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512   35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024   70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048  139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:  4096  274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:  8192  545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0: 16384 1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0: 
+0: 
+0: Cycle 15
+0: Coarse triangulations created  (CPU/wall)0.137819s/0.154074s
+0: Number of degrees of freedom: 2146689 = (32 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.087476s/0.133318s
+0: Setup matrices   (CPU/wall) 0.731127s/0.777893s
+0: Setup transfers   (CPU/wall) 0.111835s/0.13481s
+0: Setup smoothers   (CPU/wall) 0.161945s/0.196576s
+0: Compute rhs   (CPU/wall) 0.127611s/0.139809s
+0: Total setup time: 1.53632
+0: Memory stats [MB]: 532.617 [p3] 540.469 545.211 [p2]
+0: Time solve CG              0.551764
+0: Time solve CG              0.353657
+0: Time solve CG              0.354625
+0: Time solve CG              0.354525
+0: Time solve CG              0.368118
+0: Time solve CG              0.370076
+0: Time solve CG              0.370918
+0: Time solve CG              0.370098
+0: Time solve CG              0.369372
+0: Time solve CG              0.372274
+0: matvec time dp 0.000636418 [p0] 0.000636744 0.000637083 [p1] DoFs/s: 3.36956e+09
+0: matvec time dp 0.000632269 [p0] 0.000632392 0.000632508 [p2] DoFs/s: 3.39393e+09
+0: matvec time dp 0.000546484 [p0] 0.00054657 0.000546611 [p1] DoFs/s: 3.92727e+09
+0: matvec time dp 0.000541739 [p0] 0.00054179 0.00054183 [p2] DoFs/s: 3.96193e+09
+0: matvec time dp 0.000542915 [p0] 0.00054299 0.00054304 [p2] DoFs/s: 3.95309e+09
+0: Best timings for ndof = 2146689   mv 0.00054183    mv smooth 0.000542702   cg-mg 0.353656
+0: Best timings for ndof = 2146689   on level 1|  restriction = 0.000271219   prolongation  =  0.000277627
+0: Best timings for ndof = 2146689   on level 2|  restriction = 0.00111529   prolongation  =  0.000749907
+0: Best timings for ndof = 2146689   on level 3|  restriction = 0.00154064   prolongation  =  0.00141366
+0: Best timings for ndof = 2146689   on level 4|  restriction = 0.00441813   prolongation  =  0.00389696
+0: Best timings for ndof = 2146689   on level 5|  restriction = 0.00673531   prolongation  =  0.00684866
+0: Best timings for ndof = 2146689   on level 6|  restriction = 0.000213573   prolongation  =  0.000216254
+0: Best timings for ndof = 2146689   on level 7|  restriction = 0.000221963   prolongation  =  0.000223481
+0: Best timings for ndof = 2146689   on level 8|  restriction = 0.000248242   prolongation  =  0.000249056
+0: 
+0: cells  dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256   18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512   35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024   70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048  139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:  4096  274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:  8192  545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0: 16384 1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0: 32768 2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0: 
+0: 
+0: Cycle 16
+0: Coarse triangulations created  (CPU/wall)0.260257s/0.27943s
+0: Number of degrees of freedom: 4276737 = (40 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.161892s/0.204053s
+0: Setup matrices   (CPU/wall) 1.42987s/1.51424s
+0: Setup transfers   (CPU/wall) 0.183087s/0.23136s
+0: Setup smoothers   (CPU/wall) 0.317508s/0.358533s
+0: Compute rhs   (CPU/wall) 0.230569s/0.247376s
+0: Total setup time: 2.83483
+0: Memory stats [MB]: 593.266 [p3] 608.214 617.496 [p2]
+0: Time solve CG              0.656061
+0: Time solve CG              0.393831
+0: Time solve CG              0.395016
+0: Time solve CG              0.420468
+0: Time solve CG              0.421541
+0: Time solve CG              0.423353
+0: Time solve CG              0.420501
+0: Time solve CG              0.423112
+0: Time solve CG              0.421462
+0: Time solve CG              0.421403
+0: matvec time dp 0.000999155 [p2] 0.000999476 0.000999779 [p1] DoFs/s: 4.27768e+09
+0: matvec time dp 0.000854322 [p0] 0.000854385 0.000854438 [p2] DoFs/s: 5.00532e+09
+0: matvec time dp 0.000829291 [p0] 0.00082932 0.000829351 [p2] DoFs/s: 5.15673e+09
+0: matvec time dp 0.000830314 [p0] 0.000830363 0.000830389 [p2] DoFs/s: 5.15028e+09
+0: matvec time dp 0.0008298 [p0] 0.000829838 0.000829877 [p2] DoFs/s: 5.15346e+09
+0: Best timings for ndof = 4276737   mv 0.000829351    mv smooth 0.000828918   cg-mg 0.393829
+0: Best timings for ndof = 4276737   on level 1|  restriction = 0.000275413   prolongation  =  0.000283077
+0: Best timings for ndof = 4276737   on level 2|  restriction = 0.00078844   prolongation  =  0.000762968
+0: Best timings for ndof = 4276737   on level 3|  restriction = 0.00172269   prolongation  =  0.00149272
+0: Best timings for ndof = 4276737   on level 4|  restriction = 0.0041686   prolongation  =  0.00380326
+0: Best timings for ndof = 4276737   on level 5|  restriction = 0.00655458   prolongation  =  0.00689013
+0: Best timings for ndof = 4276737   on level 6|  restriction = 0.000232589   prolongation  =  0.000233861
+0: Best timings for ndof = 4276737   on level 7|  restriction = 0.000246994   prolongation  =  0.000256856
+0: Best timings for ndof = 4276737   on level 8|  restriction = 0.000310257   prolongation  =  0.000291507
+0: 
+0: cells  dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:   256   18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:   512   35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:  1024   70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:  2048  139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:  4096  274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:  8192  545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0: 16384 1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0: 32768 2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0: 65536 4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0: 
+0: 
+0: Cycle 17
+0: Coarse triangulations created  (CPU/wall)0.44521s/0.470951s
+0: Number of degrees of freedom: 8520321 = (50 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.266105s/0.30861s
+0: Setup matrices   (CPU/wall) 2.81907s/2.9556s
+0: Setup transfers   (CPU/wall) 0.358116s/0.405529s
+0: Setup smoothers   (CPU/wall) 0.559883s/0.6117s
+0: Compute rhs   (CPU/wall) 0.44808s/0.475386s
+0: Total setup time: 5.2276
+0: Memory stats [MB]: 712.516 [p3] 729.078 761.934 [p2]
+0: Time solve CG              0.774475
+0: Time solve CG              0.548498
+0: Time solve CG              0.539266
+0: Time solve CG              0.543571
+0: Time solve CG              0.545158
+0: Time solve CG              0.543014
+0: Time solve CG              0.541506
+0: Time solve CG              0.543394
+0: Time solve CG              0.544475
+0: Time solve CG              0.548192
+0: matvec time dp 0.00154861 [p1] 0.00154902 0.00154944 [p3] DoFs/s: 5.49898e+09
+0: matvec time dp 0.00140048 [p0] 0.00140059 0.00140064 [p2] DoFs/s: 6.08317e+09
+0: matvec time dp 0.00140112 [p0] 0.00140116 0.0014012 [p2] DoFs/s: 6.08074e+09
+0: matvec time dp 0.00140149 [p0] 0.00140154 0.00140158 [p2] DoFs/s: 6.07907e+09
+0: matvec time dp 0.00140087 [p0] 0.00140093 0.00140096 [p1] DoFs/s: 6.08176e+09
+0: Best timings for ndof = 8520321   mv 0.00140064    mv smooth 0.00140004   cg-mg 0.539264
+0: Best timings for ndof = 8520321   on level 1|  restriction = 0.000471463   prolongation  =  0.000532777
+0: Best timings for ndof = 8520321   on level 2|  restriction = 0.00366423   prolongation  =  0.00341427
+0: Best timings for ndof = 8520321   on level 3|  restriction = 0.00167335   prolongation  =  0.00139395
+0: Best timings for ndof = 8520321   on level 4|  restriction = 0.00434828   prolongation  =  0.00385937
+0: Best timings for ndof = 8520321   on level 5|  restriction = 0.00703302   prolongation  =  0.00699329
+0: Best timings for ndof = 8520321   on level 6|  restriction = 0.000248336   prolongation  =  0.000274771
+0: Best timings for ndof = 8520321   on level 7|  restriction = 0.000314711   prolongation  =  0.000306961
+0: Best timings for ndof = 8520321   on level 8|  restriction = 0.00042279   prolongation  =  0.000386349
+0: 
+0: cells   dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:    256   18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:    512   35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:   1024   70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:   2048  139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:   4096  274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:   8192  545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0:  16384 1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0:  32768 2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0:  65536 4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0: 131072 8520321 1.401e-03 1.400e-03 5.393e-01      7    4.549e-02 
+0: 
+0: 
+0: Cycle 18
+0: Coarse triangulations created  (CPU/wall)1.06444s/1.09s
+0: Number of degrees of freedom: 16974593 = (64 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.496677s/0.585248s
+0: Setup matrices   (CPU/wall) 5.64888s/5.89673s
+0: Setup transfers   (CPU/wall) 0.688993s/0.759451s
+0: Setup smoothers   (CPU/wall) 1.00653s/1.07674s
+0: Compute rhs   (CPU/wall) 0.900152s/0.934316s
+0: Total setup time: 10.3423
+0: Memory stats [MB]: 880.734 [p3] 896.259 924.012 [p1]
+0: Time solve CG              1.03562
+0: Time solve CG              0.71463
+0: Time solve CG              0.712771
+0: Time solve CG              0.714811
+0: Time solve CG              0.71577
+0: Time solve CG              0.71638
+0: Time solve CG              0.718508
+0: Time solve CG              0.7173
+0: Time solve CG              0.718739
+0: Time solve CG              0.7479
+0: matvec time dp 0.00256439 [p0] 0.00256623 0.00256831 [p2] DoFs/s: 6.60925e+09
+0: matvec time dp 0.00256378 [p0] 0.0025641 0.00256435 [p1] DoFs/s: 6.61946e+09
+0: matvec time dp 0.00256142 [p3] 0.00256156 0.00256184 [p1] DoFs/s: 6.62593e+09
+0: matvec time dp 0.00256333 [p0] 0.00256346 0.0025637 [p1] DoFs/s: 6.62113e+09
+0: matvec time dp 0.00256306 [p0] 0.00256318 0.00256328 [p2] DoFs/s: 6.62221e+09
+0: Best timings for ndof = 16974593   mv 0.00256184    mv smooth 0.00256211   cg-mg 0.71277
+0: Best timings for ndof = 16974593   on level 1|  restriction = 0.000278249   prolongation  =  0.000286974
+0: Best timings for ndof = 16974593   on level 2|  restriction = 0.000799333   prolongation  =  0.00074515
+0: Best timings for ndof = 16974593   on level 3|  restriction = 0.00147324   prolongation  =  0.00122249
+0: Best timings for ndof = 16974593   on level 4|  restriction = 0.00426704   prolongation  =  0.00379657
+0: Best timings for ndof = 16974593   on level 5|  restriction = 0.0067078   prolongation  =  0.00687152
+0: Best timings for ndof = 16974593   on level 6|  restriction = 0.00674917   prolongation  =  0.00757044
+0: Best timings for ndof = 16974593   on level 7|  restriction = 0.000408391   prolongation  =  0.000406829
+0: Best timings for ndof = 16974593   on level 8|  restriction = 0.000442309   prolongation  =  0.000463511
+0: Best timings for ndof = 16974593   on level 9|  restriction = 0.000657302   prolongation  =  0.000582102
+0: 
+0: cells    dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:    256    18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:    512    35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:   1024    70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:   2048   139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:   4096   274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:   8192   545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0:  16384  1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0:  32768  2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0:  65536  4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0: 131072  8520321 1.401e-03 1.400e-03 5.393e-01      7    4.549e-02 
+0: 262144 16974593 2.562e-03 2.562e-03 7.128e-01      7    4.562e-02 
+0: 
+0: 
+0: Cycle 19
+0: Coarse triangulations created  (CPU/wall)2.06824s/2.1124s
+0: Number of degrees of freedom: 33883137 = (80 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)0.947997s/1.05749s
+0: Setup matrices   (CPU/wall) 11.1968s/11.6227s
+0: Setup transfers   (CPU/wall) 1.35221s/1.47514s
+0: Setup smoothers   (CPU/wall) 2.00564s/2.08099s
+0: Compute rhs   (CPU/wall) 1.77047s/1.83897s
+0: Total setup time: 20.1875
+0: Memory stats [MB]: 1251.68 [p3] 1269.13 1276.82 [p1]
+0: Time solve CG              1.50417
+0: Time solve CG              1.00997
+0: Time solve CG              1.00971
+0: Time solve CG              1.00649
+0: Time solve CG              1.0139
+0: Time solve CG              1.01185
+0: Time solve CG              1.04301
+0: Time solve CG              1.01104
+0: Time solve CG              1.01098
+0: Time solve CG              1.00771
+0: matvec time dp 0.00484629 [p1] 0.0048492 0.00485207 [p3] DoFs/s: 6.98323e+09
+0: matvec time dp 0.00484851 [p0] 0.00484938 0.00484976 [p1] DoFs/s: 6.98657e+09
+0: matvec time dp 0.00484506 [p3] 0.00484533 0.0048456 [p1] DoFs/s: 6.99256e+09
+0: matvec time dp 0.00484574 [p3] 0.0048461 0.00484648 [p1] DoFs/s: 6.99129e+09
+0: matvec time dp 0.00484793 [p3] 0.00484809 0.00484833 [p1] DoFs/s: 6.98863e+09
+0: Best timings for ndof = 33883137   mv 0.0048456    mv smooth 0.00484971   cg-mg 1.00649
+0: Best timings for ndof = 33883137   on level 1|  restriction = 0.000278982   prolongation  =  0.000285629
+0: Best timings for ndof = 33883137   on level 2|  restriction = 0.000856155   prolongation  =  0.000709808
+0: Best timings for ndof = 33883137   on level 3|  restriction = 0.00156575   prolongation  =  0.00145807
+0: Best timings for ndof = 33883137   on level 4|  restriction = 0.00427398   prolongation  =  0.00389773
+0: Best timings for ndof = 33883137   on level 5|  restriction = 0.00662329   prolongation  =  0.00699173
+0: Best timings for ndof = 33883137   on level 6|  restriction = 0.00743925   prolongation  =  0.00837904
+0: Best timings for ndof = 33883137   on level 7|  restriction = 0.000561798   prolongation  =  0.000605656
+0: Best timings for ndof = 33883137   on level 8|  restriction = 0.000689155   prolongation  =  0.000665351
+0: Best timings for ndof = 33883137   on level 9|  restriction = 0.00111992   prolongation  =  0.000969962
+0: 
+0: cells    dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:    256    18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:    512    35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:   1024    70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:   2048   139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:   4096   274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:   8192   545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0:  16384  1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0:  32768  2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0:  65536  4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0: 131072  8520321 1.401e-03 1.400e-03 5.393e-01      7    4.549e-02 
+0: 262144 16974593 2.562e-03 2.562e-03 7.128e-01      7    4.562e-02 
+0: 524288 33883137 4.846e-03 4.850e-03 1.006e+00      7    4.553e-02 
+0: 
+0: 
+0: Cycle 20
+0: Coarse triangulations created  (CPU/wall)3.79209s/3.85777s
+0: Number of degrees of freedom: 67634433 = (101 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)1.64965s/1.84415s
+0: Setup matrices   (CPU/wall) 22.253s/23.0627s
+0: Setup transfers   (CPU/wall) 2.71255s/2.93968s
+0: Setup smoothers   (CPU/wall) 3.9057s/4.02022s
+0: Compute rhs   (CPU/wall) 3.52863s/3.61961s
+0: Total setup time: 39.344
+0: Memory stats [MB]: 2014.9 [p3] 2042.11 2055.38 [p2]
+0: Time solve CG              2.34369
+0: Time solve CG              1.63107
+0: Time solve CG              1.60056
+0: Time solve CG              1.60099
+0: Time solve CG              1.59311
+0: Time solve CG              1.5941
+0: Time solve CG              1.59886
+0: Time solve CG              1.63041
+0: Time solve CG              1.6025
+0: Time solve CG              1.59999
+0: matvec time dp 0.00936247 [p2] 0.00936655 0.00937041 [p1] DoFs/s: 7.21787e+09
+0: matvec time dp 0.00936558 [p0] 0.00936578 0.00936595 [p2] DoFs/s: 7.22131e+09
+0: matvec time dp 0.00936366 [p3] 0.0093638 0.009364 [p1] DoFs/s: 7.22281e+09
+0: matvec time dp 0.00935982 [p0] 0.00935997 0.00936018 [p2] DoFs/s: 7.22576e+09
+0: matvec time dp 0.00936042 [p1] 0.00936051 0.00936067 [p2] DoFs/s: 7.22538e+09
+0: Best timings for ndof = 67634433   mv 0.00936018    mv smooth 0.00935908   cg-mg 1.59311
+0: Best timings for ndof = 67634433   on level 1|  restriction = 0.000622259   prolongation  =  0.000571701
+0: Best timings for ndof = 67634433   on level 2|  restriction = 0.00392783   prolongation  =  0.00346095
+0: Best timings for ndof = 67634433   on level 3|  restriction = 0.00156668   prolongation  =  0.00141655
+0: Best timings for ndof = 67634433   on level 4|  restriction = 0.00437978   prolongation  =  0.00392312
+0: Best timings for ndof = 67634433   on level 5|  restriction = 0.00682758   prolongation  =  0.00715563
+0: Best timings for ndof = 67634433   on level 6|  restriction = 0.00732178   prolongation  =  0.00878304
+0: Best timings for ndof = 67634433   on level 7|  restriction = 0.000868496   prolongation  =  0.000962027
+0: Best timings for ndof = 67634433   on level 8|  restriction = 0.0011862   prolongation  =  0.00112279
+0: Best timings for ndof = 67634433   on level 9|  restriction = 0.00200751   prolongation  =  0.00171256
+0: 
+0:  cells    dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:     256    18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:     512    35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:    1024    70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:    2048   139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:    4096   274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:    8192   545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0:   16384  1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0:   32768  2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0:   65536  4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0:  131072  8520321 1.401e-03 1.400e-03 5.393e-01      7    4.549e-02 
+0:  262144 16974593 2.562e-03 2.562e-03 7.128e-01      7    4.562e-02 
+0:  524288 33883137 4.846e-03 4.850e-03 1.006e+00      7    4.553e-02 
+0: 1048576 67634433 9.360e-03 9.359e-03 1.593e+00      7    4.584e-02 
+0: 
+0: 
+0: Cycle 21
+0: Coarse triangulations created  (CPU/wall)8.82808s/9.01823s
+0: Number of degrees of freedom: 135005697 = (128 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)3.19545s/3.56994s
+0: Setup matrices   (CPU/wall) 44.4016s/45.9963s
+0: Setup transfers   (CPU/wall) 5.59295s/6.05729s
+0: Setup smoothers   (CPU/wall) 7.73871s/7.91172s
+0: Compute rhs   (CPU/wall) 7.1165s/7.28339s
+0: Total setup time: 79.8367
+0: Memory stats [MB]: 3520.26 [p3] 3578.5 3601.36 [p2]
+0: Time solve CG              3.94431
+0: Time solve CG              2.78347
+0: Time solve CG              2.75066
+0: Time solve CG              2.75159
+0: Time solve CG              2.74836
+0: Time solve CG              2.77761
+0: Time solve CG              2.74182
+0: Time solve CG              2.74276
+0: Time solve CG              2.74818
+0: Time solve CG              2.76984
+0: matvec time dp 0.0184661 [p0] 0.018473 0.0184798 [p3] DoFs/s: 7.30558e+09
+0: matvec time dp 0.0184606 [p0] 0.0184609 0.0184613 [p2] DoFs/s: 7.31289e+09
+0: matvec time dp 0.0184611 [p1] 0.0184613 0.0184617 [p2] DoFs/s: 7.31276e+09
+0: matvec time dp 0.0184619 [p1] 0.0184621 0.0184624 [p2] DoFs/s: 7.31246e+09
+0: matvec time dp 0.0184631 [p1] 0.0184634 0.0184643 [p2] DoFs/s: 7.31171e+09
+0: Best timings for ndof = 135005697   mv 0.0184613    mv smooth 0.0184619   cg-mg 2.74182
+0: Best timings for ndof = 135005697   on level 1|  restriction = 0.000283983   prolongation  =  0.000289749
+0: Best timings for ndof = 135005697   on level 2|  restriction = 0.000932422   prolongation  =  0.000759941
+0: Best timings for ndof = 135005697   on level 3|  restriction = 0.00167149   prolongation  =  0.00129429
+0: Best timings for ndof = 135005697   on level 4|  restriction = 0.00413274   prolongation  =  0.00386358
+0: Best timings for ndof = 135005697   on level 5|  restriction = 0.0065624   prolongation  =  0.00682227
+0: Best timings for ndof = 135005697   on level 6|  restriction = 0.00692767   prolongation  =  0.00708592
+0: Best timings for ndof = 135005697   on level 7|  restriction = 0.0076013   prolongation  =  0.00955149
+0: Best timings for ndof = 135005697   on level 8|  restriction = 0.0015405   prolongation  =  0.00153735
+0: Best timings for ndof = 135005697   on level 9|  restriction = 0.00216563   prolongation  =  0.00205528
+0: Best timings for ndof = 135005697   on level 10|  restriction = 0.00383581   prolongation  =  0.00322525
+0: 
+0:  cells    dofs    mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+0:     256     18513 2.584e-04 2.576e-04 1.511e-01      7    4.083e-02 
+0:     512     35937 2.592e-04 2.592e-04 1.295e-01      7    3.992e-02 
+0:    1024     70785 2.606e-04 2.610e-04 1.378e-01      7    4.132e-02 
+0:    2048    139425 2.638e-04 2.612e-04 1.991e-01      7    4.367e-02 
+0:    4096    274625 3.018e-04 2.710e-04 2.205e-01      7    4.386e-02 
+0:    8192    545025 3.345e-04 3.069e-04 2.366e-01      7    4.379e-02 
+0:   16384   1081665 3.995e-04 3.946e-04 2.927e-01      7    4.464e-02 
+0:   32768   2146689 5.418e-04 5.427e-04 3.537e-01      7    4.506e-02 
+0:   65536   4276737 8.294e-04 8.289e-04 3.938e-01      7    4.503e-02 
+0:  131072   8520321 1.401e-03 1.400e-03 5.393e-01      7    4.549e-02 
+0:  262144  16974593 2.562e-03 2.562e-03 7.128e-01      7    4.562e-02 
+0:  524288  33883137 4.846e-03 4.850e-03 1.006e+00      7    4.553e-02 
+0: 1048576  67634433 9.360e-03 9.359e-03 1.593e+00      7    4.584e-02 
+0: 2097152 135005697 1.846e-02 1.846e-02 2.742e+00      7    4.567e-02 
+0: 
+0: 
+0: Cycle 22
+0: Coarse triangulations created  (CPU/wall)17.3795s/17.7689s
+0: Number of degrees of freedom: 269748225 = (161 x 4 + 1)^3
+0: DoFs and constraint setup  (CPU/wall)6.11003s/6.84916s
+0: Setup matrices   (CPU/wall) 88.7565s/91.8301s
+0: Setup transfers   (CPU/wall) 11.8424s/12.7952s
+0: Setup smoothers   (CPU/wall) 15.5325s/15.8793s
+0: Compute rhs   (CPU/wall) 14.2131s/14.6027s
+0: Total setup time: 159.725
+0: Memory stats [MB]: 6507.52 [p3] 6629.15 6679.42 [p1]
+2: 
+2: 
+2: ----------------------------------------------------
+2: Exception on processing: 
+2: Kokkos ERROR: Cuda memory space failed to allocate 528.1 MiB (label="memoryspace data").
+2: Aborting!
+2: ----------------------------------------------------
+3: 
+3: 
+3: ----------------------------------------------------
+3: Exception on processing: 
+3: Kokkos ERROR: Cuda memory space failed to allocate 528.1 MiB (label="memoryspace data").
+3: Aborting!
+3: ----------------------------------------------------
+0: 
+0: 
+0: ----------------------------------------------------
+0: Exception on processing: 
+0: Kokkos ERROR: Cuda memory space failed to allocate 528.1 MiB (label="memoryspace data").
+0: Aborting!
+0: ----------------------------------------------------
+1: 
+1: 
+1: ----------------------------------------------------
+1: Exception on processing: 
+1: Kokkos ERROR: Cuda memory space failed to allocate 528.1 MiB (label="memoryspace data").
+1: Aborting!
+1: ----------------------------------------------------
+2: double free or corruption (!prev)
+3: double free or corruption (!prev)
+0: double free or corruption (!prev)
+1: double free or corruption (!prev)
+2: [jwb0129:3100759] *** Process received signal ***
+2: [jwb0129:3100759] Signal: Aborted (6)
+2: [jwb0129:3100759] Signal code:  (-6)
+3: [jwb0129:3100761] *** Process received signal ***
+3: [jwb0129:3100761] Signal: Aborted (6)
+3: [jwb0129:3100761] Signal code:  (-6)
+0: [jwb0129:3100760] *** Process received signal ***
+1: [jwb0129:3100758] *** Process received signal ***
+1: [jwb0129:3100758] Signal: Aborted (6)
+1: [jwb0129:3100758] Signal code:  (-6)
+0: [jwb0129:3100760] Signal: Aborted (6)
+0: [jwb0129:3100760] Signal code:  (-6)
+0: [jwb0129:3100760] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x146dc7d50bf0]
+2: [jwb0129:3100759] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14d552ac2bf0]
+2: [jwb0129:3100759] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14d552b0fedc]
+2: [jwb0129:3100759] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14d552ac2b46]
+2: [jwb0129:3100759] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14d552aac833]
+2: [jwb0129:3100759] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14d552aad172]
+3: [jwb0129:3100761] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x148980cafbf0]
+3: [jwb0129:3100761] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x148980cfcedc]
+3: [jwb0129:3100761] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x148980cafb46]
+3: [jwb0129:3100761] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x148980c99833]
+3: [jwb0129:3100761] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x148980c9a172]
+3: [jwb0129:3100761] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x148980d06f87]
+3: [jwb0129:3100761] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x148980d08c7c]
+3: [jwb0129:3100761] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x148980d0b2c5]
+3: [jwb0129:3100761] [ 8] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x148980cb27a7]
+3: [jwb0129:3100761] [ 9] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1489835127d7]
+3: [jwb0129:3100761] *** End of error message ***
+2: [jwb0129:3100759] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14d552b19f87]
+2: [jwb0129:3100759] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14d552b1bc7c]
+2: [jwb0129:3100759] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14d552b1e2c5]
+2: [jwb0129:3100759] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x6733b4]
+2: [jwb0129:3100759] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14d552ac57a7]
+2: [jwb0129:3100759] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14d5553257d7]
+2: [jwb0129:3100759] *** End of error message ***
+1: [jwb0129:3100758] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x146e0a1aebf0]
+1: [jwb0129:3100758] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x146e0a1fbedc]
+1: [jwb0129:3100758] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x146e0a1aeb46]
+1: [jwb0129:3100758] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x146e0a198833]
+1: [jwb0129:3100758] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x146e0a199172]
+1: [jwb0129:3100758] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x146e0a205f87]
+1: [jwb0129:3100758] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x146e0a207c7c]
+1: [jwb0129:3100758] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x146e0a20a2c5]
+1: [jwb0129:3100758] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x6733b4]
+1: [jwb0129:3100758] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x146e0a1b17a7]
+1: [jwb0129:3100758] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x146e0ca117d7]
+1: [jwb0129:3100758] *** End of error message ***
+0: [jwb0129:3100760] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x146dc7d9dedc]
+0: [jwb0129:3100760] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x146dc7d50b46]
+0: [jwb0129:3100760] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x146dc7d3a833]
+0: [jwb0129:3100760] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x146dc7d3b172]
+0: [jwb0129:3100760] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x146dc7da7f87]
+0: [jwb0129:3100760] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x146dc7da9c7c]
+0: [jwb0129:3100760] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x146dc7dac2c5]
+0: [jwb0129:3100760] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x6733b4]
+0: [jwb0129:3100760] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x146dc7d537a7]
+0: [jwb0129:3100760] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x146dca5b37d7]
+0: [jwb0129:3100760] *** End of error message ***
+srun: error: jwb0129: tasks 0-3: Aborted (core dumped)

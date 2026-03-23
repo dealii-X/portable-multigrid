@@ -26,7 +26,7 @@ namespace Portable
     TeamHandle team_member;
 
     const unsigned int n_q_points;
-    const unsigned int          cell_index;
+    const unsigned int cell_index;
 
     const typename MatrixFree<dim, number>::PrecomputedData &precomputed_data;
 

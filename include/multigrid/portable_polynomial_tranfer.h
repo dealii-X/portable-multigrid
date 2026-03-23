@@ -827,7 +827,7 @@ namespace Portable
     const unsigned int n_colors = colored_graph.size();
 
     const bool use_coloring =
-      (n_colors > 0) ||
+      (n_colors > 1) ||
       matrix_free_fine->use_overlap_communication_computation();
 
 
@@ -907,8 +907,6 @@ namespace Portable
                 using TeamPolicy = Kokkos::TeamPolicy<
                   MemorySpace::Default::kokkos_space::execution_space>;
 
-
-
                 Functor cell_prolongator;
 
                 auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
@@ -953,7 +951,7 @@ namespace Portable
     const unsigned int n_colors = colored_graph.size();
 
     const bool use_coloring =
-      (n_colors > 0) ||
+      (n_colors > 1) ||
       matrix_free_fine->use_overlap_communication_computation();
 
 
@@ -1350,7 +1348,8 @@ namespace Portable
                             subdomain_local_dof))
                         dof_indices_coarse_host(i, cell_id) =
                           numbers::invalid_unsigned_int;
-                      dof_indices_coarse_host(i, cell_id) = global_dof;
+                      else
+                        dof_indices_coarse_host(i, cell_id) = global_dof;
                     }
                 }
               Kokkos::deep_copy(this->dof_indices_coarse[color],

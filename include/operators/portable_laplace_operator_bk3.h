@@ -444,7 +444,7 @@ namespace Portable
       EvaluationFlags::gradients,
       EvaluationFlags::gradients);
 
-    double *raw_diagonal = inverse_diagonal.get_values();
+    number *raw_diagonal = inverse_diagonal.get_values();
 
     Kokkos::parallel_for(
       inverse_diagonal.locally_owned_size(), KOKKOS_LAMBDA(int i) {

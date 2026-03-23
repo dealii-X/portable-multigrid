@@ -1,0 +1,1323 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) Stages/2026
+ 0: Settings of parameters: 
+ 0: Number of MPI ranks:            32
+ 0: Polynomial degree:              4
+ 0: Minimum size:                   10000
+ 0: Maximum size:                   100000000000
+ 0: Number of pre-smoother iters:   3
+ 0: Number of post-smoother iters:  3
+ 0: Use doubling mesh:              1
+ 0: 
+ 0: Testing FE_Q<3>(4)
+ 0: Cycle 0
+ 0: Cycle 1
+ 0: Cycle 2
+ 0: Cycle 3
+ 0: Cycle 4
+ 0: Cycle 5
+ 0: Cycle 6
+ 0: Cycle 7
+ 0: Cycle 8
+ 0: Coarse triangulations created  (CPU/wall)0.071199s/0.0792605s
+ 0: Number of degrees of freedom: 18513 = (6 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.061883s/0.0786477s
+ 0: Setup matrices   (CPU/wall) 0.129256s/0.311765s
+ 0: Setup transfers   (CPU/wall) 0.062575s/0.0749209s
+ 0: Setup smoothers   (CPU/wall) 0.044583s/0.150575s
+ 0: Compute rhs   (CPU/wall) 0.010277s/0.0125265s
+ 0: Total setup time: 0.707599
+ 0: Memory stats [MB]: 461.562 [p27] 466.976 472.953 [p5]
+ 0: Time solve CG              0.448141
+ 0: Time solve CG              0.214946
+ 0: Time solve CG              0.213576
+ 0: Time solve CG              0.214465
+ 0: Time solve CG              0.216826
+ 0: Time solve CG              0.215461
+ 0: Time solve CG              0.214539
+ 0: Time solve CG              0.224165
+ 0: Time solve CG              0.228336
+ 0: Time solve CG              0.215469
+ 0: matvec time dp 0.000729545 [p18] 0.000729999 0.000730533 [p7] DoFs/s: 2.53418e+07
+ 0: matvec time dp 0.00073316 [p0] 0.000733639 0.00073416 [p24] DoFs/s: 2.52166e+07
+ 0: matvec time dp 0.000895988 [p0] 0.000896461 0.000897046 [p17] DoFs/s: 2.06377e+07
+ 0: matvec time dp 0.000734125 [p0] 0.000734614 0.000735225 [p3] DoFs/s: 2.51801e+07
+ 0: matvec time dp 0.000714233 [p0] 0.000714704 0.000715259 [p17] DoFs/s: 2.58829e+07
+ 0: Best timings for ndof = 18513   mv 0.000715259    mv smooth 0.000716288   cg-mg 0.213575
+ 0: 
+ 0: Cycle 9
+ 0: Coarse triangulations created  (CPU/wall)0.057869s/0.073901s
+ 0: Number of degrees of freedom: 35937 = (8 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.096711s/0.110595s
+ 0: Setup matrices   (CPU/wall) 0.047439s/0.0502364s
+ 0: Setup transfers   (CPU/wall) 0.019213s/0.0198576s
+ 0: Setup smoothers   (CPU/wall) 0.022539s/0.0417265s
+ 0: Compute rhs   (CPU/wall) 0.010579s/0.0116155s
+ 0: Total setup time: 0.307896
+ 0: Memory stats [MB]: 470.562 [p27] 474.734 480.453 [p5]
+ 0: Time solve CG              0.430235
+ 0: Time solve CG              0.271414
+ 0: Time solve CG              0.27117
+ 0: Time solve CG              0.271751
+ 0: Time solve CG              0.274769
+ 0: Time solve CG              0.278844
+ 0: Time solve CG              0.271652
+ 0: Time solve CG              0.270961
+ 0: Time solve CG              0.271002
+ 0: Time solve CG              0.270664
+ 0: matvec time dp 0.000720378 [p9] 0.000720808 0.000721336 [p3] DoFs/s: 4.982e+07
+ 0: matvec time dp 0.000718546 [p0] 0.000719035 0.000719562 [p7] DoFs/s: 4.99429e+07
+ 0: matvec time dp 0.000715359 [p9] 0.000715815 0.000716344 [p3] DoFs/s: 5.01672e+07
+ 0: matvec time dp 0.000872166 [p0] 0.000872607 0.000873129 [p17] DoFs/s: 4.11589e+07
+ 0: matvec time dp 0.000880998 [p0] 0.000881435 0.000881955 [p3] DoFs/s: 4.0747e+07
+ 0: Best timings for ndof = 35937   mv 0.000716344    mv smooth 0.0007166   cg-mg 0.270663
+ 0: 
+ 0: Cycle 10
+ 0: Coarse triangulations created  (CPU/wall)0.088949s/0.0946849s
+ 0: Number of degrees of freedom: 70785 = (10 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.081237s/0.100677s
+ 0: Setup matrices   (CPU/wall) 0.059211s/0.0689155s
+ 0: Setup transfers   (CPU/wall) 0.033757s/0.0343678s
+ 0: Setup smoothers   (CPU/wall) 0.026404s/0.0426934s
+ 0: Compute rhs   (CPU/wall) 0.012475s/0.0194326s
+ 0: Total setup time: 0.360737
+ 0: Memory stats [MB]: 471.762 [p8] 476.257 482.703 [p5]
+ 0: Time solve CG              0.512568
+ 0: Time solve CG              0.340016
+ 0: Time solve CG              0.339508
+ 0: Time solve CG              0.391698
+ 0: Time solve CG              0.339728
+ 0: Time solve CG              0.339943
+ 0: Time solve CG              0.338377
+ 0: Time solve CG              0.337954
+ 0: Time solve CG              0.337309
+ 0: Time solve CG              0.338659
+ 0: matvec time dp 0.000721738 [p9] 0.000722191 0.000722801 [p17] DoFs/s: 9.79316e+07
+ 0: matvec time dp 0.000872959 [p0] 0.000873392 0.000873939 [p3] DoFs/s: 8.09954e+07
+ 0: matvec time dp 0.000721687 [p13] 0.000722125 0.000722648 [p24] DoFs/s: 9.79522e+07
+ 0: matvec time dp 0.000718826 [p0] 0.000719282 0.000719802 [p3] DoFs/s: 9.83396e+07
+ 0: matvec time dp 0.000712205 [p9] 0.000712644 0.000713173 [p14] DoFs/s: 9.92536e+07
+ 0: Best timings for ndof = 70785   mv 0.000713173    mv smooth 0.000713373   cg-mg 0.337308
+ 0: 
+ 0: Cycle 11
+ 0: Coarse triangulations created  (CPU/wall)0.077617s/0.0831887s
+ 0: Number of degrees of freedom: 139425 = (12 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.078797s/0.100146s
+ 0: Setup matrices   (CPU/wall) 0.060527s/0.0662255s
+ 0: Setup transfers   (CPU/wall) 0.034954s/0.0361015s
+ 0: Setup smoothers   (CPU/wall) 0.022698s/0.046186s
+ 0: Compute rhs   (CPU/wall) 0.015104s/0.0256931s
+ 0: Total setup time: 0.357505
+ 0: Memory stats [MB]: 472.812 [p27] 477.57 484.203 [p5]
+ 0: Time solve CG              0.548565
+ 0: Time solve CG              0.370803
+ 0: Time solve CG              0.357408
+ 0: Time solve CG              0.35788
+ 0: Time solve CG              0.358551
+ 0: Time solve CG              0.356716
+ 0: Time solve CG              0.382044
+ 0: Time solve CG              0.378658
+ 0: Time solve CG              0.413814
+ 0: Time solve CG              0.382194
+ 0: matvec time dp 0.000713964 [p4] 0.000714416 0.000714935 [p3] DoFs/s: 1.95018e+08
+ 0: matvec time dp 0.000713574 [p0] 0.00071403 0.000714572 [p17] DoFs/s: 1.95117e+08
+ 0: matvec time dp 0.000718215 [p0] 0.000718656 0.000719196 [p3] DoFs/s: 1.93862e+08
+ 0: matvec time dp 0.000718661 [p18] 0.000719076 0.000719621 [p3] DoFs/s: 1.93748e+08
+ 0: matvec time dp 0.000717171 [p0] 0.000717628 0.000718151 [p24] DoFs/s: 1.94144e+08
+ 0: Best timings for ndof = 139425   mv 0.000714572    mv smooth 0.000715221   cg-mg 0.356715
+ 0: 
+ 0: Cycle 12
+ 0: Coarse triangulations created  (CPU/wall)0.038121s/0.0546407s
+ 0: Number of degrees of freedom: 274625 = (16 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.088357s/0.119664s
+ 0: Setup matrices   (CPU/wall) 0.056791s/0.0703441s
+ 0: Setup transfers   (CPU/wall) 0.030871s/0.0497206s
+ 0: Setup smoothers   (CPU/wall) 0.03065s/0.0566815s
+ 0: Compute rhs   (CPU/wall) 0.030797s/0.0481126s
+ 0: Total setup time: 0.399126
+ 0: Memory stats [MB]: 471.988 [p27] 478.452 485.703 [p5]
+ 0: Time solve CG              0.686098
+ 0: Time solve CG              0.377328
+ 0: Time solve CG              0.377596
+ 0: Time solve CG              0.37883
+ 0: Time solve CG              0.379679
+ 0: Time solve CG              0.380353
+ 0: Time solve CG              0.408913
+ 0: Time solve CG              0.377889
+ 0: Time solve CG              0.409863
+ 0: Time solve CG              0.407485
+ 0: matvec time dp 0.000715158 [p0] 0.000715655 0.000716235 [p3] DoFs/s: 3.83428e+08
+ 0: matvec time dp 0.000719125 [p0] 0.000719607 0.000720165 [p3] DoFs/s: 3.81336e+08
+ 0: matvec time dp 0.000714388 [p18] 0.00071482 0.000715364 [p3] DoFs/s: 3.83895e+08
+ 0: matvec time dp 0.000717264 [p0] 0.000717773 0.000718334 [p3] DoFs/s: 3.82308e+08
+ 0: matvec time dp 0.000717599 [p0] 0.000718043 0.000718566 [p3] DoFs/s: 3.82185e+08
+ 0: Best timings for ndof = 274625   mv 0.000715364    mv smooth 0.000715741   cg-mg 0.377327
+ 0: 
+ 0: Cycle 13
+ 0: Coarse triangulations created  (CPU/wall)0.024966s/0.0309317s
+ 0: Number of degrees of freedom: 545025 = (20 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.097516s/0.134217s
+ 0: Setup matrices   (CPU/wall) 0.083282s/0.10017s
+ 0: Setup transfers   (CPU/wall) 0.042892s/0.0437864s
+ 0: Setup smoothers   (CPU/wall) 0.058215s/0.0900992s
+ 0: Compute rhs   (CPU/wall) 0.032769s/0.0505872s
+ 0: Total setup time: 0.449748
+ 0: Memory stats [MB]: 477.246 [p27] 481.145 487.914 [p5]
+ 0: Time solve CG              0.69886
+ 0: Time solve CG              0.472678
+ 0: Time solve CG              0.537951
+ 0: Time solve CG              0.499987
+ 0: Time solve CG              0.470931
+ 0: Time solve CG              0.476361
+ 0: Time solve CG              0.471154
+ 0: Time solve CG              0.471274
+ 0: Time solve CG              0.534516
+ 0: Time solve CG              0.472738
+ 0: matvec time dp 0.000719917 [p18] 0.00072032 0.000720826 [p17] DoFs/s: 7.56112e+08
+ 0: matvec time dp 0.00071909 [p0] 0.000719575 0.000720136 [p3] DoFs/s: 7.56836e+08
+ 0: matvec time dp 0.00071676 [p4] 0.000717191 0.000717701 [p3] DoFs/s: 7.59404e+08
+ 0: matvec time dp 0.000718731 [p0] 0.000719204 0.000719733 [p3] DoFs/s: 7.5726e+08
+ 0: matvec time dp 0.000718202 [p9] 0.000718652 0.000719169 [p3] DoFs/s: 7.57854e+08
+ 0: Best timings for ndof = 545025   mv 0.000717701    mv smooth 0.000717389   cg-mg 0.470931
+ 0: 
+ 0: Cycle 14
+ 0: Coarse triangulations created  (CPU/wall)0.035327s/0.0381565s
+ 0: Number of degrees of freedom: 1081665 = (25 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.120023s/0.152222s
+ 0: Setup matrices   (CPU/wall) 0.134471s/0.154523s
+ 0: Setup transfers   (CPU/wall) 0.043117s/0.0544894s
+ 0: Setup smoothers   (CPU/wall) 0.032465s/0.0588912s
+ 0: Compute rhs   (CPU/wall) 0.048229s/0.0628274s
+ 0: Total setup time: 0.521052
+ 0: Memory stats [MB]: 480.051 [p27] 484.349 491.031 [p5]
+ 0: Time solve CG              0.764297
+ 0: Time solve CG              0.52501
+ 0: Time solve CG              0.49846
+ 0: Time solve CG              0.495764
+ 0: Time solve CG              0.497853
+ 0: Time solve CG              0.497992
+ 0: Time solve CG              0.499346
+ 0: Time solve CG              0.496316
+ 0: Time solve CG              0.544899
+ 0: Time solve CG              0.529397
+ 0: matvec time dp 0.000722547 [p0] 0.000723053 0.000723618 [p3] DoFs/s: 1.4948e+09
+ 0: matvec time dp 0.000720589 [p0] 0.000721103 0.000721654 [p3] DoFs/s: 1.49887e+09
+ 0: matvec time dp 0.000720613 [p9] 0.00072108 0.000721612 [p3] DoFs/s: 1.49896e+09
+ 0: matvec time dp 0.000720611 [p0] 0.000721063 0.000721586 [p10] DoFs/s: 1.49901e+09
+ 0: matvec time dp 0.000720988 [p0] 0.000721497 0.000722142 [p17] DoFs/s: 1.49786e+09
+ 0: Best timings for ndof = 1081665   mv 0.000721586    mv smooth 0.000721175   cg-mg 0.495763
+ 0: 
+ 0: Cycle 15
+ 0: Coarse triangulations created  (CPU/wall)0.055556s/0.0604591s
+ 0: Number of degrees of freedom: 2146689 = (32 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.101788s/0.146376s
+ 0: Setup matrices   (CPU/wall) 0.16008s/0.186116s
+ 0: Setup transfers   (CPU/wall) 0.076978s/0.0880764s
+ 0: Setup smoothers   (CPU/wall) 0.048382s/0.0765664s
+ 0: Compute rhs   (CPU/wall) 0.08857s/0.109762s
+ 0: Total setup time: 0.667289
+ 0: Memory stats [MB]: 485.625 [p27] 490.553 496.961 [p5]
+ 0: Time solve CG              0.779188
+ 0: Time solve CG              0.534968
+ 0: Time solve CG              0.535471
+ 0: Time solve CG              0.567256
+ 0: Time solve CG              0.534947
+ 0: Time solve CG              0.563395
+ 0: Time solve CG              0.582709
+ 0: Time solve CG              0.534242
+ 0: Time solve CG              0.535012
+ 0: Time solve CG              0.552197
+ 0: matvec time dp 0.000770138 [p0] 0.000770622 0.000771201 [p3] DoFs/s: 2.78357e+09
+ 0: matvec time dp 0.000768844 [p0] 0.000769382 0.000769926 [p3] DoFs/s: 2.78818e+09
+ 0: matvec time dp 0.000767268 [p9] 0.000767754 0.000768316 [p17] DoFs/s: 2.79402e+09
+ 0: matvec time dp 0.000767194 [p0] 0.00076768 0.000768268 [p3] DoFs/s: 2.79419e+09
+ 0: matvec time dp 0.000766585 [p9] 0.000767033 0.000767578 [p3] DoFs/s: 2.7967e+09
+ 0: Best timings for ndof = 2146689   mv 0.000767578    mv smooth 0.000768238   cg-mg 0.534241
+ 0: 
+ 0: Cycle 16
+ 0: Coarse triangulations created  (CPU/wall)0.084847s/0.0938474s
+ 0: Number of degrees of freedom: 4276737 = (40 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.148277s/0.188245s
+ 0: Setup matrices   (CPU/wall) 0.285053s/0.320753s
+ 0: Setup transfers   (CPU/wall) 0.082731s/0.107321s
+ 0: Setup smoothers   (CPU/wall) 0.076158s/0.102383s
+ 0: Compute rhs   (CPU/wall) 0.077861s/0.0958533s
+ 0: Total setup time: 0.908301
+ 0: Memory stats [MB]: 496.945 [p27] 501.957 508.414 [p5]
+ 0: Time solve CG              0.903768
+ 0: Time solve CG              0.648142
+ 0: Time solve CG              0.703242
+ 0: Time solve CG              0.639048
+ 0: Time solve CG              0.638569
+ 0: Time solve CG              0.660719
+ 0: Time solve CG              0.638644
+ 0: Time solve CG              0.69751
+ 0: Time solve CG              0.640904
+ 0: Time solve CG              0.641043
+ 0: matvec time dp 0.000835359 [p31] 0.000836853 0.000837425 [p5] DoFs/s: 5.10701e+09
+ 0: matvec time dp 0.000827039 [p9] 0.000827627 0.000828233 [p14] DoFs/s: 5.16369e+09
+ 0: matvec time dp 0.000827129 [p0] 0.000827668 0.000828251 [p7] DoFs/s: 5.16357e+09
+ 0: matvec time dp 0.000837502 [p0] 0.000838013 0.00083861 [p7] DoFs/s: 5.09979e+09
+ 0: matvec time dp 0.000827653 [p18] 0.000828122 0.000828723 [p3] DoFs/s: 5.16063e+09
+ 0: Best timings for ndof = 4276737   mv 0.000828233    mv smooth 0.000828265   cg-mg 0.638568
+ 0: 
+ 0: Cycle 17
+ 0: Coarse triangulations created  (CPU/wall)0.129899s/0.141724s
+ 0: Number of degrees of freedom: 8520321 = (50 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.133626s/0.194428s
+ 0: Setup matrices   (CPU/wall) 0.496442s/0.534905s
+ 0: Setup transfers   (CPU/wall) 0.167724s/0.203964s
+ 0: Setup smoothers   (CPU/wall) 0.105416s/0.142961s
+ 0: Compute rhs   (CPU/wall) 0.103327s/0.12409s
+ 0: Total setup time: 1.34195
+ 0: Memory stats [MB]: 517.301 [p27] 525.001 533.66 [p21]
+ 0: Time solve CG              0.965832
+ 0: Time solve CG              0.673515
+ 0: Time solve CG              0.739257
+ 0: Time solve CG              0.673657
+ 0: Time solve CG              0.678337
+ 0: Time solve CG              0.715509
+ 0: Time solve CG              0.705499
+ 0: Time solve CG              0.706743
+ 0: Time solve CG              0.676414
+ 0: Time solve CG              0.677364
+ 0: matvec time dp 0.000950852 [p4] 0.000951628 0.000952625 [p10] DoFs/s: 8.94405e+09
+ 0: matvec time dp 0.000936579 [p0] 0.000937105 0.000937701 [p17] DoFs/s: 9.0864e+09
+ 0: matvec time dp 0.000905275 [p0] 0.000905828 0.00090636 [p24] DoFs/s: 9.40059e+09
+ 0: matvec time dp 0.000889573 [p27] 0.000889998 0.000890467 [p3] DoFs/s: 9.56838e+09
+ 0: matvec time dp 0.000883248 [p9] 0.000883732 0.000884229 [p24] DoFs/s: 9.63588e+09
+ 0: Best timings for ndof = 8520321   mv 0.000884229    mv smooth 0.00087128   cg-mg 0.673514
+ 0: 
+ 0: Cycle 18
+ 0: Coarse triangulations created  (CPU/wall)0.316776s/0.334868s
+ 0: Number of degrees of freedom: 16974593 = (64 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.232654s/0.295026s
+ 0: Setup matrices   (CPU/wall) 0.817878s/0.874165s
+ 0: Setup transfers   (CPU/wall) 0.20158s/0.278691s
+ 0: Setup smoothers   (CPU/wall) 0.183392s/0.226227s
+ 0: Compute rhs   (CPU/wall) 0.161135s/0.191101s
+ 0: Total setup time: 2.19995
+ 0: Memory stats [MB]: 545.441 [p22] 553.556 564.492 [p15]
+ 0: Time solve CG              1.07934
+ 0: Time solve CG              0.727667
+ 0: Time solve CG              0.739936
+ 0: Time solve CG              0.775699
+ 0: Time solve CG              0.767822
+ 0: Time solve CG              0.789013
+ 0: Time solve CG              0.740401
+ 0: Time solve CG              0.798467
+ 0: Time solve CG              0.741544
+ 0: Time solve CG              0.754086
+ 0: matvec time dp 0.00115726 [p4] 0.00116081 0.0011652 [p3] DoFs/s: 1.45679e+10
+ 0: matvec time dp 0.00178409 [p0] 0.00178661 0.00178958 [p7] DoFs/s: 9.48526e+09
+ 0: matvec time dp 0.00115385 [p0] 0.00115625 0.00115918 [p28] DoFs/s: 1.46436e+10
+ 0: matvec time dp 0.00178057 [p0] 0.00178325 0.0017864 [p24] DoFs/s: 9.5021e+09
+ 0: matvec time dp 0.00114734 [p0] 0.00114974 0.0011527 [p24] DoFs/s: 1.4726e+10
+ 0: Best timings for ndof = 16974593   mv 0.0011527    mv smooth 0.00109592   cg-mg 0.727666
+ 0: 
+ 0: Cycle 19
+ 0: Coarse triangulations created  (CPU/wall)0.43569s/0.459353s
+ 0: Number of degrees of freedom: 33883137 = (80 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.283132s/0.35219s
+ 0: Setup matrices   (CPU/wall) 1.55194s/1.66141s
+ 0: Setup transfers   (CPU/wall) 0.338945s/0.434397s
+ 0: Setup smoothers   (CPU/wall) 0.344783s/0.393118s
+ 0: Compute rhs   (CPU/wall) 0.27058s/0.308341s
+ 0: Total setup time: 3.60867
+ 0: Memory stats [MB]: 608.43 [p27] 622.219 645.328 [p5]
+ 0: Time solve CG              1.21159
+ 0: Time solve CG              0.923544
+ 0: Time solve CG              0.868795
+ 0: Time solve CG              0.86557
+ 0: Time solve CG              0.869288
+ 0: Time solve CG              0.872459
+ 0: Time solve CG              0.974723
+ 0: Time solve CG              0.869236
+ 0: Time solve CG              0.869629
+ 0: Time solve CG              0.934216
+ 0: matvec time dp 0.00156273 [p4] 0.00156629 0.00157096 [p3] DoFs/s: 2.15685e+10
+ 0: matvec time dp 0.00156221 [p0] 0.00156503 0.00156848 [p17] DoFs/s: 2.16026e+10
+ 0: matvec time dp 0.00154032 [p0] 0.0015432 0.00154681 [p17] DoFs/s: 2.19051e+10
+ 0: matvec time dp 0.00146356 [p22] 0.00146595 0.00146905 [p7] DoFs/s: 2.30647e+10
+ 0: matvec time dp 0.00137916 [p0] 0.00138153 0.00138464 [p3] DoFs/s: 2.44708e+10
+ 0: Best timings for ndof = 33883137   mv 0.00138464    mv smooth 0.00135442   cg-mg 0.865568
+ 0: 
+ 0: Cycle 20
+ 0: Coarse triangulations created  (CPU/wall)0.725088s/0.757818s
+ 0: Number of degrees of freedom: 67634433 = (101 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.418613s/0.491799s
+ 0: Setup matrices   (CPU/wall) 3.00496s/3.1579s
+ 0: Setup transfers   (CPU/wall) 0.546502s/0.67053s
+ 0: Setup smoothers   (CPU/wall) 0.582941s/0.632451s
+ 0: Compute rhs   (CPU/wall) 0.514922s/0.556871s
+ 0: Total setup time: 6.26721
+ 0: Memory stats [MB]: 709.594 [p0] 745.376 775.141 [p10]
+ 0: Time solve CG              1.38549
+ 0: Time solve CG              1.04006
+ 0: Time solve CG              0.981269
+ 0: Time solve CG              0.985084
+ 0: Time solve CG              1.06618
+ 0: Time solve CG              1.02637
+ 0: Time solve CG              1.03528
+ 0: Time solve CG              0.996347
+ 0: Time solve CG              1.04577
+ 0: Time solve CG              1.01881
+ 0: matvec time dp 0.00234558 [p22] 0.00234977 0.00235384 [p7] DoFs/s: 2.87337e+10
+ 0: matvec time dp 0.00234051 [p0] 0.00234396 0.00234849 [p17] DoFs/s: 2.87991e+10
+ 0: matvec time dp 0.0021766 [p18] 0.00217885 0.00218206 [p24] DoFs/s: 3.09956e+10
+ 0: matvec time dp 0.00197979 [p0] 0.00198244 0.00198591 [p17] DoFs/s: 3.40571e+10
+ 0: matvec time dp 0.00200483 [p0] 0.00200687 0.00201043 [p3] DoFs/s: 3.36418e+10
+ 0: Best timings for ndof = 67634433   mv 0.00198591    mv smooth 0.00198592   cg-mg 0.981268
+ 0: 
+ 0:  cells    dofs   mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+ 0:     256    18513 7.153e-04 7.163e-04 2.136e-01      7    4.083e-02 
+ 0:     512    35937 7.163e-04 7.166e-04 2.707e-01      7    3.992e-02 
+ 0:    1024    70785 7.132e-04 7.134e-04 3.373e-01      7    4.132e-02 
+ 0:    2048   139425 7.146e-04 7.152e-04 3.567e-01      7    4.367e-02 
+ 0:    4096   274625 7.154e-04 7.157e-04 3.773e-01      7    4.386e-02 
+ 0:    8192   545025 7.177e-04 7.174e-04 4.709e-01      7    4.379e-02 
+ 0:   16384  1081665 7.216e-04 7.212e-04 4.958e-01      7    4.464e-02 
+ 0:   32768  2146689 7.676e-04 7.682e-04 5.342e-01      7    4.506e-02 
+ 0:   65536  4276737 8.282e-04 8.283e-04 6.386e-01      7    4.503e-02 
+ 0:  131072  8520321 8.842e-04 8.713e-04 6.735e-01      7    4.549e-02 
+ 0:  262144 16974593 1.153e-03 1.096e-03 7.277e-01      7    4.562e-02 
+ 0:  524288 33883137 1.385e-03 1.354e-03 8.656e-01      7    4.553e-02 
+ 0: 1048576 67634433 1.986e-03 1.986e-03 9.813e-01      7    4.584e-02 
+ 0: 
+ 0: 
+ 0: Cycle 21
+ 0: Coarse triangulations created  (CPU/wall)1.52786s/1.57619s
+ 0: Number of degrees of freedom: 135005697 = (128 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)0.71059s/0.826897s
+ 0: Setup matrices   (CPU/wall) 5.90206s/6.16005s
+ 0: Setup transfers   (CPU/wall) 0.978602s/1.16639s
+ 0: Setup smoothers   (CPU/wall) 1.05595s/1.1187s
+ 0: Compute rhs   (CPU/wall) 0.968152s/1.01837s
+ 0: Total setup time: 11.8665
+ 0: Memory stats [MB]: 896.609 [p14] 927.512 968.492 [p15]
+ 0: Time solve CG              1.71301
+ 0: Time solve CG              1.20946
+ 0: Time solve CG              1.17114
+ 0: Time solve CG              1.17888
+ 0: Time solve CG              1.27875
+ 0: Time solve CG              1.18461
+ 0: Time solve CG              1.23631
+ 0: Time solve CG              1.18528
+ 0: Time solve CG              1.22416
+ 0: Time solve CG              1.2888
+ 0: matvec time dp 0.00373074 [p4] 0.00373708 0.00374189 [p29] DoFs/s: 3.60796e+10
+ 0: matvec time dp 0.00342139 [p0] 0.00342427 0.00342867 [p7] DoFs/s: 3.93755e+10
+ 0: matvec time dp 0.00323929 [p0] 0.00324246 0.00324724 [p10] DoFs/s: 4.15755e+10
+ 0: matvec time dp 0.00322407 [p4] 0.00322648 0.00323075 [p3] DoFs/s: 4.17877e+10
+ 0: matvec time dp 0.00322795 [p0] 0.0032306 0.00323494 [p3] DoFs/s: 4.17335e+10
+ 0: Best timings for ndof = 135005697   mv 0.00323075    mv smooth 0.0032289   cg-mg 1.17113
+ 0: 
+ 0:  cells    dofs    mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+ 0:     256     18513 7.153e-04 7.163e-04 2.136e-01      7    4.083e-02 
+ 0:     512     35937 7.163e-04 7.166e-04 2.707e-01      7    3.992e-02 
+ 0:    1024     70785 7.132e-04 7.134e-04 3.373e-01      7    4.132e-02 
+ 0:    2048    139425 7.146e-04 7.152e-04 3.567e-01      7    4.367e-02 
+ 0:    4096    274625 7.154e-04 7.157e-04 3.773e-01      7    4.386e-02 
+ 0:    8192    545025 7.177e-04 7.174e-04 4.709e-01      7    4.379e-02 
+ 0:   16384   1081665 7.216e-04 7.212e-04 4.958e-01      7    4.464e-02 
+ 0:   32768   2146689 7.676e-04 7.682e-04 5.342e-01      7    4.506e-02 
+ 0:   65536   4276737 8.282e-04 8.283e-04 6.386e-01      7    4.503e-02 
+ 0:  131072   8520321 8.842e-04 8.713e-04 6.735e-01      7    4.549e-02 
+ 0:  262144  16974593 1.153e-03 1.096e-03 7.277e-01      7    4.562e-02 
+ 0:  524288  33883137 1.385e-03 1.354e-03 8.656e-01      7    4.553e-02 
+ 0: 1048576  67634433 1.986e-03 1.986e-03 9.813e-01      7    4.584e-02 
+ 0: 2097152 135005697 3.231e-03 3.229e-03 1.171e+00      7    4.567e-02 
+ 0: 
+ 0: 
+ 0: Cycle 22
+ 0: Coarse triangulations created  (CPU/wall)2.89315s/2.94811s
+ 0: Number of degrees of freedom: 269748225 = (161 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)1.25139s/1.39699s
+ 0: Setup matrices   (CPU/wall) 11.4532s/11.9131s
+ 0: Setup transfers   (CPU/wall) 1.92772s/2.15508s
+ 0: Setup smoothers   (CPU/wall) 2.00937s/2.0974s
+ 0: Compute rhs   (CPU/wall) 1.87711s/1.94938s
+ 0: Total setup time: 22.4599
+ 0: Memory stats [MB]: 1268.78 [p7] 1291.95 1319.78 [p15]
+ 0: Time solve CG              2.24896
+ 0: Time solve CG              1.52434
+ 0: Time solve CG              1.56179
+ 0: Time solve CG              1.49847
+ 0: Time solve CG              1.56782
+ 0: Time solve CG              1.52432
+ 0: Time solve CG              1.56133
+ 0: Time solve CG              1.49507
+ 0: Time solve CG              1.55594
+ 0: Time solve CG              1.52675
+ 0: matvec time dp 0.0056481 [p8] 0.0056526 0.00565979 [p10] DoFs/s: 4.76605e+10
+ 0: matvec time dp 0.00564536 [p18] 0.0056485 0.00565451 [p7] DoFs/s: 4.77049e+10
+ 0: matvec time dp 0.00565393 [p0] 0.00565728 0.00566282 [p17] DoFs/s: 4.7635e+10
+ 0: matvec time dp 0.00564929 [p0] 0.00565339 0.00565928 [p21] DoFs/s: 4.76648e+10
+ 0: matvec time dp 0.00564559 [p18] 0.00564877 0.00565434 [p3] DoFs/s: 4.77064e+10
+ 0: Best timings for ndof = 269748225   mv 0.00565434    mv smooth 0.00566149   cg-mg 1.49507
+ 0: 
+ 0:  cells    dofs    mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+ 0:     256     18513 7.153e-04 7.163e-04 2.136e-01      7    4.083e-02 
+ 0:     512     35937 7.163e-04 7.166e-04 2.707e-01      7    3.992e-02 
+ 0:    1024     70785 7.132e-04 7.134e-04 3.373e-01      7    4.132e-02 
+ 0:    2048    139425 7.146e-04 7.152e-04 3.567e-01      7    4.367e-02 
+ 0:    4096    274625 7.154e-04 7.157e-04 3.773e-01      7    4.386e-02 
+ 0:    8192    545025 7.177e-04 7.174e-04 4.709e-01      7    4.379e-02 
+ 0:   16384   1081665 7.216e-04 7.212e-04 4.958e-01      7    4.464e-02 
+ 0:   32768   2146689 7.676e-04 7.682e-04 5.342e-01      7    4.506e-02 
+ 0:   65536   4276737 8.282e-04 8.283e-04 6.386e-01      7    4.503e-02 
+ 0:  131072   8520321 8.842e-04 8.713e-04 6.735e-01      7    4.549e-02 
+ 0:  262144  16974593 1.153e-03 1.096e-03 7.277e-01      7    4.562e-02 
+ 0:  524288  33883137 1.385e-03 1.354e-03 8.656e-01      7    4.553e-02 
+ 0: 1048576  67634433 1.986e-03 1.986e-03 9.813e-01      7    4.584e-02 
+ 0: 2097152 135005697 3.231e-03 3.229e-03 1.171e+00      7    4.567e-02 
+ 0: 4194304 269748225 5.654e-03 5.661e-03 1.495e+00      7    4.569e-02 
+ 0: 
+ 0: 
+ 0: Cycle 23
+ 0: Coarse triangulations created  (CPU/wall)5.1165s/5.19928s
+ 0: Number of degrees of freedom: 538970625 = (203 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)1.97682s/2.24809s
+ 0: Setup matrices   (CPU/wall) 22.6679s/23.5463s
+ 0: Setup transfers   (CPU/wall) 3.79639s/4.13349s
+ 0: Setup smoothers   (CPU/wall) 3.97052s/4.07994s
+ 0: Compute rhs   (CPU/wall) 3.61061s/3.72253s
+ 0: Total setup time: 42.9295
+ 0: Memory stats [MB]: 2005.12 [p14] 2058.86 2112.57 [p15]
+ 0: Time solve CG              3.19779
+ 0: Time solve CG              2.08323
+ 0: Time solve CG              2.1662
+ 0: Time solve CG              2.14715
+ 0: Time solve CG              2.10302
+ 0: Time solve CG              2.14075
+ 0: Time solve CG              2.1116
+ 0: Time solve CG              2.13861
+ 0: Time solve CG              2.14668
+ 0: Time solve CG              2.15546
+ 0: matvec time dp 0.0108396 [p18] 0.0108471 0.0108577 [p17] DoFs/s: 4.96395e+10
+ 0: matvec time dp 0.0103561 [p18] 0.0103607 0.0103682 [p10] DoFs/s: 5.19829e+10
+ 0: matvec time dp 0.0103537 [p0] 0.0103575 0.0103648 [p3] DoFs/s: 5.20003e+10
+ 0: matvec time dp 0.0103585 [p22] 0.0103629 0.0103711 [p3] DoFs/s: 5.19687e+10
+ 0: matvec time dp 0.0103602 [p0] 0.0103643 0.0103713 [p3] DoFs/s: 5.19675e+10
+ 0: Best timings for ndof = 538970625   mv 0.0103648    mv smooth 0.0103671   cg-mg 2.08323
+ 0: 
+ 0:  cells    dofs    mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+ 0:     256     18513 7.153e-04 7.163e-04 2.136e-01      7    4.083e-02 
+ 0:     512     35937 7.163e-04 7.166e-04 2.707e-01      7    3.992e-02 
+ 0:    1024     70785 7.132e-04 7.134e-04 3.373e-01      7    4.132e-02 
+ 0:    2048    139425 7.146e-04 7.152e-04 3.567e-01      7    4.367e-02 
+ 0:    4096    274625 7.154e-04 7.157e-04 3.773e-01      7    4.386e-02 
+ 0:    8192    545025 7.177e-04 7.174e-04 4.709e-01      7    4.379e-02 
+ 0:   16384   1081665 7.216e-04 7.212e-04 4.958e-01      7    4.464e-02 
+ 0:   32768   2146689 7.676e-04 7.682e-04 5.342e-01      7    4.506e-02 
+ 0:   65536   4276737 8.282e-04 8.283e-04 6.386e-01      7    4.503e-02 
+ 0:  131072   8520321 8.842e-04 8.713e-04 6.735e-01      7    4.549e-02 
+ 0:  262144  16974593 1.153e-03 1.096e-03 7.277e-01      7    4.562e-02 
+ 0:  524288  33883137 1.385e-03 1.354e-03 8.656e-01      7    4.553e-02 
+ 0: 1048576  67634433 1.986e-03 1.986e-03 9.813e-01      7    4.584e-02 
+ 0: 2097152 135005697 3.231e-03 3.229e-03 1.171e+00      7    4.567e-02 
+ 0: 4194304 269748225 5.654e-03 5.661e-03 1.495e+00      7    4.569e-02 
+ 0: 8388608 538970625 1.036e-02 1.037e-02 2.083e+00      7    4.601e-02 
+ 0: 
+ 0: 
+ 0: Cycle 24
+ 0: Coarse triangulations created  (CPU/wall)11.659s/11.9031s
+ 0: Number of degrees of freedom: 1076890625 = (256 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)3.72331s/4.16254s
+ 0: Setup matrices   (CPU/wall) 45.2088s/46.8515s
+ 0: Setup transfers   (CPU/wall) 8.09225s/8.76113s
+ 0: Setup smoothers   (CPU/wall) 7.78704s/7.95359s
+ 0: Compute rhs   (CPU/wall) 7.24808s/7.45048s
+ 0: Total setup time: 87.0822
+ 0: Memory stats [MB]: 3481.32 [p7] 3585.83 3655.67 [p8]
+ 0: Time solve CG              4.86181
+ 0: Time solve CG              3.35695
+ 0: Time solve CG              3.34484
+ 0: Time solve CG              3.32292
+ 0: Time solve CG              3.30394
+ 0: Time solve CG              3.31405
+ 0: Time solve CG              3.28626
+ 0: Time solve CG              3.31944
+ 0: Time solve CG              3.32846
+ 0: Time solve CG              3.32254
+ 0: matvec time dp 0.0200702 [p0] 0.0200826 0.0200996 [p3] DoFs/s: 5.35778e+10
+ 0: matvec time dp 0.0202168 [p13] 0.0202226 0.020233 [p7] DoFs/s: 5.32246e+10
+ 0: matvec time dp 0.020334 [p0] 0.0203398 0.0203502 [p21] DoFs/s: 5.29178e+10
+ 0: matvec time dp 0.0198963 [p18] 0.0199028 0.0199134 [p28] DoFs/s: 5.40787e+10
+ 0: matvec time dp 0.0198687 [p18] 0.0198737 0.0198846 [p3] DoFs/s: 5.4157e+10
+ 0: Best timings for ndof = 1076890625   mv 0.0198846    mv smooth 0.0198855   cg-mg 3.28626
+ 0: 
+ 0:  cells      dofs    mv_outer  mv_inner   cg_time  cg_its cg_reduction 
+ 0:      256      18513 7.153e-04 7.163e-04 2.136e-01      7    4.083e-02 
+ 0:      512      35937 7.163e-04 7.166e-04 2.707e-01      7    3.992e-02 
+ 0:     1024      70785 7.132e-04 7.134e-04 3.373e-01      7    4.132e-02 
+ 0:     2048     139425 7.146e-04 7.152e-04 3.567e-01      7    4.367e-02 
+ 0:     4096     274625 7.154e-04 7.157e-04 3.773e-01      7    4.386e-02 
+ 0:     8192     545025 7.177e-04 7.174e-04 4.709e-01      7    4.379e-02 
+ 0:    16384    1081665 7.216e-04 7.212e-04 4.958e-01      7    4.464e-02 
+ 0:    32768    2146689 7.676e-04 7.682e-04 5.342e-01      7    4.506e-02 
+ 0:    65536    4276737 8.282e-04 8.283e-04 6.386e-01      7    4.503e-02 
+ 0:   131072    8520321 8.842e-04 8.713e-04 6.735e-01      7    4.549e-02 
+ 0:   262144   16974593 1.153e-03 1.096e-03 7.277e-01      7    4.562e-02 
+ 0:   524288   33883137 1.385e-03 1.354e-03 8.656e-01      7    4.553e-02 
+ 0:  1048576   67634433 1.986e-03 1.986e-03 9.813e-01      7    4.584e-02 
+ 0:  2097152  135005697 3.231e-03 3.229e-03 1.171e+00      7    4.567e-02 
+ 0:  4194304  269748225 5.654e-03 5.661e-03 1.495e+00      7    4.569e-02 
+ 0:  8388608  538970625 1.036e-02 1.037e-02 2.083e+00      7    4.601e-02 
+ 0: 16777216 1076890625 1.988e-02 1.989e-02 3.286e+00      7    4.572e-02 
+ 0: 
+ 0: 
+ 0: Cycle 25
+ 0: Coarse triangulations created  (CPU/wall)22.1725s/22.6016s
+ 0: Number of degrees of freedom: 2152730625 = (322 x 4 + 1)^3
+ 0: DoFs and constraint setup  (CPU/wall)6.94407s/7.72856s
+ 0: Setup matrices   (CPU/wall) 89.6158s/92.9119s
+ 0: Setup transfers   (CPU/wall) 16.3396s/17.5868s
+ 0: Setup smoothers   (CPU/wall) 15.4868s/15.7637s
+ 0: Compute rhs   (CPU/wall) 14.4528s/14.8226s
+ 0: Total setup time: 171.415
+ 0: Memory stats [MB]: 5849.14 [p21] 6570.27 6777.69 [p1]
+20: 
+20: 
+20: ----------------------------------------------------
+20: Exception on processing: 
+20: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+20: Aborting!
+20: ----------------------------------------------------
+22: 
+22: 
+22: ----------------------------------------------------
+22: Exception on processing: 
+22: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+22: Aborting!
+22: ----------------------------------------------------
+ 3: 
+ 3: 
+ 3: ----------------------------------------------------
+ 3: Exception on processing: 
+ 3: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+ 3: Aborting!
+ 3: ----------------------------------------------------
+ 3: double free or corruption (!prev)
+ 3: [jwb0516:928062] *** Process received signal ***
+ 3: [jwb0516:928062] Signal: Aborted (6)
+ 3: [jwb0516:928062] Signal code:  (-6)
+ 2: 
+ 2: 
+ 2: ----------------------------------------------------
+ 2: Exception on processing: 
+ 2: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+ 2: Aborting!
+ 2: ----------------------------------------------------
+ 2: double free or corruption (!prev)
+ 2: [jwb0516:928061] *** Process received signal ***
+ 2: [jwb0516:928061] Signal: Aborted (6)
+ 2: [jwb0516:928061] Signal code:  (-6)
+ 6: 
+ 6: 
+ 6: ----------------------------------------------------
+ 6: Exception on processing: 
+ 6: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+ 6: Aborting!
+ 6: ----------------------------------------------------
+ 0: 
+ 0: 
+ 0: ----------------------------------------------------
+ 0: Exception on processing: 
+ 0: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+ 0: Aborting!
+ 0: ----------------------------------------------------
+ 0: double free or corruption (!prev)
+ 0: [jwb0516:928063] *** Process received signal ***
+ 0: [jwb0516:928063] Signal: Aborted (6)
+ 0: [jwb0516:928063] Signal code:  (-6)
+19: 
+19: 
+19: ----------------------------------------------------
+19: Exception on processing: 
+19: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+19: Aborting!
+19: ----------------------------------------------------
+23: 
+23: 
+23: ----------------------------------------------------
+23: Exception on processing: 
+23: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+23: Aborting!
+23: ----------------------------------------------------
+26: 
+26: 
+26: ----------------------------------------------------
+26: Exception on processing: 
+25: 
+25: 
+25: ----------------------------------------------------
+25: Exception on processing: 
+25: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+25: Aborting!
+25: ----------------------------------------------------
+26: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+26: Aborting!
+26: ----------------------------------------------------
+25: double free or corruption (!prev)
+26: double free or corruption (!prev)
+25: [jwb0539:766598] *** Process received signal ***
+26: [jwb0539:766596] *** Process received signal ***
+26: [jwb0539:766596] Signal: Aborted (6)
+26: [jwb0539:766596] Signal code:  (-6)
+25: [jwb0539:766598] Signal: Aborted (6)
+25: [jwb0539:766598] Signal code:  (-6)
+15: 
+15: 
+15: ----------------------------------------------------
+15: Exception on processing: 
+15: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+15: Aborting!
+15: ----------------------------------------------------
+30: 
+30: 
+30: ----------------------------------------------------
+30: Exception on processing: 
+30: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+30: Aborting!
+30: ----------------------------------------------------
+ 9: 
+ 9: 
+ 9: ----------------------------------------------------
+ 9: Exception on processing: 
+ 9: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+ 9: Aborting!
+ 9: ----------------------------------------------------
+27: 
+27: 
+27: ----------------------------------------------------
+27: Exception on processing: 
+27: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+27: Aborting!
+27: ----------------------------------------------------
+27: double free or corruption (!prev)
+27: [jwb0539:766597] *** Process received signal ***
+27: [jwb0539:766597] Signal: Aborted (6)
+27: [jwb0539:766597] Signal code:  (-6)
+ 1: 
+ 1: 
+ 1: ----------------------------------------------------
+ 1: Exception on processing: 
+ 1: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+ 1: Aborting!
+ 1: ----------------------------------------------------
+ 1: double free or corruption (!prev)
+ 1: [jwb0516:928060] *** Process received signal ***
+ 1: [jwb0516:928060] Signal: Aborted (6)
+ 1: [jwb0516:928060] Signal code:  (-6)
+31: 
+31: 
+31: ----------------------------------------------------
+31: Exception on processing: 
+31: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+31: Aborting!
+31: ----------------------------------------------------
+29: 
+29: 
+29: ----------------------------------------------------
+29: Exception on processing: 
+29: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+29: Aborting!
+29: ----------------------------------------------------
+28: 
+28: 
+28: ----------------------------------------------------
+28: Exception on processing: 
+28: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+28: Aborting!
+28: ----------------------------------------------------
+ 3: [jwb0516:928062] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1483f7a32bf0]
+ 3: [jwb0516:928062] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1483f7a7fedc]
+ 3: [jwb0516:928062] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1483f7a32b46]
+ 2: [jwb0516:928061] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x148e3d32bbf0]
+ 2: [jwb0516:928061] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x148e3d378edc]
+ 2: [jwb0516:928061] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x148e3d32bb46]
+ 2: [jwb0516:928061] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x148e3d315833]
+ 2: [jwb0516:928061] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x148e3d316172]
+ 0: [jwb0516:928063] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14c367a41bf0]
+ 0: [jwb0516:928063] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14c367a8eedc]
+ 0: [jwb0516:928063] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14c367a41b46]
+ 0: [jwb0516:928063] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14c367a2b833]
+ 0: [jwb0516:928063] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14c367a2c172]
+26: [jwb0539:766596] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1502e939abf0]
+26: [jwb0539:766596] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1502e93e7edc]
+26: [jwb0539:766596] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1502e939ab46]
+26: [jwb0539:766596] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1502e9384833]
+26: [jwb0539:766596] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1502e9385172]
+26: [jwb0539:766596] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1502e93f1f87]
+26: [jwb0539:766596] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1502e93f3c7c]
+26: [jwb0539:766596] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1502e93f62c5]
+26: [jwb0539:766596] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+26: [jwb0539:766596] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1502e939d7a7]
+26: [jwb0539:766596] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1502ebbfd7d7]
+26: [jwb0539:766596] *** End of error message ***
+ 3: [jwb0516:928062] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1483f7a1c833]
+ 3: [jwb0516:928062] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1483f7a1d172]
+ 3: [jwb0516:928062] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1483f7a89f87]
+ 3: [jwb0516:928062] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1483f7a8bc7c]
+ 3: [jwb0516:928062] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1483f7a8e2c5]
+ 3: [jwb0516:928062] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 3: [jwb0516:928062] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1483f7a357a7]
+ 3: [jwb0516:928062] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1483fa2957d7]
+ 3: [jwb0516:928062] *** End of error message ***
+27: [jwb0539:766597] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x148991f57bf0]
+27: [jwb0539:766597] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x148991fa4edc]
+27: [jwb0539:766597] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x148991f57b46]
+27: [jwb0539:766597] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x148991f41833]
+27: [jwb0539:766597] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x148991f42172]
+27: [jwb0539:766597] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x148991faef87]
+27: [jwb0539:766597] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x148991fb0c7c]
+27: [jwb0539:766597] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x148991fb32c5]
+27: [jwb0539:766597] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+27: [jwb0539:766597] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x148991f5a7a7]
+27: [jwb0539:766597] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1489947ba7d7]
+27: [jwb0539:766597] *** End of error message ***
+25: [jwb0539:766598] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x146aaecc2bf0]
+25: [jwb0539:766598] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x146aaed0fedc]
+25: [jwb0539:766598] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x146aaecc2b46]
+25: [jwb0539:766598] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x146aaecac833]
+25: [jwb0539:766598] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x146aaecad172]
+25: [jwb0539:766598] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x146aaed19f87]
+25: [jwb0539:766598] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x146aaed1bc7c]
+25: [jwb0539:766598] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x146aaed1e2c5]
+25: [jwb0539:766598] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+25: [jwb0539:766598] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x146aaecc57a7]
+25: [jwb0539:766598] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x146ab15257d7]
+25: [jwb0539:766598] *** End of error message ***
+ 0: [jwb0516:928063] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14c367a98f87]
+ 0: [jwb0516:928063] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14c367a9ac7c]
+ 0: [jwb0516:928063] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14c367a9d2c5]
+ 0: [jwb0516:928063] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 0: [jwb0516:928063] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14c367a447a7]
+ 0: [jwb0516:928063] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14c36a2a47d7]
+ 0: [jwb0516:928063] *** End of error message ***
+ 2: [jwb0516:928061] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x148e3d382f87]
+ 2: [jwb0516:928061] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x148e3d384c7c]
+ 2: [jwb0516:928061] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x148e3d3872c5]
+ 2: [jwb0516:928061] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 2: [jwb0516:928061] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x148e3d32e7a7]
+ 2: [jwb0516:928061] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x148e3fb8e7d7]
+ 2: [jwb0516:928061] *** End of error message ***
+24: 
+24: 
+24: ----------------------------------------------------
+24: Exception on processing: 
+24: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+24: Aborting!
+24: ----------------------------------------------------
+24: double free or corruption (!prev)
+24: [jwb0539:766599] *** Process received signal ***
+24: [jwb0539:766599] Signal: Aborted (6)
+24: [jwb0539:766599] Signal code:  (-6)
+24: [jwb0539:766599] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14db8271bbf0]
+24: [jwb0539:766599] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14db82768edc]
+24: [jwb0539:766599] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14db8271bb46]
+24: [jwb0539:766599] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14db82705833]
+24: [jwb0539:766599] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14db82706172]
+24: [jwb0539:766599] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14db82772f87]
+24: [jwb0539:766599] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14db82774c7c]
+24: [jwb0539:766599] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14db827772c5]
+24: [jwb0539:766599] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+24: [jwb0539:766599] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14db8271e7a7]
+24: [jwb0539:766599] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14db84f7e7d7]
+24: [jwb0539:766599] *** End of error message ***
+22: double free or corruption (!prev)
+23: double free or corruption (!prev)
+20: double free or corruption (!prev)
+22: [jwb0538:2210484] *** Process received signal ***
+22: [jwb0538:2210484] Signal: Aborted (6)
+22: [jwb0538:2210484] Signal code:  (-6)
+23: [jwb0538:2210485] *** Process received signal ***
+23: [jwb0538:2210485] Signal: Aborted (6)
+23: [jwb0538:2210485] Signal code:  (-6)
+20: [jwb0538:2210486] *** Process received signal ***
+20: [jwb0538:2210486] Signal: Aborted (6)
+20: [jwb0538:2210486] Signal code:  (-6)
+28: double free or corruption (!prev)
+29: double free or corruption (!prev)
+28: [jwb0540:3135261] *** Process received signal ***
+29: [jwb0540:3135259] *** Process received signal ***
+29: [jwb0540:3135259] Signal: Aborted (6)
+29: [jwb0540:3135259] Signal code:  (-6)
+30: double free or corruption (!prev)
+31: double free or corruption (!prev)
+31: [jwb0540:3135260] *** Process received signal ***
+28: [jwb0540:3135261] Signal: Aborted (6)
+28: [jwb0540:3135261] Signal code:  (-6)
+30: [jwb0540:3135262] *** Process received signal ***
+30: [jwb0540:3135262] Signal: Aborted (6)
+30: [jwb0540:3135262] Signal code:  (-6)
+31: [jwb0540:3135260] Signal: Aborted (6)
+31: [jwb0540:3135260] Signal code:  (-6)
+30: [jwb0540:3135262] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x146014342bf0]
+30: [jwb0540:3135262] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14601438fedc]
+30: [jwb0540:3135262] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x146014342b46]
+23: [jwb0538:2210485] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14ff50819bf0]
+23: [jwb0538:2210485] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14ff50866edc]
+23: [jwb0538:2210485] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14ff50819b46]
+23: [jwb0538:2210485] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14ff50803833]
+23: [jwb0538:2210485] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14ff50804172]
+23: [jwb0538:2210485] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14ff50870f87]
+23: [jwb0538:2210485] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14ff50872c7c]
+23: [jwb0538:2210485] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14ff508752c5]
+23: [jwb0538:2210485] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+23: [jwb0538:2210485] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14ff5081c7a7]
+23: [jwb0538:2210485] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14ff5307c7d7]
+23: [jwb0538:2210485] *** End of error message ***
+20: [jwb0538:2210486] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x15364ebedbf0]
+20: [jwb0538:2210486] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x15364ec3aedc]
+20: [jwb0538:2210486] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x15364ebedb46]
+20: [jwb0538:2210486] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x15364ebd7833]
+20: [jwb0538:2210486] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x15364ebd8172]
+20: [jwb0538:2210486] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x15364ec44f87]
+20: [jwb0538:2210486] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x15364ec46c7c]
+20: [jwb0538:2210486] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x15364ec492c5]
+20: [jwb0538:2210486] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+20: [jwb0538:2210486] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x15364ebf07a7]
+20: [jwb0538:2210486] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1536514507d7]
+20: [jwb0538:2210486] *** End of error message ***
+22: [jwb0538:2210484] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14bc56fe5bf0]
+22: [jwb0538:2210484] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14bc57032edc]
+22: [jwb0538:2210484] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14bc56fe5b46]
+22: [jwb0538:2210484] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14bc56fcf833]
+22: [jwb0538:2210484] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14bc56fd0172]
+22: [jwb0538:2210484] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14bc5703cf87]
+22: [jwb0538:2210484] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14bc5703ec7c]
+22: [jwb0538:2210484] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14bc570412c5]
+22: [jwb0538:2210484] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+22: [jwb0538:2210484] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14bc56fe87a7]
+22: [jwb0538:2210484] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14bc598487d7]
+22: [jwb0538:2210484] *** End of error message ***
+11: 
+11: 
+11: ----------------------------------------------------
+11: Exception on processing: 
+11: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+11: Aborting!
+11: ----------------------------------------------------
+10: 
+10: 
+10: ----------------------------------------------------
+10: Exception on processing: 
+10: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+10: Aborting!
+10: ----------------------------------------------------
+ 8: 
+ 8: 
+ 8: ----------------------------------------------------
+ 8: Exception on processing: 
+ 8: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+ 8: Aborting!
+ 8: ----------------------------------------------------
+ 9: double free or corruption (!prev)
+11: double free or corruption (!prev)
+ 8: double free or corruption (!prev)
+10: double free or corruption (!prev)
+ 9: [jwb0518:168259] *** Process received signal ***
+ 9: [jwb0518:168259] Signal: Aborted (6)
+ 9: [jwb0518:168259] Signal code:  (-6)
+11: [jwb0518:168258] *** Process received signal ***
+11: [jwb0518:168258] Signal: Aborted (6)
+11: [jwb0518:168258] Signal code:  (-6)
+ 8: [jwb0518:168257] *** Process received signal ***
+10: [jwb0518:168260] *** Process received signal ***
+10: [jwb0518:168260] Signal: Aborted (6)
+10: [jwb0518:168260] Signal code:  (-6)
+ 8: [jwb0518:168257] Signal: Aborted (6)
+ 8: [jwb0518:168257] Signal code:  (-6)
+ 8: [jwb0518:168257] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x154d17248bf0]
+ 8: [jwb0518:168257] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x154d17295edc]
+ 8: [jwb0518:168257] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x154d17248b46]
+ 8: [jwb0518:168257] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x154d17232833]
+ 8: [jwb0518:168257] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x154d17233172]
+ 8: [jwb0518:168257] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x154d1729ff87]
+ 8: [jwb0518:168257] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x154d172a1c7c]
+ 8: [jwb0518:168257] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x154d172a42c5]
+ 8: [jwb0518:168257] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 8: [jwb0518:168257] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x154d1724b7a7]
+ 8: [jwb0518:168257] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x154d19aab7d7]
+ 8: [jwb0518:168257] *** End of error message ***
+11: [jwb0518:168258] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14edcbc54bf0]
+11: [jwb0518:168258] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14edcbca1edc]
+11: [jwb0518:168258] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14edcbc54b46]
+11: [jwb0518:168258] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14edcbc3e833]
+11: [jwb0518:168258] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14edcbc3f172]
+11: [jwb0518:168258] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14edcbcabf87]
+11: [jwb0518:168258] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14edcbcadc7c]
+11: [jwb0518:168258] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14edcbcb02c5]
+11: [jwb0518:168258] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+11: [jwb0518:168258] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14edcbc577a7]
+11: [jwb0518:168258] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14edce4b77d7]
+11: [jwb0518:168258] *** End of error message ***
+10: [jwb0518:168260] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x154f3f60dbf0]
+10: [jwb0518:168260] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x154f3f65aedc]
+10: [jwb0518:168260] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x154f3f60db46]
+10: [jwb0518:168260] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x154f3f5f7833]
+10: [jwb0518:168260] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x154f3f5f8172]
+10: [jwb0518:168260] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x154f3f664f87]
+10: [jwb0518:168260] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x154f3f666c7c]
+10: [jwb0518:168260] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x154f3f6692c5]
+10: [jwb0518:168260] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+10: [jwb0518:168260] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x154f3f6107a7]
+10: [jwb0518:168260] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x154f41e707d7]
+10: [jwb0518:168260] *** End of error message ***
+ 9: [jwb0518:168259] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14736aeadbf0]
+ 9: [jwb0518:168259] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14736aefaedc]
+ 9: [jwb0518:168259] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14736aeadb46]
+ 9: [jwb0518:168259] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14736ae97833]
+ 9: [jwb0518:168259] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14736ae98172]
+ 9: [jwb0518:168259] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14736af04f87]
+ 9: [jwb0518:168259] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14736af06c7c]
+ 9: [jwb0518:168259] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14736af092c5]
+ 9: [jwb0518:168259] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 9: [jwb0518:168259] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14736aeb07a7]
+ 9: [jwb0518:168259] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14736d7107d7]
+ 9: [jwb0518:168259] *** End of error message ***
+28: [jwb0540:3135261] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x146fbe634bf0]
+28: [jwb0540:3135261] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x146fbe681edc]
+28: [jwb0540:3135261] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x146fbe634b46]
+28: [jwb0540:3135261] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x146fbe61e833]
+28: [jwb0540:3135261] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x146fbe61f172]
+28: [jwb0540:3135261] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x146fbe68bf87]
+28: [jwb0540:3135261] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x146fbe68dc7c]
+28: [jwb0540:3135261] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x146fbe6902c5]
+28: [jwb0540:3135261] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+28: [jwb0540:3135261] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x146fbe6377a7]
+28: [jwb0540:3135261] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x146fc0e977d7]
+28: [jwb0540:3135261] *** End of error message ***
+31: [jwb0540:3135260] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x152330f27bf0]
+31: [jwb0540:3135260] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x152330f74edc]
+31: [jwb0540:3135260] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x152330f27b46]
+31: [jwb0540:3135260] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x152330f11833]
+31: [jwb0540:3135260] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x152330f12172]
+31: [jwb0540:3135260] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x152330f7ef87]
+31: [jwb0540:3135260] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x152330f80c7c]
+31: [jwb0540:3135260] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x152330f832c5]
+31: [jwb0540:3135260] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+31: [jwb0540:3135260] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x152330f2a7a7]
+31: [jwb0540:3135260] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x15233378a7d7]
+31: [jwb0540:3135260] *** End of error message ***
+29: [jwb0540:3135259] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1501f3189bf0]
+29: [jwb0540:3135259] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1501f31d6edc]
+29: [jwb0540:3135259] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1501f3189b46]
+29: [jwb0540:3135259] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1501f3173833]
+29: [jwb0540:3135259] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1501f3174172]
+29: [jwb0540:3135259] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1501f31e0f87]
+29: [jwb0540:3135259] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1501f31e2c7c]
+29: [jwb0540:3135259] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1501f31e52c5]
+29: [jwb0540:3135259] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+29: [jwb0540:3135259] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1501f318c7a7]
+29: [jwb0540:3135259] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1501f59ec7d7]
+29: [jwb0540:3135259] *** End of error message ***
+30: [jwb0540:3135262] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14601432c833]
+30: [jwb0540:3135262] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14601432d172]
+30: [jwb0540:3135262] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x146014399f87]
+30: [jwb0540:3135262] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14601439bc7c]
+30: [jwb0540:3135262] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14601439e2c5]
+30: [jwb0540:3135262] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+30: [jwb0540:3135262] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1460143457a7]
+30: [jwb0540:3135262] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x146016ba57d7]
+30: [jwb0540:3135262] *** End of error message ***
+14: 
+14: 
+14: ----------------------------------------------------
+14: Exception on processing: 
+14: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+14: Aborting!
+14: ----------------------------------------------------
+12: 
+12: 
+12: ----------------------------------------------------
+12: Exception on processing: 
+12: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+12: Aborting!
+12: ----------------------------------------------------
+13: 
+13: 
+13: ----------------------------------------------------
+13: Exception on processing: 
+13: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+13: Aborting!
+13: ----------------------------------------------------
+14: double free or corruption (!prev)
+15: double free or corruption (!prev)
+12: double free or corruption (!prev)
+14: [jwb0533:2264357] *** Process received signal ***
+14: [jwb0533:2264357] Signal: Aborted (6)
+14: [jwb0533:2264357] Signal code:  (-6)
+15: [jwb0533:2264356] *** Process received signal ***
+12: [jwb0533:2264359] *** Process received signal ***
+12: [jwb0533:2264359] Signal: Aborted (6)
+12: [jwb0533:2264359] Signal code:  (-6)
+13: double free or corruption (!prev)
+15: [jwb0533:2264356] Signal: Aborted (6)
+15: [jwb0533:2264356] Signal code:  (-6)
+13: [jwb0533:2264358] *** Process received signal ***
+13: [jwb0533:2264358] Signal: Aborted (6)
+13: [jwb0533:2264358] Signal code:  (-6)
+15: [jwb0533:2264356] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x154d8c7a0bf0]
+12: [jwb0533:2264359] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x153a505d6bf0]
+12: [jwb0533:2264359] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x153a50623edc]
+12: [jwb0533:2264359] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x153a505d6b46]
+12: [jwb0533:2264359] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x153a505c0833]
+12: [jwb0533:2264359] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x153a505c1172]
+14: [jwb0533:2264357] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x151eab0a6bf0]
+14: [jwb0533:2264357] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x151eab0f3edc]
+14: [jwb0533:2264357] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x151eab0a6b46]
+13: [jwb0533:2264358] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1521480c3bf0]
+13: [jwb0533:2264358] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x152148110edc]
+13: [jwb0533:2264358] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1521480c3b46]
+13: [jwb0533:2264358] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1521480ad833]
+13: [jwb0533:2264358] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1521480ae172]
+13: [jwb0533:2264358] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x15214811af87]
+13: [jwb0533:2264358] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x15214811cc7c]
+13: [jwb0533:2264358] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x15214811f2c5]
+13: [jwb0533:2264358] [ 8] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1521480c67a7]
+13: [jwb0533:2264358] [ 9] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x15214a9267d7]
+13: [jwb0533:2264358] *** End of error message ***
+12: [jwb0533:2264359] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x153a5062df87]
+12: [jwb0533:2264359] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x153a5062fc7c]
+12: [jwb0533:2264359] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x153a506322c5]
+12: [jwb0533:2264359] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+12: [jwb0533:2264359] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x153a505d97a7]
+12: [jwb0533:2264359] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x153a52e397d7]
+12: [jwb0533:2264359] *** End of error message ***
+14: [jwb0533:2264357] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x151eab090833]
+14: [jwb0533:2264357] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x151eab091172]
+14: [jwb0533:2264357] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x151eab0fdf87]
+14: [jwb0533:2264357] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x151eab0ffc7c]
+14: [jwb0533:2264357] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x151eab1022c5]
+14: [jwb0533:2264357] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+14: [jwb0533:2264357] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x151eab0a97a7]
+14: [jwb0533:2264357] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x151ead9097d7]
+14: [jwb0533:2264357] *** End of error message ***
+15: [jwb0533:2264356] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x154d8c7ededc]
+15: [jwb0533:2264356] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x154d8c7a0b46]
+15: [jwb0533:2264356] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x154d8c78a833]
+15: [jwb0533:2264356] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x154d8c78b172]
+15: [jwb0533:2264356] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x154d8c7f7f87]
+15: [jwb0533:2264356] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x154d8c7f9c7c]
+15: [jwb0533:2264356] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x154d8c7fc2c5]
+15: [jwb0533:2264356] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+15: [jwb0533:2264356] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x154d8c7a37a7]
+15: [jwb0533:2264356] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x154d8f0037d7]
+15: [jwb0533:2264356] *** End of error message ***
+ 6: double free or corruption (!prev)
+ 6: [jwb0517:969947] *** Process received signal ***
+ 6: [jwb0517:969947] Signal: Aborted (6)
+ 6: [jwb0517:969947] Signal code:  (-6)
+ 5: 
+ 5: 
+ 5: ----------------------------------------------------
+ 5: Exception on processing: 
+ 5: Kokkos ERROR: Cuda memory space failed to allocate 540.4 MiB (label="memoryspace data").
+ 5: Aborting!
+ 5: ----------------------------------------------------
+ 5: double free or corruption (!prev)
+ 5: [jwb0517:969949] *** Process received signal ***
+ 5: [jwb0517:969949] Signal: Aborted (6)
+ 5: [jwb0517:969949] Signal code:  (-6)
+ 7: 
+ 7: 
+ 7: ----------------------------------------------------
+ 7: Exception on processing: 
+ 7: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+ 7: Aborting!
+ 7: ----------------------------------------------------
+ 7: double free or corruption (!prev)
+ 7: [jwb0517:969948] *** Process received signal ***
+ 7: [jwb0517:969948] Signal: Aborted (6)
+ 7: [jwb0517:969948] Signal code:  (-6)
+ 4: 
+ 4: 
+ 4: ----------------------------------------------------
+ 4: Exception on processing: 
+ 4: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+ 4: Aborting!
+ 4: ----------------------------------------------------
+ 4: double free or corruption (!prev)
+ 4: [jwb0517:969946] *** Process received signal ***
+ 4: [jwb0517:969946] Signal: Aborted (6)
+ 4: [jwb0517:969946] Signal code:  (-6)
+ 6: [jwb0517:969947] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x152611975bf0]
+ 6: [jwb0517:969947] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1526119c2edc]
+ 6: [jwb0517:969947] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x152611975b46]
+ 6: [jwb0517:969947] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x15261195f833]
+ 6: [jwb0517:969947] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x152611960172]
+ 6: [jwb0517:969947] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1526119ccf87]
+ 6: [jwb0517:969947] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1526119cec7c]
+ 6: [jwb0517:969947] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1526119d12c5]
+ 6: [jwb0517:969947] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 6: [jwb0517:969947] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1526119787a7]
+ 6: [jwb0517:969947] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1526141d87d7]
+ 6: [jwb0517:969947] *** End of error message ***
+ 5: [jwb0517:969949] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1539c7aedbf0]
+ 5: [jwb0517:969949] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1539c7b3aedc]
+ 5: [jwb0517:969949] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1539c7aedb46]
+ 5: [jwb0517:969949] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1539c7ad7833]
+ 5: [jwb0517:969949] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1539c7ad8172]
+ 5: [jwb0517:969949] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1539c7b44f87]
+ 5: [jwb0517:969949] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1539c7b46c7c]
+ 5: [jwb0517:969949] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1539c7b492c5]
+ 5: [jwb0517:969949] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 5: [jwb0517:969949] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1539c7af07a7]
+ 5: [jwb0517:969949] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1539ca3507d7]
+ 5: [jwb0517:969949] *** End of error message ***
+ 4: [jwb0517:969946] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1502ddc17bf0]
+ 4: [jwb0517:969946] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1502ddc64edc]
+ 4: [jwb0517:969946] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1502ddc17b46]
+ 4: [jwb0517:969946] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1502ddc01833]
+ 4: [jwb0517:969946] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1502ddc02172]
+ 4: [jwb0517:969946] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1502ddc6ef87]
+ 4: [jwb0517:969946] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1502ddc70c7c]
+ 4: [jwb0517:969946] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1502ddc732c5]
+ 4: [jwb0517:969946] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 4: [jwb0517:969946] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1502ddc1a7a7]
+ 4: [jwb0517:969946] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1502e047a7d7]
+ 4: [jwb0517:969946] *** End of error message ***
+ 7: [jwb0517:969948] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x145b25bf8bf0]
+ 7: [jwb0517:969948] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x145b25c45edc]
+ 7: [jwb0517:969948] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x145b25bf8b46]
+ 7: [jwb0517:969948] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x145b25be2833]
+ 7: [jwb0517:969948] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x145b25be3172]
+ 7: [jwb0517:969948] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x145b25c4ff87]
+ 7: [jwb0517:969948] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x145b25c51c7c]
+ 7: [jwb0517:969948] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x145b25c542c5]
+ 7: [jwb0517:969948] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 7: [jwb0517:969948] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x145b25bfb7a7]
+ 7: [jwb0517:969948] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x145b2845b7d7]
+ 7: [jwb0517:969948] *** End of error message ***
+21: 
+21: 
+21: ----------------------------------------------------
+21: Exception on processing: 
+21: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+21: Aborting!
+21: ----------------------------------------------------
+18: 
+18: 
+18: ----------------------------------------------------
+18: Exception on processing: 
+18: Kokkos ERROR: Cuda memory space failed to allocate 532.2 MiB (label="memoryspace data").
+18: Aborting!
+18: ----------------------------------------------------
+21: double free or corruption (!prev)
+19: double free or corruption (!prev)
+19: [jwb0534:3055220] *** Process received signal ***
+19: [jwb0534:3055220] Signal: Aborted (6)
+19: [jwb0534:3055220] Signal code:  (-6)
+18: double free or corruption (!prev)
+18: [jwb0534:3055222] *** Process received signal ***
+21: [jwb0538:2210487] *** Process received signal ***
+21: [jwb0538:2210487] Signal: Aborted (6)
+21: [jwb0538:2210487] Signal code:  (-6)
+18: [jwb0534:3055222] Signal: Aborted (6)
+18: [jwb0534:3055222] Signal code:  (-6)
+17: 
+17: 
+17: ----------------------------------------------------
+17: Exception on processing: 
+17: Kokkos ERROR: Cuda memory space failed to allocate 544.6 MiB (label="memoryspace data").
+17: Aborting!
+17: ----------------------------------------------------
+17: double free or corruption (!prev)
+17: [jwb0534:3055221] *** Process received signal ***
+17: [jwb0534:3055221] Signal: Aborted (6)
+17: [jwb0534:3055221] Signal code:  (-6)
+16: 
+16: 
+16: ----------------------------------------------------
+16: Exception on processing: 
+16: Kokkos ERROR: Cuda memory space failed to allocate 536.4 MiB (label="memoryspace data").
+16: Aborting!
+16: ----------------------------------------------------
+16: double free or corruption (!prev)
+16: [jwb0534:3055223] *** Process received signal ***
+16: [jwb0534:3055223] Signal: Aborted (6)
+16: [jwb0534:3055223] Signal code:  (-6)
+21: [jwb0538:2210487] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x148932d24bf0]
+21: [jwb0538:2210487] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x148932d71edc]
+21: [jwb0538:2210487] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x148932d24b46]
+21: [jwb0538:2210487] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x148932d0e833]
+21: [jwb0538:2210487] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x148932d0f172]
+21: [jwb0538:2210487] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x148932d7bf87]
+21: [jwb0538:2210487] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x148932d7dc7c]
+21: [jwb0538:2210487] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x148932d802c5]
+21: [jwb0538:2210487] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+21: [jwb0538:2210487] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x148932d277a7]
+21: [jwb0538:2210487] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1489355877d7]
+21: [jwb0538:2210487] *** End of error message ***
+ 1: [jwb0516:928060] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x150e0b24dbf0]
+ 1: [jwb0516:928060] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x150e0b29aedc]
+ 1: [jwb0516:928060] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x150e0b24db46]
+ 1: [jwb0516:928060] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x150e0b237833]
+ 1: [jwb0516:928060] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x150e0b238172]
+ 1: [jwb0516:928060] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x150e0b2a4f87]
+ 1: [jwb0516:928060] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x150e0b2a6c7c]
+ 1: [jwb0516:928060] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x150e0b2a92c5]
+ 1: [jwb0516:928060] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+ 1: [jwb0516:928060] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x150e0b2507a7]
+ 1: [jwb0516:928060] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x150e0dab07d7]
+ 1: [jwb0516:928060] *** End of error message ***
+17: [jwb0534:3055221] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x1539db455bf0]
+17: [jwb0534:3055221] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x1539db4a2edc]
+17: [jwb0534:3055221] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x1539db455b46]
+18: [jwb0534:3055222] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x147c0c1febf0]
+18: [jwb0534:3055222] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x147c0c24bedc]
+18: [jwb0534:3055222] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x147c0c1feb46]
+18: [jwb0534:3055222] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x147c0c1e8833]
+18: [jwb0534:3055222] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x147c0c1e9172]
+18: [jwb0534:3055222] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x147c0c255f87]
+18: [jwb0534:3055222] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x147c0c257c7c]
+18: [jwb0534:3055222] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x147c0c25a2c5]
+18: [jwb0534:3055222] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+18: [jwb0534:3055222] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x147c0c2017a7]
+18: [jwb0534:3055222] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x147c0ea617d7]
+18: [jwb0534:3055222] *** End of error message ***
+16: [jwb0534:3055223] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x14bbecb3fbf0]
+16: [jwb0534:3055223] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x14bbecb8cedc]
+16: [jwb0534:3055223] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x14bbecb3fb46]
+16: [jwb0534:3055223] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x14bbecb29833]
+16: [jwb0534:3055223] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x14bbecb2a172]
+16: [jwb0534:3055223] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x14bbecb96f87]
+16: [jwb0534:3055223] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x14bbecb98c7c]
+16: [jwb0534:3055223] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x14bbecb9b2c5]
+16: [jwb0534:3055223] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+16: [jwb0534:3055223] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x14bbecb427a7]
+16: [jwb0534:3055223] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x14bbef3a27d7]
+16: [jwb0534:3055223] *** End of error message ***
+19: [jwb0534:3055220] [ 0] /usr/lib64/libc.so.6(+0x3ebf0)[0x15332c4acbf0]
+19: [jwb0534:3055220] [ 1] /usr/lib64/libc.so.6(+0x8bedc)[0x15332c4f9edc]
+19: [jwb0534:3055220] [ 2] /usr/lib64/libc.so.6(raise+0x16)[0x15332c4acb46]
+19: [jwb0534:3055220] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x15332c496833]
+19: [jwb0534:3055220] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x15332c497172]
+19: [jwb0534:3055220] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x15332c503f87]
+19: [jwb0534:3055220] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x15332c505c7c]
+19: [jwb0534:3055220] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x15332c5082c5]
+19: [jwb0534:3055220] [ 8] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x15332c4af7a7]
+19: [jwb0534:3055220] [ 9] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x15332ed0f7d7]
+19: [jwb0534:3055220] *** End of error message ***
+17: [jwb0534:3055221] [ 3] /usr/lib64/libc.so.6(abort+0xd3)[0x1539db43f833]
+17: [jwb0534:3055221] [ 4] /usr/lib64/libc.so.6(+0x29172)[0x1539db440172]
+17: [jwb0534:3055221] [ 5] /usr/lib64/libc.so.6(+0x95f87)[0x1539db4acf87]
+17: [jwb0534:3055221] [ 6] /usr/lib64/libc.so.6(+0x97c7c)[0x1539db4aec7c]
+17: [jwb0534:3055221] [ 7] /usr/lib64/libc.so.6(free+0x55)[0x1539db4b12c5]
+17: [jwb0534:3055221] [ 8] ./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x24)[0x66e6f4]
+17: [jwb0534:3055221] [ 9] /usr/lib64/libc.so.6(__cxa_finalize+0xb7)[0x1539db4587a7]
+17: [jwb0534:3055221] [10] /p/home/jusers/prusak1/juwels/sw/dealii/lib/libdeal_II.so.9.8.0-pre(+0x1f4f7d7)[0x1539ddcb87d7]
+17: [jwb0534:3055221] *** End of error message ***
+srun: error: jwb0539: tasks 24-27: Aborted (core dumped)
+srun: error: jwb0518: tasks 8-11: Aborted (core dumped)
+srun: error: jwb0534: tasks 16-19: Aborted (core dumped)
+srun: error: jwb0533: tasks 12-15: Aborted (core dumped)
+srun: error: jwb0517: tasks 4-7: Aborted (core dumped)
+srun: error: jwb0540: tasks 28-31: Aborted (core dumped)
+srun: error: jwb0538: tasks 20-23: Aborted (core dumped)
+srun: error: jwb0516: tasks 0-3: Aborted (core dumped)
