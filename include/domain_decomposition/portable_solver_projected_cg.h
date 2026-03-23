@@ -10,10 +10,6 @@
 #include <deal.II/lac/solver.h>
 #include <deal.II/lac/solver_control.h>
 
-#include "domain_decomposition/portable_interface_solver.h"
-#include "domain_decomposition/subdomain_dof_handler.h"
-#include "operators/portable_subdomain_laplace_operator.h"
-
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable

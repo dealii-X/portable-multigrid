@@ -3,6 +3,7 @@
 
 #include <deal.II/base/enable_observer_pointer.h>
 
+#include <deal.II/distributed/fully_distributed_tria.h>
 #include <deal.II/distributed/tria.h>
 
 #include <deal.II/grid/tria.h>
@@ -39,15 +40,23 @@ public:
   void
   clear();
 
+  template <typename TriaType>
   void
-  create_subdomain_triangulation(
-    parallel::distributed::Triangulation<dim> &distributed_triangulation);
+  create_subdomain_triangulation(TriaType &distributed_triangulation);
+
+  // void
+  // create_subdomain_triangulation(
+  //   parallel::fullydistributed::Triangulation<dim>
+  //   &distributed_triangulation);
 
   const Triangulation<dim> &
   get_triangulation() const;
 
   const SubdomainTopologyInfo<dim> &
   get_topology_info() const;
+
+  void
+  refine_global(unsigned int n_refinement_cycles);
 
 
 private:
@@ -87,10 +96,17 @@ SubdomainTriangulation<dim>::get_topology_info() const
 
 template <int dim>
 void
-SubdomainTriangulation<dim>::create_subdomain_triangulation(
-  parallel::distributed::Triangulation<dim> &distributed_triangulation)
+SubdomainTriangulation<dim>::refine_global(unsigned int n_refinement_cycles)
 {
+  subdomain_triangulation.refine_global(n_refinement_cycles);
+}
 
+template <int dim>
+template <typename TriaType>
+void
+SubdomainTriangulation<dim>::create_subdomain_triangulation(
+  TriaType &distributed_triangulation)
+{
   this->clear();
   this->topology_info.subdomain_id = Utilities::MPI::this_mpi_process(
     distributed_triangulation.get_mpi_communicator());

@@ -35,9 +35,10 @@
 #include <memory>
 
 #include "domain_decomposition/portable_bnn_preconditioner.h"
-#include "domain_decomposition/portable_interface_solver.h"
+#include "domain_decomposition/portable_schur_interface_operator.h"
 #include "domain_decomposition/portable_solver_projected_cg.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
+#include "domain_decomposition/subdomain_hyper_cube_triangulation.h"
 #include "domain_decomposition/subdomain_triangulation.h"
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_tranfer.h"
@@ -87,7 +88,7 @@ private:
   solve_interface();
 
   void
-  post_process_subdomain_solution();
+  postprocess_subdomain_solution();
 
   void
   output_results(const unsigned int cycle) const;
@@ -133,8 +134,8 @@ private:
   std::unique_ptr<Portable::SubdomainLaplaceOperator<dim, fe_degree, double>>
     subdomain_matrix;
 
-  std::unique_ptr<Portable::InterfaceSolver<dim, fe_degree, double>>
-    interface_solver;
+  std::unique_ptr<Portable::SchurInterfaceOperator<dim, fe_degree, double>>
+    interface_operator;
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, fe_degree, double>>
     bnn_preconditioner;
@@ -195,6 +196,17 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations()
   time_details << "           Subdomain triangulations extracted    (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's'
                << std::endl;
+
+  const double subdomain_diameter =
+    GridTools::diameter(subdomain_triangulation.get_triangulation());
+
+  const double subdomain_mesh_size = GridTools::maximal_cell_diameter(
+    subdomain_triangulation.get_triangulation());
+
+  std::cout << "  On subdomain "
+            << Utilities::MPI::this_mpi_process(mpi_communicator)
+            << ": H/h = " << subdomain_diameter / subdomain_mesh_size
+            << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -325,9 +337,9 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
   Kokkos::fence();
   Timer time;
 
-  interface_solver =
-    std::make_unique<Portable::InterfaceSolver<dim, fe_degree, double>>(
-      subdomain_dof_handler, subdomain_constraints, *subdomain_matrix);
+  interface_operator =
+    std::make_unique<Portable::SchurInterfaceOperator<dim, fe_degree, double>>(
+      *subdomain_matrix);
 
   rhs_schur_device.reinit(
     this->subdomain_dof_handler.get_interface_vector_partitioner());
@@ -346,27 +358,28 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
 {
-  Kokkos::fence();
   Timer time;
 
-  interface_solver->setup_coarse_matrix();
+  Kokkos::fence();
+  this->bnn_preconditioner =
+    std::make_unique<Portable::BNNPreconditioner<dim, fe_degree, double>>(
+      *interface_operator, *subdomain_matrix);
+  Kokkos::fence();
+  setup_time += time.wall_time();
+  time_details << "           BNN preconditioner setup            (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's'
+               << std::endl;
 
   Kokkos::fence();
+  time.restart();
+  this->bnn_preconditioner->setup_coarse_matrix();
+
   setup_time += time.wall_time();
   time_details << "           Coarse matrix for BNN computed      (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's'
                << std::endl;
 
   Kokkos::fence();
-  time.restart();
-  this->bnn_preconditioner =
-    std::make_unique<Portable::BNNPreconditioner<dim, fe_degree, double>>(
-      subdomain_dof_handler, *interface_solver, *subdomain_matrix);
-  Kokkos::fence();
-  setup_time += time.wall_time();
-  time_details << "           BNN preconditioner setup            (CPU/wall) "
-               << time.cpu_time() << "s/" << time.wall_time() << 's'
-               << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -428,8 +441,8 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
                << std::endl;
 
   Kokkos::fence();
-  this->subdomain_matrix->assemble_rhs_schur(rhs_schur_device,
-                                             subdomain_rhs_device);
+  this->interface_operator->assemble_rhs_schur(rhs_schur_device,
+                                               subdomain_rhs_device);
   Kokkos::fence();
   setup_time += time.wall_time();
   time_details << "           Schur RHS assembled                 (CPU/wall) "
@@ -444,26 +457,16 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 {
   Timer time;
   Kokkos::fence();
-  SolverControl solver_control(rhs_schur_device.size(),
-                               1e-9 * rhs_schur_device.l2_norm());
-
-  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(
-  //   solver_control);
-
-  // pcout << "RHS Schur norm = " << rhs_schur_device.l2_norm() << std::endl;
-
-  // rhs_schur_device.print(std::cout);
+  ReductionControl solver_control(1000, 1e-16, 1e-9);
 
   Portable::SolverProjectedCG<
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
     cg(solver_control);
 
   solution_interface_device = 0.;
-  cg.solve(*interface_solver,
+  cg.solve(*interface_operator,
            solution_interface_device,
            rhs_schur_device,
-           //  PreconditionIdentity());
            *bnn_preconditioner);
 
   solution_interface_device.update_ghost_values();
@@ -477,7 +480,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::post_process_subdomain_solution()
+LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 {
   Timer time;
   Kokkos::fence();
@@ -606,19 +609,49 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
   // ReductionControl solver_control(rhs_schur_device.size(),
   //                                 1e-9 * rhs_schur_device.l2_norm());
 
-  ReductionControl solver_control(rhs_schur_device.size(),1e-16, 1e-9);
+  // ReductionControl solver_control(rhs_schur_device.size(),1e-16, 1e-9);
 
 
 
-  Portable::SolverProjectedCG<
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-    cg(solver_control);
+  // Portable::SolverProjectedCG<
+  //   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+  //   cg(solver_control);
 
-  solution_interface_device = 0.;
-  cg.solve(*interface_solver,
-           solution_interface_device,
-           rhs_schur_device,
-           *bnn_preconditioner);
+  // solution_interface_device = 0.;
+  // cg.solve(*interface_operator,
+  //          solution_interface_device,
+  //          rhs_schur_device,
+  //          *bnn_preconditioner);
+
+
+  SubdomainHyperCubeTriangulation<dim> tria(this->mpi_communicator);
+  tria.generate_subdomain_triangulations(2);
+
+  // tria.refine_global(1);
+
+  tria.save_triangulations();
+
+
+  DoFHandler<dim> dh_fully_distributed;
+  dh_fully_distributed.reinit(tria.get_distributed_triangulation());
+  dh_fully_distributed.distribute_dofs(fe);
+
+  locally_owned_dofs = dh_fully_distributed.locally_owned_dofs();
+  locally_relevant_dofs =
+    DoFTools::extract_locally_relevant_dofs(dh_fully_distributed);
+
+  SubdomainDoFHandler<dim> dh_subdomain;
+
+  dh_subdomain.reinit(tria.get_subdomain_triangulation(), dh_fully_distributed);
+  dh_subdomain.distribute_subdomain_dofs();
+
+  pcout << "           Total number of DoFs: " << dh_fully_distributed.n_dofs()
+        << std::endl;
+
+
+  std::cout << "           DoFs on subdomain "
+            << Utilities::MPI::this_mpi_process(mpi_communicator) << ": "
+            << dof_handler.n_dofs() << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -627,7 +660,7 @@ LaplaceProblem<dim, fe_degree>::run()
 {
   setup_grid(2);
 
-  for (unsigned int cycle = 0; cycle < 9; ++cycle)
+  for (unsigned int cycle = 0; cycle < 8; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -637,6 +670,7 @@ LaplaceProblem<dim, fe_degree>::run()
 
       pcout << "N_cells = " << triangulation.n_global_active_cells()
             << std::endl;
+
 
       setup_dofs();
 
@@ -656,7 +690,7 @@ LaplaceProblem<dim, fe_degree>::run()
 
       // test_coarse_problem();
 
-      // post_process_subdomain_solution();
+      // postprocess_subdomain_solution();
 
       // output_results(cycle);
     }
