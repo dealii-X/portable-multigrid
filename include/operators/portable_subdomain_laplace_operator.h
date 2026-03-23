@@ -83,18 +83,6 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
         &src) const;
 
-    void
-    vmult_range(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
-
-    void
-    vmult_neumann(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
-
 
     void
     Tvmult(
@@ -390,15 +378,15 @@ namespace Portable
   //   interface_vector.zero_out_ghost_values();
   // }
 
-  template <int dim, int fe_degree, typename number>
-  void
-  SubdomainLaplaceOperator<dim, fe_degree, number>::dirichlet_solve_subdomain(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
-  {
-    dst = 0.;
-    SolverControl solver_control(src.size(), 1e-9 * src.l2_norm());
+  // template <int dim, int fe_degree, typename number>
+  // void
+  // SubdomainLaplaceOperator<dim, fe_degree, number>::dirichlet_solve_subdomain(
+  //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+  //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
+  //   const
+  // {
+  //   dst = 0.;
+  //   SolverControl solver_control(src.size(), 1e-9 * src.l2_norm());
 
   //   SolverCG<LinearAlgebra::distributed::Vector<double,
   //   MemorySpace::Default>>
@@ -657,13 +645,13 @@ namespace Portable
     //     }
     // }
 
-    Kokkos::fence();
+    // Kokkos::fence();
 
-    std::cout << "BEFORE READ SRC" << " PROCESS "
-              << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
+    // std::cout << "BEFORE READ SRC" << " PROCESS "
+    //           << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
 
-    if (interface_dof_indices_subdomain.size() > 0)
-      {
+    // if (interface_dof_indices_subdomain.size() > 0)
+    //   {
         // 1. Create a "Mirror" of the device view on the Host (CPU)
         // auto host_indices =
         //   Kokkos::create_mirror_view(interface_dof_indices_subdomain);
@@ -672,18 +660,18 @@ namespace Portable
         // Kokkos::deep_copy(host_indices, interface_dof_indices_subdomain);
 
 
-        Kokkos::parallel_for(
-          "read_src_interface",
-          interface_dof_indices_subdomain.size(),
-          KOKKOS_LAMBDA(const int i) {
-            const auto idx = interface_dof_indices_subdomain(i);
-            t_src(idx)     = src_view(i);
-            // Kokkos::printf("%d" , idx);
-            // Kokkos::printf("P%d:idx%d ",
-            //                this->subdomain_dof_handler->get_subdomain_id(),
-            //                idx);
-          });
-        // std::cout << "Rank " <<
+        // Kokkos::parallel_for(
+        //   "read_src_interface",
+        //   interface_dof_indices_subdomain.size(),
+        //   KOKKOS_LAMBDA(const int i) {
+        //     const auto idx = interface_dof_indices_subdomain(i);
+        //     t_src(idx)     = src_view(i);
+        //     // Kokkos::printf("%d" , idx);
+        //     // Kokkos::printf("P%d:idx%d ",
+        //     //                this->subdomain_dof_handler->get_subdomain_id(),
+        //     //                idx);
+        //   });
+        // // std::cout << "Rank " <<
         // this->subdomain_dof_handler->get_subdomain_id()
         //           << " indices: [ ";
         // for (unsigned int i = 0; i < host_indices.size(); ++i)
@@ -691,21 +679,21 @@ namespace Portable
         //     std::cout << host_indices(i) << " ";
         //   }
         // std::cout << "]" << std::endl;
-      }
-    else
-      std::cout << "ZERO ENTIES ON PROCESS "
-                << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
+    //   }
+    // else
+    //   std::cout << "ZERO ENTIES ON PROCESS "
+    //             << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
 
-    std::cout << std::endl;
-    Kokkos::fence();
+    // std::cout << std::endl;
+    // Kokkos::fence();
 
-    std::cout << "AFTER READ SRC" << " PROCESS "
-              << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
+    // std::cout << "AFTER READ SRC" << " PROCESS "
+    //           << this->subdomain_dof_handler->get_subdomain_id() << std::endl;
 
 
-    // apply Schur complement operators A_GG*src_interface and A_IG *
-    // src_interface
-    vmult_range(temp_vector_dst, temp_vector_src);
+    // // apply Schur complement operators A_GG*src_interface and A_IG *
+    // // src_interface
+    // vmult_range(temp_vector_dst, temp_vector_src);
 
 
 
