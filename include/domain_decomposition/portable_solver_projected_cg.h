@@ -1,7 +1,6 @@
 #ifndef portable_solver_projected_cg_h
 #define portable_solver_projected_cg_h
 
-
 #include <deal.II/base/config.h>
 
 #include <deal.II/base/enable_observer_pointer.h>
@@ -28,14 +27,11 @@ namespace Portable
      * Constructor.
      */
     SolverProjectedCG(SolverControl &cn, VectorMemory<VectorType> &mem);
-    //   const AdditionalData     &data = AdditionalData());
 
     /**
-     * Constructor. Use an object of type GrowingVectorMemory as a default to
-     * allocate memory.
+     * Constructor.
      */
     SolverProjectedCG(SolverControl &cn);
-    //   const AdditionalData &data = AdditionalData());
 
     /**
      * Virtual destructor.
@@ -52,7 +48,6 @@ namespace Portable
           const VectorType         &b,
           const PreconditionerType &preconditioner);
   };
-
 
 
 
@@ -86,14 +81,10 @@ namespace Portable
     typename VectorMemory<VectorType>::Pointer v_pointer(this->memory);
     typename VectorMemory<VectorType>::Pointer z_pointer(this->memory);
 
-
-
     VectorType &r = *r_pointer;
     VectorType &p = *p_pointer;
     VectorType &v = *v_pointer;
     VectorType &z = *z_pointer;
-
-
 
     // resize the vectors, but do not set the values since they'd be
     // overwritten soon anyway.
@@ -110,11 +101,8 @@ namespace Portable
 
     preconditioner.balance(x, b);
 
-    // x.print(std::cout);
-
     // compute residual. if vector is zero, then short-circuit the full
     // computation
-
     if (!x.all_zero())
       {
         A.vmult(r, x);
@@ -122,10 +110,6 @@ namespace Portable
       }
     else
       r.equ(1., b);
-
-    // r.print(std::cout);
-
-
 
     double residual_norm = r.l2_norm();
     solver_state         = this->iteration_status(0, residual_norm, x);
@@ -137,9 +121,6 @@ namespace Portable
       {
         it++;
 
-        // std::cout << "Iteration " << it << std::endl;
-
-        // const number old_alpha = alpha;
         const number old_r_dot_preconditioner_dot_r =
           r_dot_preconditioner_dot_r;
 
@@ -176,17 +157,13 @@ namespace Portable
         const number p_dot_A_dot_p = p * v;
         Assert(std::abs(p_dot_A_dot_p) != 0., ExcDivideByZero());
         alpha = r_dot_preconditioner_dot_r / p_dot_A_dot_p;
-        // std::cout << "alpha = " << alpha << std::endl;
 
         x.add(alpha, p);
 
-        // x.print(std::cout);
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
         if (A.enable_printing())
           std::cout << "residual_norm = " << residual_norm << std::endl;
-
-
 
         solver_state = this->iteration_status(it, residual_norm, x);
       }
@@ -194,8 +171,6 @@ namespace Portable
     AssertThrow(solver_state == SolverControl::success,
                 SolverControl::NoConvergence(it, residual_norm));
   }
-
-
 
 } // namespace Portable
 

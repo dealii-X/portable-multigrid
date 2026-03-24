@@ -147,7 +147,6 @@ private:
   LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
     solution_interface_device;
 
-
   double             setup_time;
   ConditionalOStream pcout;
   ConditionalOStream time_details;
@@ -484,7 +483,7 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 {
   Timer time;
   Kokkos::fence();
-  this->subdomain_matrix->reconstruct_subdomain_solution_from_interface(
+  this->interface_operator->reconstruct_subdomain_solution_from_interface(
     subdomain_solution_device, solution_interface_device, subdomain_rhs_device);
 
   LinearAlgebra::ReadWriteVector<double> rw_vector(

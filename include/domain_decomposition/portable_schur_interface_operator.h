@@ -44,33 +44,8 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
         &rhs_subdomain) const;
 
-    // void
-    // coarse_to_global_interface(
-    //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-    //                        &interface_vector,
-    //   const Vector<number> &coarse_vector) const;
-
-    // void
-    // global_interface_to_coarse(
-    //   Vector<number> &coarse_vector,
-    //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-    //     &interface_vector) const;
-
-
-    // void
-    // setup_coarse_matrix();
-
-    // void
-    // apply_coarse_preconditioner(
-    //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-    //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-    //     &src) const;
-
     bool
-    enable_printing() const
-    {
-      return (this->subdomain_dof_handler->get_subdomain_id() == 0);
-    }
+    enable_printing() const;
 
     void
     dirichlet_solve_subdomain(
@@ -104,24 +79,11 @@ namespace Portable
 
     ObserverPointer<const SubdomainDoFHandler<dim>> subdomain_dof_handler;
 
-    // LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-    //   coarse_vector;
-
-    // const unsigned int coarse_problem_rank;
-    // const unsigned int n_subdomains;
-    // const unsigned int this_subdomain;
-
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       interface_dof_indices_subdomain;
 
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
       interface_weights;
-
-    // LAPACKFullMatrix<number> coarse_matrix;
-
-    // mutable std::vector<number> temp_coarse_gather;
-    // mutable Vector<number>      temp_coarse_rhs;
-    // mutable Vector<number>      temp_coarse_solution;
 
     mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
       temp_subdomain_vector_src, temp_subdomain_vector_dst,
@@ -174,18 +136,11 @@ namespace Portable
     const SubdomainLaplaceOperator<dim, fe_degree, number> &subdomain_operator)
     : subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
-    // , coarse_problem_rank(subdomain_dof_handler->n_subdomains() - 1)
-    // , n_subdomains(subdomain_dof_handler->n_subdomains())
-    // , this_subdomain(subdomain_dof_handler->get_subdomain_id())
     , interface_dof_indices_subdomain(
         subdomain_operator.get_interface_dof_indices_subdomain())
     , subdomain_dirichlet_operator(subdomain_operator)
     , subdomain_neumann_operator(subdomain_operator)
   {
-    // temp_coarse_gather.resize(n_subdomains);
-    // temp_coarse_rhs.reinit(n_subdomains);
-    // temp_coarse_solution.reinit(n_subdomains);
-
     this->subdomain_operator->initialize_dof_vector(
       this->temp_subdomain_vector_src);
     this->subdomain_operator->initialize_dof_vector(
@@ -238,151 +193,6 @@ namespace Portable
   {
     return interface_weights;
   }
-
-  // template <int dim, int fe_degree, typename number>
-  // void
-  // SchurInterfaceOperator<dim, fe_degree, number>::global_interface_to_coarse(
-  //   Vector<number> &coarse_vector,
-  //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //     &interface_vector) const
-  // {
-  //   Assert(interface_vector.get_partitioner() ==
-  //            this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("Interface vector is not initialized correctly."));
-
-
-  //   number subdomain_value = 0.;
-
-  //   this->subdomain_operator->subdomain_interface_to_coarse(subdomain_value,
-  //                                                           interface_vector);
-
-  //   this->temp_coarse_gather = Utilities::MPI::gather(
-  //     this->subdomain_dof_handler->get_mpi_communicator(),
-  //     subdomain_value,
-  //     this->coarse_problem_rank);
-
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       Assert(this->temp_coarse_gather.size() == this->n_subdomains,
-  //              ExcMessage("Number of values gathered does not match number of
-  //                        subdomains."));
-  //       coarse_vector = 0.;
-  //       for (unsigned int i = 0; i < this->temp_coarse_gather.size(); ++i)
-  //         coarse_vector[i] = this->temp_coarse_gather[i];
-  //     }
-  // }
-
-  // template <int dim, int fe_degree, typename number>
-  // void
-  // SchurInterfaceOperator<dim, fe_degree, number>::coarse_to_global_interface(
-  //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //                        &interface_vector,
-  //   const Vector<number> &coarse_vector) const
-  // {
-  //   Assert(interface_vector.get_partitioner() ==
-  //            this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("Interface vector is not initialized correctly."));
-
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       for (unsigned int i = 0; i < coarse_vector.size(); ++i)
-  //         this->temp_coarse_gather[i] = coarse_vector[i];
-  //     }
-
-  //   const number subdomain_value = Utilities::MPI::scatter(
-  //     this->subdomain_dof_handler->get_mpi_communicator(),
-  //     this->temp_coarse_gather,
-  //     this->coarse_problem_rank);
-
-  //   this->subdomain_operator->coarse_to_subdomain_interface(interface_vector,
-  //                                                           subdomain_value);
-  //   interface_vector.compress(VectorOperation::add);
-  //   interface_vector.update_ghost_values();
-  // }
-
-
-  // template <int dim, int fe_degree, typename number>
-  // void
-  // SchurInterfaceOperator<dim, fe_degree,
-  // number>::apply_coarse_preconditioner(
-  //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-  //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //   &src) const
-  // {
-  //   Assert(
-  //     dst.get_partitioner() ==
-  //       this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's
-  //        interface vector partitioner."));
-  //   Assert(
-  //     src.get_partitioner() ==
-  //       this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's
-  //       interface vector partitioner."));
-
-  //   this->temp_coarse_rhs = 0.;
-
-  //   this->global_interface_to_coarse(this->temp_coarse_rhs, src);
-
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       this->temp_coarse_solution = 0.;
-
-  //       this->coarse_matrix.vmult(this->temp_coarse_solution,
-  //                                 this->temp_coarse_rhs);
-  //     }
-
-  //   this->coarse_to_global_interface(dst, this->temp_coarse_solution);
-  // }
-
-  // template <int dim, int fe_degree, typename number>
-  // void
-  // SchurInterfaceOperator<dim, fe_degree, number>::setup_coarse_matrix()
-  // {
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     coarse_matrix.reinit(this->n_subdomains, this->n_subdomains);
-
-  //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default> phi_j(
-  //     this->subdomain_dof_handler->get_interface_vector_partitioner()),
-  //     S_phi_j(this->subdomain_dof_handler->get_interface_vector_partitioner());
-
-  //   Vector<number> e_j(this->n_subdomains),
-  //   coarse_column(this->n_subdomains);
-
-  //   for (unsigned int j = 0; j < this->n_subdomains; ++j)
-  //     {
-  //       e_j = 0.;
-
-  //       if (this->this_subdomain == this->coarse_problem_rank)
-  //         e_j[j] = 1.;
-
-  //       this->coarse_to_global_interface(phi_j, e_j);
-
-  //       // this->subdomain_operator->vmult_schur(S_phi_j, phi_j);
-
-  //       this->vmult(S_phi_j, phi_j);
-
-  //       this->global_interface_to_coarse(coarse_column, S_phi_j);
-
-  //       if (this->this_subdomain == this->coarse_problem_rank)
-  //         for (unsigned int i = 0; i < this->n_subdomains; ++i)
-  //           coarse_matrix(i, j) = coarse_column[i];
-  //     }
-
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       coarse_matrix.compute_inverse_svd(1e-12);
-
-  //       // std::cout << "Singular values of the coarse matrix: " <<
-  //       std::endl;
-  //       // for (unsigned int i = 0; i < this->n_subdomains; ++i)
-  //       //   std::cout << coarse_matrix.singular_value(i) << " ";
-  //       // std::cout << std::endl;
-  //     }
-  // }
-
 
   template <int dim, int fe_degree, typename number>
   void
@@ -440,14 +250,16 @@ namespace Portable
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size());
 
+
+    const auto interface_dofs = this->interface_dof_indices_subdomain;
+
     // read src interface values and apply weights
     temp_subdomain_vector_src = 0;
     Kokkos::parallel_for(
       "read_src_subdomain_neumann",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        t_subdomain_src_view(interface_dof_indices_subdomain(i)) =
-          weights_view(i) * src_view(i);
+        t_subdomain_src_view(interface_dofs(i)) = weights_view(i) * src_view(i);
       });
 
     SolverControl solver_control(temp_subdomain_vector_src.size(),
@@ -477,10 +289,9 @@ namespace Portable
     // apply weights and write dst interface values
     Kokkos::parallel_for(
       "write_dst_subdomain_neumann",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        dst_view(i) = weights_view(i) *
-                      t_subdomain_dst_view(interface_dof_indices_subdomain(i));
+        dst_view(i) = weights_view(i) * t_subdomain_dst_view(interface_dofs(i));
       });
 
     dst.compress(VectorOperation::add);
@@ -528,13 +339,14 @@ namespace Portable
       t_subdomain_work_view(temp_subdomain_vector_work.get_values(),
                             temp_subdomain_vector_work.size());
 
+
+    const auto interface_dofs = this->interface_dof_indices_subdomain;
+
     // read interface values into the subdomain vector
     temp_subdomain_vector_src = 0.;
     Kokkos::parallel_for(
-      "read_src_interface",
-      interface_dof_indices_subdomain.size(),
-      KOKKOS_LAMBDA(const int i) {
-        t_subdomain_src_view(interface_dof_indices_subdomain(i)) = src_view(i);
+      "read_src_interface", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
+        t_subdomain_src_view(interface_dofs(i)) = src_view(i);
       });
 
     // Apply Schur complement operators w = A_GG*x and v = A_IG *x
@@ -548,28 +360,25 @@ namespace Portable
     // zero out entries of z corresponding to interface dofs
     Kokkos::parallel_for(
       "zero_out_interface_work",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        // const auto idx             = interface_dof_indices_subdomain(i);
-        t_subdomain_work_view(interface_dof_indices_subdomain(i)) = 0.;
+        t_subdomain_work_view(interface_dofs(i)) = 0.;
       });
 
     // apply vv = A_GI * z
     this->subdomain_operator->vmult_interface_cell_range(
       temp_subdomain_vector_src, temp_subdomain_vector_work);
 
-
     // write result y = w-vv
     Kokkos::parallel_for(
       "distribute_interface_dofs",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        const auto idx = interface_dof_indices_subdomain(i);
+        const auto idx = interface_dofs(i);
         number     output_value =
           t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
         Kokkos::atomic_add(&dst_view(i), output_value);
       });
-
 
     dst.compress(VectorOperation::add);
     src.zero_out_ghost_values();
@@ -592,6 +401,7 @@ namespace Portable
 
     rhs_schur = 0.;
 
+    const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(),
                                             rhs_subdomain.size());
@@ -611,9 +421,9 @@ namespace Portable
     // distribute interface dofs into rhs_schur: F_G - A_GI *A_II^{-1} * F_I
     Kokkos::parallel_for(
       "distribute_interface_dofs",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        const auto idx_subdomain = interface_dof_indices_subdomain(i);
+        const auto idx_subdomain = interface_dofs(i);
         number     output_value  = rhs_subdomain_view(idx_subdomain) -
                               t_subdomain_dst_view(idx_subdomain);
         Kokkos::atomic_add(&rhs_schur_view(i), output_value);
@@ -644,6 +454,7 @@ namespace Portable
 
     subdomain_solution = 0.;
 
+    const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(),
                                             rhs_subdomain.size()),
@@ -663,9 +474,9 @@ namespace Portable
     temp_subdomain_vector_src = 0.;
     Kokkos::parallel_for(
       "read_interface_solution",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        t_subdomain_src_view(interface_dof_indices_subdomain(i)) =
+        t_subdomain_src_view(interface_dofs(i)) =
           interface_solution_view(i);
       });
 
@@ -684,15 +495,13 @@ namespace Portable
     // distribute interface dofs into subdomain solution
     Kokkos::parallel_for(
       "distribute_interface_dofs",
-      interface_dof_indices_subdomain.size(),
+      interface_dofs.size(),
       KOKKOS_LAMBDA(const int i) {
-        subdomain_solution_view(interface_dof_indices_subdomain(i)) =
+        subdomain_solution_view(interface_dofs(i)) =
           interface_solution_view(i);
       });
 
     subdomain_solution.compress(VectorOperation::add);
-
-    // subdomain_solution.update_ghost_values();
   }
 
 
@@ -722,6 +531,12 @@ namespace Portable
       ->size();
   }
 
+  template <int dim, int fe_degree, typename number>
+  bool
+  SchurInterfaceOperator<dim, fe_degree, number>::enable_printing() const
+  {
+    return (this->subdomain_dof_handler->get_subdomain_id() == 0);
+  }
 
 } // namespace Portable
 

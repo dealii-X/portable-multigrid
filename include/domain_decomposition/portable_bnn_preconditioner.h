@@ -163,50 +163,6 @@ namespace Portable
     dst.sadd(-1., src);
   }
 
-
-  /**
-   * Apply the coarse component of the BNN preconditioner: R_0^T*S_0^{-1}*R_0
-   */
-  // template <int dim, int fe_degree, typename number>
-  // void
-  // SchurInterfaceOperator<dim, fe_degree,
-  // number>::apply_coarse_preconditioner(
-  //   LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-  //   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //   &src) const
-  // {
-  //   Assert(
-  //     dst.get_partitioner() ==
-  //       this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's
-  //        interface vector partitioner."));
-  //   Assert(
-  //     src.get_partitioner() ==
-  //       this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's
-  //       interface vector partitioner."));
-
-  //   this->temp_coarse_rhs = 0.;
-
-  //   // project from global interface to coarse space
-  //   this->global_interface_to_coarse(this->temp_coarse_rhs, src);
-
-  //   // solve coarse problem
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       this->temp_coarse_solution = 0.;
-
-  //       this->coarse_matrix.vmult(this->temp_coarse_solution,
-  //                                 this->temp_coarse_rhs);
-  //     }
-
-  //   // project back to the global interface space
-  //   this->coarse_to_global_interface(dst, this->temp_coarse_solution);
-  // }
-
-
   /**
    * Balancing step R_0^T*S_0^{-1}*R_0:
    *    1. project from global interface to coarse space
@@ -235,8 +191,6 @@ namespace Portable
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
-
-    // this->interface_operator->apply_coarse_preconditioner(dst, src);
 
     this->temp_coarse_rhs = 0.;
 
@@ -270,9 +224,6 @@ namespace Portable
 
 
     interface_vector.update_ghost_values();
-
-    // this->subdomain_operator->subdomain_interface_to_coarse(subdomain_value,
-    //                                                         interface_vector);
 
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
                                                interface_vector.size());
@@ -377,8 +328,6 @@ namespace Portable
 
         this->coarse_to_global_interface(phi_j, e_j);
 
-        // this->subdomain_operator->vmult_schur(S_phi_j, phi_j);
-
         this->interface_operator->vmult(S_phi_j, phi_j);
 
         this->global_interface_to_coarse(coarse_column, S_phi_j);
@@ -398,76 +347,6 @@ namespace Portable
         // std::cout << std::endl;
       }
   }
-
-
-
-  //   template <int dim, int fe_degree, typename number>
-  //   void
-  //   BNNPreconditioner<dim, fe_degree, number>::vmult(
-  //     LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-  //     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //     &src) const
-  //   {
-  //     Assert(
-  //       dst.get_partitioner() ==
-  //         this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //       ExcMessage(
-  //         "This function expects a vector initialized by
-  //         SubdomainDoFHandler's
-  //              interface vector partitioner."));
-  //     Assert(
-  //       src.get_partitioner() ==
-  //         this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //       ExcMessage(
-  //         "This function expects a vector initialized by
-  //         SubdomainDoFHandler's
-  //             interface vector partitioner."));
-
-  //     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-  //     u_coarse1(
-  //       src.get_partitioner()),
-  //       u_coarse2(src.get_partitioner()), r_bal(src.get_partitioner()),
-  //       u_loc(src.get_partitioner()), tmp(src.get_partitioner());
-
-
-  //     // u_coarse1 = R0^T*S0^{-1}*R0*src =Q*src
-  //     this->interface_operator->apply_coarse_preconditioner(u_coarse1, src);
-
-
-  //     // tmp = S*u_coarse1 = S*Q*src
-  //     this->subdomain_operator->vmult_schur(tmp, u_coarse1);
-
-  //     // r_bal = (I-Q*S)*src
-  //     r_bal.add(1., src, -1., tmp);
-
-  //     // r_bal.print(std::cout);
-
-  //     // u_loc = D*Si^{-1}*D*(I-Q*S)*src = P_local*(I-Q*S)*src
-  //     this->subdomain_operator->neumann_solve_subdomain(u_loc, r_bal);
-
-  //     // u_loc.update_ghost_values();
-
-  //     // tmp = S*P_local*(I-Q*S)*src
-  //     this->subdomain_operator->vmult_schur(tmp, u_loc);
-
-  //     // tmp = Q*S*P_local*(I-Q*S)*src
-  //     this->interface_operator->apply_coarse_preconditioner(u_coarse2, tmp);
-
-  //     // dst = (I -Q*S)*P_local*(I-Q*S)*src
-  //     dst.add(1., u_loc, -1., u_coarse2);
-
-  //     // dst.print(std::cout);
-
-  //     // dst = u_coarse1 + (I -Q*S)*P_local*(I-Q*S)*src
-  //     dst.add(1., u_coarse1);
-
-  //     // dst.print(std::cout);
-
-  //     src.zero_out_ghost_values();
-  //   }
-
-
-
 } // namespace Portable
 
 
