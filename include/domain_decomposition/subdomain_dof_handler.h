@@ -10,6 +10,8 @@
 
 #include <deal.II/grid/tria.h>
 
+#include <deal.II/lac/la_parallel_vector.h>
+
 #include "domain_decomposition/subdomain_triangulation.h"
 
 
@@ -24,9 +26,9 @@ struct SubdomainDoFInfo
   std::vector<types::global_dof_index> subdomain_to_global_dof_map;
 
   /**
-   * Global interface DoFs in the global domain numbering.
+   * Subdomain interface DoFs in the global domain numbering.
    */
-  IndexSet interface_dofs_global;
+  IndexSet subdomain_interface_dofs_global;
 
   /**
    * Subdomain interior dofs (i.e. DoFs that are not at the interface or the
@@ -59,18 +61,36 @@ struct SubdomainDoFInfo
    */
   std::vector<unsigned int> interface_cell_ids;
 
+  /**
+   * Subdomain interface vertex (corner) DoFs.
+   */
+  IndexSet interface_vertex_dofs;
+
+  /**
+   * Subdomain interface edge DoFs.
+   */
+  IndexSet interface_edge_dofs;
+
+  /**
+   * Subdomain interface face DoFs in 3d.
+   */
+  IndexSet interface_face_dofs;
+
 
   void
   clear()
   {
     subdomain_to_global_dof_map.clear();
     subdomain_interface_dofs.clear();
-    interface_dofs_global.clear();
+    subdomain_interface_dofs_global.clear();
     interface_local_to_global_map.clear();
     global_to_subdomain_interface_map.clear();
     subdomain_physical_boundary_dofs.clear();
     interface_cell_ids.clear();
     subdomain_interior_dofs.clear();
+    interface_vertex_dofs.clear();
+    interface_vertex_dofs.clear();
+    interface_vertex_dofs.clear();
   }
 };
 
@@ -87,6 +107,10 @@ public:
 
   void
   distribute_subdomain_dofs();
+
+  void
+  categorize_interface_dofs(const std::vector<IndexSet> &all_interface_dof_sets,
+                            const IndexSet              &all_inteface_dofs);
 
   const DoFHandler<dim> &
   get_dof_handler() const;
@@ -124,7 +148,6 @@ public:
 
   unsigned int
   n_subdomains() const;
-
 
 private:
   void
@@ -184,7 +207,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 
   this->fill_dof_info();
 
-  IndexSet &local_interface_indices = subdomain_dof_info.interface_dofs_global;
+  IndexSet &local_interface_indices = subdomain_dof_info.subdomain_interface_dofs_global;
 
   std::vector<IndexSet> all_sets =
     Utilities::MPI::all_gather(this->get_mpi_communicator(), local_interface_indices);
@@ -319,6 +342,270 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 
       this->interface_indices_partitioner_to_global_numbering[i] = global_index;
     }
+
+  this->categorize_interface_dofs(all_sets, all_interface_dofs);
+}
+
+
+template <int dim>
+void
+SubdomainDoFHandler<dim>::categorize_interface_dofs(
+  const std::vector<IndexSet> &all_interface_dof_sets,
+  const IndexSet              &all_inteface_dofs)
+{
+  subdomain_dof_info.interface_vertex_dofs.set_size(this->distributed_dof_handler->n_dofs());
+  subdomain_dof_info.interface_edge_dofs.set_size(this->distributed_dof_handler->n_dofs());
+  subdomain_dof_info.interface_face_dofs.set_size(this->distributed_dof_handler->n_dofs());
+
+  const unsigned int n_global_interface_dofs = all_inteface_dofs.n_elements();
+
+  std::map<std::set<unsigned int>, std::vector<std::pair<types::global_dof_index, unsigned int>>>
+    equivalence_dof_classes;
+
+  std::vector<std::set<unsigned int>> subdomains_per_dof(n_global_interface_dofs);
+  std::vector<std::pair<types::global_dof_index, unsigned int>> dof_pairs(n_global_interface_dofs);
+
+
+  for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+    {
+      const auto global_idx = all_inteface_dofs.nth_index_in_set(i);
+      // const unsigned int local_subdomain_idx =
+      //   subdomain_dof_info.global_to_subdomain_interface_map.at(global_idx);
+
+      dof_pairs[i] = std::make_pair(global_idx, 1);
+
+      for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+        {
+          if (all_interface_dof_sets[p].is_element(global_idx))
+            subdomains_per_dof[i].insert(p);
+        }
+    }
+
+  // extract proper subsets: sort and keep unique only
+  std::vector<std::set<unsigned int>> equivalent_dof_classes = subdomains_per_dof;
+  std::sort(equivalent_dof_classes.begin(), equivalent_dof_classes.end());
+  auto last = std::unique(equivalent_dof_classes.begin(), equivalent_dof_classes.end());
+  equivalent_dof_classes.erase(last, equivalent_dof_classes.end());
+
+  std::vector<std::vector<unsigned int>> subdomain_dofs_per_class(equivalent_dof_classes.size());
+
+  for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+    {
+      auto it = std::lower_bound(equivalent_dof_classes.begin(),
+                                 equivalent_dof_classes.end(),
+                                 subdomains_per_dof[i]);
+
+      unsigned int class_idx = std::distance(equivalent_dof_classes.begin(), it);
+
+      // if (subdomain_dof_info.subdomain_interface_dofs.is_element(dof_pairs[i].second))
+      subdomain_dofs_per_class[class_idx].push_back(dof_pairs[i].first);
+    }
+
+
+  for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+    {
+      if (p == this->get_subdomain_id())
+        {
+          MPI_Barrier(this->get_mpi_communicator());
+          std::cout << "On subdomain " << p << ", n_classes =  " << equivalent_dof_classes.size()
+                    << ": " << std::endl;
+          for (unsigned int class_idx = 0; class_idx < equivalent_dof_classes.size(); ++class_idx)
+            {
+              std::cout << "Class " << class_idx << " ("
+                        << subdomain_dofs_per_class[class_idx].size() << ")"
+                        << ":  ";
+              // for (unsigned int i = 0; i < equivalent_dof_classes[class_idx].size(); ++i)
+              for (const auto &key : equivalent_dof_classes[class_idx])
+                std::cout << key << "    ";
+              std::cout << std::endl;
+              for (const auto &key : subdomain_dofs_per_class[class_idx])
+                std::cout << key << "    ";
+              std::cout << std::endl;
+            }
+          std::cout << std::endl;
+
+          MPI_Barrier(this->get_mpi_communicator());
+        }
+      std::cout << std::endl;
+    }
+
+  // categorize inteface dofs
+  for (unsigned int class_idx = 0; class_idx < equivalent_dof_classes.size(); ++class_idx)
+    {
+      const auto &class_set     = equivalent_dof_classes[class_idx];
+      const auto &dofs_in_class = subdomain_dofs_per_class[class_idx];
+
+
+      if (class_set.size() == 2)
+        {
+          // face dofs in 3d and edge dofs in 2d are shared by exactly two subdomains
+
+          if constexpr (dim == 2)
+            {
+              // subdomain_dof_info.interface_edge_dofs.insert(
+              //   subdomain_dof_info.interface_edge_dofs.end(),
+              //   dofs_in_class.begin(),
+              //   dofs_in_class.end());
+              for (unsigned int i = 0; i < dofs_in_class.size(); ++i)
+                subdomain_dof_info.interface_edge_dofs.add_index(dofs_in_class[i]);
+            }
+
+          if constexpr (dim == 3)
+            {
+              // subdomain_dof_info.interface_face_dofs.insert(
+              //   subdomain_dof_info.interface_face_dofs.end(),
+              //   dofs_in_class.begin(),
+              //   dofs_in_class.end());
+
+              for (unsigned int i = 0; i < dofs_in_class.size(); ++i)
+                subdomain_dof_info.interface_face_dofs.add_index(dofs_in_class[i]);
+            }
+        }
+      else if constexpr (dim == 2)
+        {
+          // rest of the dofs in 2d are vertex (corner) dofs
+
+          // subdomain_dof_info.interface_vertex_dofs.insert(
+          //   subdomain_dof_info.interface_vertex_dofs.end(),
+          //   dofs_in_class.begin(),
+          //   dofs_in_class.end());
+
+          for (unsigned int i = 0; i < dofs_in_class.size(); ++i)
+            subdomain_dof_info.interface_vertex_dofs.add_index(dofs_in_class[i]);
+        }
+      else if constexpr (dim == 3)
+        {
+          if (dofs_in_class.size() == 1)
+            {
+              subdomain_dof_info.interface_vertex_dofs.add_index(dofs_in_class[0]);
+            }
+          else
+            {
+              // subdomain_dof_info.interface_edge_dofs.insert(
+              //   subdomain_dof_info.interface_edge_dofs.end(),
+              //   dofs_in_class.begin(),
+              //   dofs_in_class.end());
+
+              for (unsigned int i = 0; i < dofs_in_class.size(); ++i)
+                subdomain_dof_info.interface_edge_dofs.add_index(dofs_in_class[i]);
+            }
+        }
+    }
+
+
+
+  // for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+
+  //   for (const auto &global_idx : subdomain_dof_info.interface_dofs_global)
+  //     {
+  //       std::set<unsigned int> equivalence_set;
+
+  //       const unsigned int local_subdomain_idx =
+  //         subdomain_dof_info.global_to_subdomain_interface_map[global_idx];
+
+  //       std::pair<types::global_dof_index, unsigned int> dof_ids =
+  //         std::make_pair(global_idx, local_subdomain_idx);
+
+  //       for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+  //         {
+  //           if (all_interface_dof_sets[p].is_element(global_idx))
+  //             equivalence_set.insert(p);
+  //         }
+
+  //       if (equivalence_set.size() == 2) // this dof is on edge in 2d or on face in 3d
+  //         {
+  //           if constexpr (dim == 3)
+  //             subdomain_dof_info.interface_face_dofs.push_back(dof_ids);
+
+  //           if constexpr (dim == 2)
+  //             subdomain_dof_info.interface_edge_dofs.push_back(dof_ids);
+  //         }
+  //       else if constexpr (dim == 2) // in 2d all other dofs are at vertices (corners)
+  //         {
+  //           subdomain_dof_info.interface_vertex_dofs.push_back(dof_ids);
+  //         }
+  //       else // group by subdomains sharing dof to identify 3d edges vs vertices
+  //         {
+  //           equivalence_dof_classes[equivalence_set].push_back(dof_ids);
+  //         }
+  //     }
+
+  // // in 3d a corner vertex is defined by maximal sets, and the rest are edge dofs
+  // if constexpr (dim == 3)
+  //   {
+  //     std::vector<std::set<unsigned int>> multi_shared_sets;
+  //     for (const auto &[equiv_set, dofs] : equivalence_dof_classes)
+  //       {
+  //         multi_shared_sets.push_back(equiv_set);
+  //       }
+
+  //     for (const auto &[equiv_set, dofs_in_class] : equivalence_dof_classes)
+  //       {
+  //         bool is_strict_subset = false;
+
+  //         for (const auto &other_set : multi_shared_sets)
+  //           {
+  //             if (equiv_set != other_set && std::includes(other_set.begin(),
+  //                                                         other_set.end(),
+  //                                                         equiv_set.begin(),
+  //                                                         equiv_set.end()))
+  //               {
+  //                 is_strict_subset = true;
+  //                 break;
+  //               }
+  //           }
+
+  //         if (!is_strict_subset)
+  //           {
+  //             subdomain_dof_info.interface_vertex_dofs.push_back(dofs_in_class[0]);
+
+  //             for (size_t i = 1; i < dofs_in_class.size(); ++i)
+  //               {
+  //                 subdomain_dof_info.interface_edge_dofs.push_back(dofs_in_class[i]);
+  //               }
+  //           }
+  //         else
+  //           {
+  //             for (const auto &dof : dofs_in_class)
+  //               subdomain_dof_info.interface_edge_dofs.push_back(dof);
+  //           }
+  //       }
+  //   }
+
+  for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+    {
+      MPI_Barrier(this->get_mpi_communicator());
+      if (p == this->get_subdomain_id())
+        {
+          std::cout << "On subdomain " << p << ", vertex_dofs: ";
+          // for (unsigned int i = 0; i < subdomain_dof_info.interface_vertex_dofs.size();
+          // ++i)
+          for (const auto &index : subdomain_dof_info.interface_vertex_dofs)
+            std::cout << index << "    ";
+          std::cout << std::endl;
+
+          std::cout << "On subdomain " << p << ", edge dofs: ";
+          // for (unsigned int i = 0; i < subdomain_dof_info.interface_edge_dofs.size(); ++i)
+          //   std::cout << subdomain_dof_info.interface_edge_dofs[i].second << " / "
+          //             << subdomain_dof_info.interface_edge_dofs[i].first << "    ";
+          // std::cout << std::endl;
+
+          for (const auto &index : subdomain_dof_info.interface_edge_dofs)
+            std::cout << index << "    ";
+          std::cout << std::endl;
+
+          std::cout << "On subdomain " << p << ", face dofs: ";
+          // for (unsigned int i = 0; i < subdomain_dof_info.interface_face_dofs.size(); ++i)
+          //   std::cout << subdomain_dof_info.interface_face_dofs[i].second << " / "
+          //             << subdomain_dof_info.interface_face_dofs[i].first << "    ";
+          // std::cout << std::endl;
+          for (const auto &index : subdomain_dof_info.interface_face_dofs)
+            std::cout << index << "    ";
+          std::cout << std::endl;
+        }
+      std::cout << std::endl;
+      MPI_Barrier(this->get_mpi_communicator());
+    }
 }
 
 
@@ -361,14 +648,14 @@ SubdomainDoFHandler<dim>::fill_dof_info()
       }
   }
 
-  subdomain_dof_info.interface_dofs_global.set_size(this->distributed_dof_handler->n_dofs());
+  subdomain_dof_info.subdomain_interface_dofs_global.set_size(
+    this->distributed_dof_handler->n_dofs());
 
   subdomain_dof_info.subdomain_interface_dofs.set_size(subdomain_dof_handler.n_dofs());
 
   subdomain_dof_info.subdomain_physical_boundary_dofs.set_size(subdomain_dof_handler.n_dofs());
 
   subdomain_dof_info.subdomain_interior_dofs.set_size(subdomain_dof_handler.n_dofs());
-
 
   std::vector<types::global_dof_index> cell_dofs(n_dofs_per_cell);
 
@@ -442,12 +729,12 @@ SubdomainDoFHandler<dim>::fill_dof_info()
 
         subdomain_dof_info.interface_local_to_global_map.push_back(global_index);
 
-        subdomain_dof_info.interface_dofs_global.add_index(global_index);
+        subdomain_dof_info.subdomain_interface_dofs_global.add_index(global_index);
 
         subdomain_dof_info.global_to_subdomain_interface_map[global_index] = index;
       }
 
-    subdomain_dof_info.interface_dofs_global.compress();
+    subdomain_dof_info.subdomain_interface_dofs_global.compress();
   }
 }
 

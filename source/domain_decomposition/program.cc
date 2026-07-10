@@ -1226,7 +1226,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 12; ++cycle)
+  for (unsigned int cycle = 0; cycle < 1; ++cycle)
     {
       pcout << "Cycle " << cycle << std::endl;
 
@@ -1237,90 +1237,90 @@ LaplaceProblem<dim, fe_degree>::run()
 
       setup_dofs();
 
-      compute_interface_weights();
+      // compute_interface_weights();
 
-      setup_matrix_free();
+      // setup_matrix_free();
 
-      setup_mg_transfers();
+      // setup_mg_transfers();
 
-      setup_smoothers();
+      // setup_smoothers();
 
-      setup_mg_preconditioners();
+      // setup_mg_preconditioners();
 
-      setup_interface_system();
+      // setup_interface_system();
 
-      setup_bnn_preconditioner();
+      // setup_bnn_preconditioner();
 
-      assemble_rhs();
+      // assemble_rhs();
 
-      pcout << "           setup time: " << setup_time << "s" << std::endl;
+      // pcout << "           setup time: " << setup_time << "s" << std::endl;
 
-      solve_interface();
+      // solve_interface();
 
-      matvec_ghost_timing();
+      // matvec_ghost_timing();
 
-      // test_coarse_problem();
+      // // test_coarse_problem();
 
-      postprocess_subdomain_solution();
+      // postprocess_subdomain_solution();
 
-      output_results(cycle);
+      // output_results(cycle);
 
-      // test_triangulation();
+      // // test_triangulation();
 
-      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        {
-          std::cout << std::endl << std::endl;
+      // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      //   {
+      //     std::cout << std::endl << std::endl;
 
-          timing_table.set_scientific("Dirichlet", true);
-          timing_table.set_precision("Dirichlet", 3);
-          timing_table.set_scientific("Neumann", true);
-          timing_table.set_precision("Neumann", 3);
-          timing_table.set_scientific("Coarse", true);
-          timing_table.set_precision("Coarse", 3);
-          timing_table.set_scientific("Project", true);
-          timing_table.set_precision("Project", 3);
-          timing_table.set_scientific("CG_time", true);
-          timing_table.set_precision("CG_time", 3);
+      //     timing_table.set_scientific("Dirichlet", true);
+      //     timing_table.set_precision("Dirichlet", 3);
+      //     timing_table.set_scientific("Neumann", true);
+      //     timing_table.set_precision("Neumann", 3);
+      //     timing_table.set_scientific("Coarse", true);
+      //     timing_table.set_precision("Coarse", 3);
+      //     timing_table.set_scientific("Project", true);
+      //     timing_table.set_precision("Project", 3);
+      //     timing_table.set_scientific("CG_time", true);
+      //     timing_table.set_precision("CG_time", 3);
 
-          timing_table_per_iteration.set_scientific("Dir_per_iter", true);
-          timing_table_per_iteration.set_precision("Dir_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Neu_per_iter", true);
-          timing_table_per_iteration.set_precision("Neu_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Crs_per_iter", true);
-          timing_table_per_iteration.set_precision("Crs_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Prj_per_iter", true);
-          timing_table_per_iteration.set_precision("Prj_per_iter", 3);
-          timing_table_per_iteration.set_scientific("CG_per_iter", true);
-          timing_table_per_iteration.set_precision("CG_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Dir_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Dir_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Neu_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Neu_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Crs_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Crs_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Prj_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Prj_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("CG_per_iter", true);
+      //     timing_table_per_iteration.set_precision("CG_per_iter", 3);
 
-          timing_table.write_text(std::cout);
+      //     timing_table.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
+      //     std::cout << std::endl << std::endl;
 
-          timing_table_per_iteration.write_text(std::cout);
+      //     timing_table_per_iteration.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
-
-
-          ghost_timing_table.set_scientific("subdomain_total", true);
-          ghost_timing_table.set_precision("subdomain_total", 4);
-          ghost_timing_table.set_scientific("subdomain_compute", true);
-          ghost_timing_table.set_precision("subdomain_compute", 4);
-          ghost_timing_table.set_scientific("subdomain_communicate", true);
-          ghost_timing_table.set_precision("subdomain_communicate", 4);
+      //     std::cout << std::endl << std::endl;
 
 
-          ghost_timing_table.set_scientific("coarse_total", true);
-          ghost_timing_table.set_precision("coarse_total", 4);
-          ghost_timing_table.set_scientific("coarse_compute", true);
-          ghost_timing_table.set_precision("coarse_compute", 4);
-          ghost_timing_table.set_scientific("coarse_communicate", true);
-          ghost_timing_table.set_precision("coarse_communicate", 4);
+      //     ghost_timing_table.set_scientific("subdomain_total", true);
+      //     ghost_timing_table.set_precision("subdomain_total", 4);
+      //     ghost_timing_table.set_scientific("subdomain_compute", true);
+      //     ghost_timing_table.set_precision("subdomain_compute", 4);
+      //     ghost_timing_table.set_scientific("subdomain_communicate", true);
+      //     ghost_timing_table.set_precision("subdomain_communicate", 4);
 
-          ghost_timing_table.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
-        }
+      //     ghost_timing_table.set_scientific("coarse_total", true);
+      //     ghost_timing_table.set_precision("coarse_total", 4);
+      //     ghost_timing_table.set_scientific("coarse_compute", true);
+      //     ghost_timing_table.set_precision("coarse_compute", 4);
+      //     ghost_timing_table.set_scientific("coarse_communicate", true);
+      //     ghost_timing_table.set_precision("coarse_communicate", 4);
+
+      //     ghost_timing_table.write_text(std::cout);
+
+      //     std::cout << std::endl << std::endl;
+      //   }
     }
 }
 
@@ -1331,14 +1331,17 @@ main(int argc, char *argv[])
     {
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      constexpr int dim       = 3;
-      constexpr int fe_degree = 4;
+      // constexpr int dim       = 2;
+      constexpr int fe_degree = 2;
 
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      laplace_problem.run();
+      LaplaceProblem<2, fe_degree> laplace_problem_2d(n_pre_smooth, n_post_smooth);
+      laplace_problem_2d.run();
+
+      LaplaceProblem<3, fe_degree> laplace_problem_3d(n_pre_smooth, n_post_smooth);
+      laplace_problem_3d.run();
     }
   catch (std::exception &exc)
     {
