@@ -16,75 +16,60 @@ namespace Portable
   class BNNPreconditioner
   {
   public:
-    BNNPreconditioner(
-      const SchurInterfaceOperator<dim, number>       &interface_operator,
-      const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator);
+    BNNPreconditioner(const SchurInterfaceOperator<dim, number>       &interface_operator,
+                      const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator);
 
     void
-    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-            &src) const;
+    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    project(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+    project(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    balance(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+    balance(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    balance_dummy(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                &src,
-      const bool computation_on,
-      const bool communication_on) const;
+    balance_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+                  const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+                  const bool computation_on,
+                  const bool communication_on) const;
 
     void
     balance_and_vmult(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &S_per_dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &S_per_dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     setup_coarse_matrix();
 
     void
     coarse_to_global_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                           &interface_vector,
-      const Vector<number> &coarse_vector) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+      const Vector<number>                                             &coarse_vector) const;
 
 
 
     void
     coarse_to_global_interface_and_S_update(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &interface_vector,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                           &S_per_interface_vector,
-      const Vector<number> &coarse_vector) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
+      const Vector<number>                                             &coarse_vector) const;
 
 
     void
-    vmult_enhanced(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &z,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &s_tilde,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r)
-      const;
+    vmult_enhanced(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &z,
+                   LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &s_tilde,
+                   const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r) const;
 
     void
     global_interface_to_coarse(
-      Vector<number> &coarse_vector,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &interface_vector) const;
+      Vector<number>                                                         &coarse_vector,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector)
+      const;
 
     void
     reset_timings() const;
@@ -95,16 +80,13 @@ namespace Portable
 
     void
     vmult_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
   private:
-    ObserverPointer<const SchurInterfaceOperator<dim, number>>
-      interface_operator;
-    ObserverPointer<const SubdomainLaplaceOperatorBase<dim, number>>
-                                                    subdomain_operator;
-    ObserverPointer<const SubdomainDoFHandler<dim>> subdomain_dof_handler;
+    ObserverPointer<const SchurInterfaceOperator<dim, number>>       interface_operator;
+    ObserverPointer<const SubdomainLaplaceOperatorBase<dim, number>> subdomain_operator;
+    ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
 
     LAPACKFullMatrix<number> coarse_matrix;
 
@@ -112,17 +94,15 @@ namespace Portable
     const unsigned int n_subdomains;
     const unsigned int this_subdomain;
 
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      &interface_weights;
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_weights;
 
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       interface_dof_indices_subdomain;
 
-    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      temp_interface, z0, S_z0;
+    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default> temp_interface, z0,
+      S_z0;
 
-    std::vector<
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
+    std::vector<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
       S_per_coarse_basis_functions;
 
     mutable std::vector<number> temp_coarse_gather;
@@ -151,11 +131,9 @@ namespace Portable
     , n_subdomains(subdomain_dof_handler->n_subdomains())
     , this_subdomain(subdomain_dof_handler->get_subdomain_id())
     , interface_weights(interface_operator.get_interface_weights())
-    , interface_dof_indices_subdomain(
-        subdomain_operator.get_interface_dof_indices_subdomain())
+    , interface_dof_indices_subdomain(subdomain_operator.get_interface_dof_indices_subdomain())
   {
-    temp_interface.reinit(
-      this->subdomain_dof_handler->get_interface_vector_partitioner());
+    temp_interface.reinit(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
     S_per_coarse_basis_functions.resize(n_subdomains);
 
@@ -189,22 +167,15 @@ namespace Portable
   template <int dim, typename number>
   void
   BNNPreconditioner<dim, number>::vmult_enhanced(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &z,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &s_tilde,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r)
-    const
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &z,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &s_tilde,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r) const
   {
-    Assert(
-      z.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(z.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      r.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(r.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
 
@@ -232,17 +203,14 @@ namespace Portable
   void
   BNNPreconditioner<dim, number>::vmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's interface vector partitioner."));
     Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's interface vector partitioner."));
 
@@ -258,17 +226,14 @@ namespace Portable
   void
   BNNPreconditioner<dim, number>::vmult_interface(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's interface vector partitioner."));
     Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
+      src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's interface vector partitioner."));
 
@@ -293,20 +258,13 @@ namespace Portable
   void
   BNNPreconditioner<dim, number>::project(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     temp_interface = 0.;
@@ -346,20 +304,13 @@ namespace Portable
   void
   BNNPreconditioner<dim, number>::balance(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     this->temp_coarse_rhs = 0.;
@@ -372,8 +323,7 @@ namespace Portable
       {
         this->temp_coarse_solution = 0.;
 
-        this->coarse_matrix.vmult(this->temp_coarse_solution,
-                                  this->temp_coarse_rhs);
+        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
       }
 
     // project back to the global interface space
@@ -383,22 +333,15 @@ namespace Portable
   template <int dim, typename number>
   void
   BNNPreconditioner<dim, number>::balance_and_vmult(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &S_per_dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     this->temp_coarse_rhs = 0.;
@@ -411,14 +354,11 @@ namespace Portable
       {
         this->temp_coarse_solution = 0.;
 
-        this->coarse_matrix.vmult(this->temp_coarse_solution,
-                                  this->temp_coarse_rhs);
+        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
       }
 
     // project back to the global interface space
-    this->coarse_to_global_interface_and_S_update(dst,
-                                                  S_per_dst,
-                                                  this->temp_coarse_solution);
+    this->coarse_to_global_interface_and_S_update(dst, S_per_dst, this->temp_coarse_solution);
   }
 
 
@@ -427,20 +367,14 @@ namespace Portable
   BNNPreconditioner<dim, number>::balance_dummy(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
-    const bool computation_on,
-    const bool communication_on) const
+    const bool                                                              computation_on,
+    const bool                                                              communication_on) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     this->temp_coarse_rhs = 0.;
@@ -456,8 +390,7 @@ namespace Portable
           {
             this->temp_coarse_solution = 0.;
 
-            this->coarse_matrix.vmult(this->temp_coarse_solution,
-                                      this->temp_coarse_rhs);
+            this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
           }
       }
 
@@ -470,9 +403,8 @@ namespace Portable
   template <int dim, typename number>
   void
   BNNPreconditioner<dim, number>::global_interface_to_coarse(
-    Vector<number> &coarse_vector,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      &interface_vector) const
+    Vector<number>                                                         &coarse_vector,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -484,8 +416,7 @@ namespace Portable
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
                                                interface_vector.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_weights.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
     // retrieve subdomain coarse value by the interface weighted sum
     number subdomain_coarse_value = 0.;
@@ -498,10 +429,10 @@ namespace Portable
       subdomain_coarse_value);
 
     // gather all coarse values
-    this->temp_coarse_gather = Utilities::MPI::gather(
-      this->subdomain_dof_handler->get_mpi_communicator(),
-      subdomain_coarse_value,
-      this->coarse_problem_rank);
+    this->temp_coarse_gather =
+      Utilities::MPI::gather(this->subdomain_dof_handler->get_mpi_communicator(),
+                             subdomain_coarse_value,
+                             this->coarse_problem_rank);
 
     // copy coarse std::vector to Vector
     if (this->this_subdomain == this->coarse_problem_rank)
@@ -520,9 +451,8 @@ namespace Portable
   template <int dim, typename number>
   void
   BNNPreconditioner<dim, number>::coarse_to_global_interface(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                         &interface_vector,
-    const Vector<number> &coarse_vector) const
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+    const Vector<number>                                             &coarse_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -531,8 +461,7 @@ namespace Portable
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
                                                interface_vector.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_weights.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
 
     // copy coarse Vector to std::vector for MPi::scatter
@@ -543,10 +472,10 @@ namespace Portable
       }
 
     // retrieve subdomain coarse value (i.e., mean value)
-    const number subdomain_coarse_value = Utilities::MPI::scatter(
-      this->subdomain_dof_handler->get_mpi_communicator(),
-      this->temp_coarse_gather,
-      this->coarse_problem_rank);
+    const number subdomain_coarse_value =
+      Utilities::MPI::scatter(this->subdomain_dof_handler->get_mpi_communicator(),
+                              this->temp_coarse_gather,
+                              this->coarse_problem_rank);
 
     // propagate coarse value to the interface by applying weights
     interface_vector = 0.;
@@ -565,11 +494,9 @@ namespace Portable
   template <int dim, typename number>
   void
   BNNPreconditioner<dim, number>::coarse_to_global_interface_and_S_update(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      &interface_vector,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                         &S_per_interface_vector,
-    const Vector<number> &coarse_vector) const
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
+    const Vector<number>                                             &coarse_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -579,8 +506,7 @@ namespace Portable
                                                interface_vector.size());
 
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_weights.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
     // copy coarse Vector to std::vector for MPi::scatter
     if (this->this_subdomain == this->coarse_problem_rank)
@@ -595,10 +521,10 @@ namespace Portable
     //   this->temp_coarse_gather,
     //   this->coarse_problem_rank);
 
-    temp_coarse_broadcast = Utilities::MPI::broadcast(
-      this->subdomain_dof_handler->get_mpi_communicator(),
-      this->temp_coarse_gather,
-      this->coarse_problem_rank);
+    temp_coarse_broadcast =
+      Utilities::MPI::broadcast(this->subdomain_dof_handler->get_mpi_communicator(),
+                                this->temp_coarse_gather,
+                                this->coarse_problem_rank);
 
     const number subdomain_coarse_value = temp_coarse_broadcast[this_subdomain];
 
@@ -616,8 +542,7 @@ namespace Portable
 
     S_per_interface_vector = 0;
     for (unsigned int i = 0; i < n_subdomains; ++i)
-      S_per_interface_vector.add(temp_coarse_broadcast[i],
-                                 S_per_coarse_basis_functions[i]);
+      S_per_interface_vector.add(temp_coarse_broadcast[i], S_per_coarse_basis_functions[i]);
 
     S_per_interface_vector.compress(VectorOperation::add);
   }
@@ -646,8 +571,7 @@ namespace Portable
 
         this->interface_operator->vmult(S_per_coarse_basis_functions[j], phi_j);
 
-        this->global_interface_to_coarse(coarse_column,
-                                         S_per_coarse_basis_functions[j]);
+        this->global_interface_to_coarse(coarse_column, S_per_coarse_basis_functions[j]);
 
         if (this->this_subdomain == this->coarse_problem_rank)
           for (unsigned int i = 0; i < this->n_subdomains; ++i)

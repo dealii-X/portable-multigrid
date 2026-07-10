@@ -59,9 +59,7 @@ namespace Portable
 
 
   template <typename VectorType>
-  SolverProjectedCG<VectorType>::SolverProjectedCG(
-    SolverControl            &cn,
-    VectorMemory<VectorType> &mem)
+  SolverProjectedCG<VectorType>::SolverProjectedCG(SolverControl &cn, VectorMemory<VectorType> &mem)
     : SolverBase<VectorType>(cn, mem)
   {}
 
@@ -139,11 +137,9 @@ namespace Portable
       {
         it++;
 
-        const number old_r_dot_preconditioner_dot_r =
-          r_dot_preconditioner_dot_r;
+        const number old_r_dot_preconditioner_dot_r = r_dot_preconditioner_dot_r;
 
-        if (std::is_same<PreconditionerType, PreconditionIdentity>::value ==
-            false)
+        if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
           {
             preconditioner.vmult(z, r);
 
@@ -167,8 +163,7 @@ namespace Portable
 
         if (it > 1)
           {
-            Assert(std::abs(old_r_dot_preconditioner_dot_r) != 0.,
-                   ExcDivideByZero());
+            Assert(std::abs(old_r_dot_preconditioner_dot_r) != 0., ExcDivideByZero());
 
             beta = r_dot_preconditioner_dot_r / old_r_dot_preconditioner_dot_r;
 
@@ -201,11 +196,10 @@ namespace Portable
   template <typename VectorType>
   template <typename MatrixType, typename PreconditionerType>
   void
-  SolverProjectedCG<VectorType>::solve_enhanced(
-    const MatrixType         &A,
-    VectorType               &x,
-    const VectorType         &b,
-    const PreconditionerType &preconditioner)
+  SolverProjectedCG<VectorType>::solve_enhanced(const MatrixType         &A,
+                                                VectorType               &x,
+                                                const VectorType         &b,
+                                                const PreconditionerType &preconditioner)
   {
     using number                      = typename VectorType::value_type;
     SolverControl::State solver_state = SolverControl::iterate;
@@ -267,11 +261,9 @@ namespace Portable
       {
         it++;
 
-        const number old_r_dot_preconditioner_dot_r =
-          r_dot_preconditioner_dot_r;
+        const number old_r_dot_preconditioner_dot_r = r_dot_preconditioner_dot_r;
 
-        if (std::is_same<PreconditionerType, PreconditionIdentity>::value ==
-            false)
+        if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
           {
             // preconditioner.vmult(z, r);
 
@@ -297,8 +289,7 @@ namespace Portable
 
         if (it > 1)
           {
-            Assert(std::abs(old_r_dot_preconditioner_dot_r) != 0.,
-                   ExcDivideByZero());
+            Assert(std::abs(old_r_dot_preconditioner_dot_r) != 0., ExcDivideByZero());
 
             beta = r_dot_preconditioner_dot_r / old_r_dot_preconditioner_dot_r;
 

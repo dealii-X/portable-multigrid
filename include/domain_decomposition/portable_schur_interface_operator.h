@@ -24,29 +24,23 @@ namespace Portable
     using MGTransferType          = MGTransferBase<dim, number>;
     using SubdomainPreconditioner = VCycleMultigridBase<dim, number>;
 
-    SchurInterfaceOperator(
-      const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator,
-      const SubdomainPreconditioner                   &dirichlet_preconditioner,
-      const SubdomainPreconditioner                   &neumann_preconditioner);
+    SchurInterfaceOperator(const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator,
+                           const SubdomainPreconditioner &dirichlet_preconditioner,
+                           const SubdomainPreconditioner &neumann_preconditioner);
 
     void
-    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-            &src) const;
+    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    vmult_dummy(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                &src,
-      const bool computation_on,
-      const bool communication_on) const;
+    vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+                const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+                const bool computation_on,
+                const bool communication_on) const;
 
     void
-    Tvmult(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+    Tvmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+           const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     types::global_dof_index
     m() const;
@@ -55,34 +49,27 @@ namespace Portable
 
     void
     assemble_rhs_schur(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &rhs_schur,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &rhs_subdomain) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &rhs_schur,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_subdomain) const;
 
     bool
     enable_printing() const;
 
     void
     dirichlet_solve_subdomain(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     neumann_solve_subdomain(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     reconstruct_subdomain_solution_from_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &subdomain_solution,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &interface_solution,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &rhs_subdomain) const;
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &subdomain_solution,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_solution,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_subdomain) const;
 
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &
     get_interface_weights() const;
@@ -93,16 +80,13 @@ namespace Portable
 
     struct NeumannSubdomainOperator
     {
-      NeumannSubdomainOperator(
-        const SubdomainLaplaceOperatorBase<dim, number> &op)
+      NeumannSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, number> &op)
         : op(op)
       {}
 
       void
-      vmult(
-        LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-        const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-          &src) const
+      vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
       {
         op.vmult_neumann(dst, src);
       }
@@ -112,16 +96,13 @@ namespace Portable
 
     struct DirichletSubdomainOperator
     {
-      DirichletSubdomainOperator(
-        const SubdomainLaplaceOperatorBase<dim, number> &op)
+      DirichletSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, number> &op)
         : op(op)
       {}
 
       void
-      vmult(
-        LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-        const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-          &src) const
+      vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
       {
         op.vmult(dst, src);
       }
@@ -133,8 +114,7 @@ namespace Portable
     void
     compute_interface_weights();
 
-    ObserverPointer<const SubdomainLaplaceOperatorBase<dim, number>>
-      subdomain_operator;
+    ObserverPointer<const SubdomainLaplaceOperatorBase<dim, number>> subdomain_operator;
 
     ObserverPointer<const SubdomainDoFHandler<dim>> subdomain_dof_handler;
 
@@ -148,12 +128,10 @@ namespace Portable
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       physical_boundary_dof_indices_subdomain;
 
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      interface_weights;
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> interface_weights;
 
     mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      temp_subdomain_vector_src, temp_subdomain_vector_dst,
-      temp_subdomain_vector_work;
+      temp_subdomain_vector_src, temp_subdomain_vector_dst, temp_subdomain_vector_work;
 
     DirichletSubdomainOperator subdomain_dirichlet_operator;
     NeumannSubdomainOperator   subdomain_neumann_operator;
@@ -170,25 +148,19 @@ namespace Portable
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
     , dirichlet_preconditioner(&dirichlet_preconditioner)
     , neumann_preconditioner(&neumann_preconditioner)
-    , interface_dof_indices_subdomain(
-        subdomain_operator.get_interface_dof_indices_subdomain())
+    , interface_dof_indices_subdomain(subdomain_operator.get_interface_dof_indices_subdomain())
     , physical_boundary_dof_indices_subdomain(
         subdomain_operator.get_physical_boundary_dof_indices_subdomain())
     , subdomain_dirichlet_operator(subdomain_operator)
     , subdomain_neumann_operator(subdomain_operator)
   {
-    Assert(
-      this->subdomain_operator->get_subdomain_dof_handler()
-          .get_interface_vector_partitioner() != nullptr,
-      ExcMessage(
-        "The subdomain dof handler does not have an interface vector partitioner."));
+    Assert(this->subdomain_operator->get_subdomain_dof_handler()
+               .get_interface_vector_partitioner() != nullptr,
+           ExcMessage("The subdomain dof handler does not have an interface vector partitioner."));
 
-    this->subdomain_operator->initialize_dof_vector(
-      this->temp_subdomain_vector_src);
-    this->subdomain_operator->initialize_dof_vector(
-      this->temp_subdomain_vector_dst);
-    this->subdomain_operator->initialize_dof_vector(
-      this->temp_subdomain_vector_work);
+    this->subdomain_operator->initialize_dof_vector(this->temp_subdomain_vector_src);
+    this->subdomain_operator->initialize_dof_vector(this->temp_subdomain_vector_dst);
+    this->subdomain_operator->initialize_dof_vector(this->temp_subdomain_vector_work);
 
     compute_interface_weights();
 
@@ -200,26 +172,22 @@ namespace Portable
   void
   SchurInterfaceOperator<dim, number>::compute_interface_weights()
   {
-    this->interface_weights.reinit(
-      this->subdomain_dof_handler->get_interface_vector_partitioner());
+    this->interface_weights.reinit(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Host>
-      interface_weights_host(
-        this->subdomain_dof_handler->get_interface_vector_partitioner());
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Host> interface_weights_host(
+      this->subdomain_dof_handler->get_interface_vector_partitioner());
 
     const unsigned int n_locally_relevant_interface_indices =
       this->subdomain_dof_handler->n_locally_relevant_interface_indices();
 
     for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
-      interface_weights_host[this->subdomain_dof_handler
-                               ->local_to_global_interface_partitioner(i)] +=
-        1.0;
+      interface_weights_host[this->subdomain_dof_handler->local_to_global_interface_partitioner(
+        i)] += 1.0;
 
     interface_weights_host.compress(VectorOperation::add);
 
     for (unsigned int i = 0; i < interface_weights.locally_owned_size(); ++i)
-      interface_weights_host.local_element(i) =
-        1. / interface_weights_host.local_element(i);
+      interface_weights_host.local_element(i) = 1. / interface_weights_host.local_element(i);
 
     interface_weights_host.update_ghost_values();
 
@@ -240,8 +208,7 @@ namespace Portable
 
   template <int dim, typename number>
   const std::pair<unsigned int, unsigned int>
-  SchurInterfaceOperator<dim, number>::get_maximum_subdomain_mg_iterations()
-    const
+  SchurInterfaceOperator<dim, number>::get_maximum_subdomain_mg_iterations() const
   {
     return max_subdomain_mg_iterations;
   }
@@ -251,21 +218,16 @@ namespace Portable
   void
   SchurInterfaceOperator<dim, number>::dirichlet_solve_subdomain(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     dst = 0.;
     // SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
     ReductionControl solver_control(100, 1e-16, 1e-9);
 
 
-    SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-      cg(solver_control);
+    SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
-    cg.solve(this->subdomain_dirichlet_operator,
-             dst,
-             src,
-             *dirichlet_preconditioner);
+    cg.solve(this->subdomain_dirichlet_operator, dst, src, *dirichlet_preconditioner);
 
     // std::cout << "    Dirichlet solver on subdomain "
     //           << this->subdomain_dof_handler->get_subdomain_id()
@@ -290,8 +252,7 @@ namespace Portable
   void
   SchurInterfaceOperator<dim, number>::neumann_solve_subdomain(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     src.update_ghost_values();
 
@@ -300,11 +261,10 @@ namespace Portable
     DeviceVector<number> src_view(src.get_values(), src.size()),
       dst_view(dst.get_values(), dst.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_weights.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
-    DeviceVector<number> t_subdomain_src_view(
-      temp_subdomain_vector_src.get_values(), temp_subdomain_vector_src.size()),
+    DeviceVector<number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
+                                              temp_subdomain_vector_src.size()),
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size());
 
@@ -314,9 +274,7 @@ namespace Portable
     // read src interface values and apply weights
     temp_subdomain_vector_src = 0;
     Kokkos::parallel_for(
-      "read_src_subdomain_neumann",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "read_src_subdomain_neumann", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         t_subdomain_src_view(interface_dofs(i)) = weights_view(i) * src_view(i);
       });
 
@@ -331,8 +289,7 @@ namespace Portable
         temp_subdomain_vector_src.add(-mean_value_src);
       }
 
-    SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-      cg(solver_control);
+    SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
     temp_subdomain_vector_dst = 0.;
     cg.solve(this->subdomain_neumann_operator,
@@ -361,9 +318,7 @@ namespace Portable
 
     // apply weights and write dst interface values
     Kokkos::parallel_for(
-      "write_dst_subdomain_neumann",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "write_dst_subdomain_neumann", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         dst_view(i) = weights_view(i) * t_subdomain_dst_view(interface_dofs(i));
       });
 
@@ -382,20 +337,13 @@ namespace Portable
   void
   SchurInterfaceOperator<dim, number>::vmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     dst = 0.;
@@ -405,8 +353,8 @@ namespace Portable
     DeviceVector<number> src_view(src.get_values(), src.size()),
       dst_view(dst.get_values(), dst.size());
 
-    DeviceVector<number> t_subdomain_src_view(
-      temp_subdomain_vector_src.get_values(), temp_subdomain_vector_src.size()),
+    DeviceVector<number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
+                                              temp_subdomain_vector_src.size()),
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size()),
       t_subdomain_work_view(temp_subdomain_vector_work.get_values(),
@@ -423,33 +371,27 @@ namespace Portable
       });
 
     // Apply Schur complement operators w = A_GG*x and v = A_IG *x
-    this->subdomain_operator->vmult_interface_cell_range(
-      temp_subdomain_vector_dst, temp_subdomain_vector_src);
+    this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_dst,
+                                                         temp_subdomain_vector_src);
 
     // solve interior z = A_II^{-1} * v
-    this->dirichlet_solve_subdomain(temp_subdomain_vector_work,
-                                    temp_subdomain_vector_dst);
+    this->dirichlet_solve_subdomain(temp_subdomain_vector_work, temp_subdomain_vector_dst);
 
     // zero out entries of z corresponding to interface dofs
     Kokkos::parallel_for(
-      "zero_out_interface_work",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "zero_out_interface_work", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         t_subdomain_work_view(interface_dofs(i)) = 0.;
       });
 
     // apply vv = A_GI * z
-    this->subdomain_operator->vmult_interface_cell_range(
-      temp_subdomain_vector_src, temp_subdomain_vector_work);
+    this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_src,
+                                                         temp_subdomain_vector_work);
 
     // write result y = w-vv
     Kokkos::parallel_for(
-      "distribute_interface_dofs",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
-        const auto idx = interface_dofs(i);
-        number     output_value =
-          t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
+      "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
+        const auto idx          = interface_dofs(i);
+        number     output_value = t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
         Kokkos::atomic_add(&dst_view(i), output_value);
         // dst_view(i) += output_value;
       });
@@ -464,20 +406,14 @@ namespace Portable
   SchurInterfaceOperator<dim, number>::vmult_dummy(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
-    const bool computation_on,
-    const bool communication_on) const
+    const bool                                                              computation_on,
+    const bool                                                              communication_on) const
   {
-    Assert(
-      dst.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
              interface vector partitioner."));
-    Assert(
-      src.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
     dst = 0.;
@@ -488,8 +424,8 @@ namespace Portable
     DeviceVector<number> src_view(src.get_values(), src.size()),
       dst_view(dst.get_values(), dst.size());
 
-    DeviceVector<number> t_subdomain_src_view(
-      temp_subdomain_vector_src.get_values(), temp_subdomain_vector_src.size()),
+    DeviceVector<number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
+                                              temp_subdomain_vector_src.size()),
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size()),
       t_subdomain_work_view(temp_subdomain_vector_work.get_values(),
@@ -503,40 +439,32 @@ namespace Portable
         // read interface values into the subdomain vector
         temp_subdomain_vector_src = 0.;
         Kokkos::parallel_for(
-          "read_src_interface",
-          interface_dofs.size(),
-          KOKKOS_LAMBDA(const int i) {
+          "read_src_interface", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
             t_subdomain_src_view(interface_dofs(i)) = src_view(i);
           });
 
         // Apply Schur complement operators w = A_GG*x and v = A_IG *x
-        this->subdomain_operator->vmult_interface_cell_range(
-          temp_subdomain_vector_dst, temp_subdomain_vector_src);
+        this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_dst,
+                                                             temp_subdomain_vector_src);
 
         // solve interior z = A_II^{-1} * v
-        this->dirichlet_solve_subdomain(temp_subdomain_vector_work,
-                                        temp_subdomain_vector_dst);
+        this->dirichlet_solve_subdomain(temp_subdomain_vector_work, temp_subdomain_vector_dst);
 
         // zero out entries of z corresponding to interface dofs
         Kokkos::parallel_for(
-          "zero_out_interface_work",
-          interface_dofs.size(),
-          KOKKOS_LAMBDA(const int i) {
+          "zero_out_interface_work", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
             t_subdomain_work_view(interface_dofs(i)) = 0.;
           });
 
         // apply vv = A_GI * z
-        this->subdomain_operator->vmult_interface_cell_range(
-          temp_subdomain_vector_src, temp_subdomain_vector_work);
+        this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_src,
+                                                             temp_subdomain_vector_work);
 
         // write result y = w-vv
         Kokkos::parallel_for(
-          "distribute_interface_dofs",
-          interface_dofs.size(),
-          KOKKOS_LAMBDA(const int i) {
-            const auto idx = interface_dofs(i);
-            number     output_value =
-              t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
+          "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
+            const auto idx          = interface_dofs(i);
+            number     output_value = t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
             Kokkos::atomic_add(&dst_view(i), output_value);
             // dst_view(i) += output_value;
           });
@@ -553,44 +481,37 @@ namespace Portable
   template <int dim, typename number>
   void
   SchurInterfaceOperator<dim, number>::assemble_rhs_schur(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_schur,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      &rhs_subdomain) const
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &rhs_schur,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_subdomain) const
   {
-    Assert(
-      rhs_schur.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(rhs_schur.get_partitioner() ==
+             this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
          interface vector partitioner."));
 
     rhs_schur = 0.;
 
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
-    DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(),
-                                            rhs_subdomain.size());
-    DeviceVector<number> rhs_schur_view(rhs_schur.get_values(),
-                                        rhs_schur.size());
-    DeviceVector<number> t_subdomain_dst_view(
-      temp_subdomain_vector_dst.get_values(), temp_subdomain_vector_dst.size());
+    DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size());
+    DeviceVector<number> rhs_schur_view(rhs_schur.get_values(), rhs_schur.size());
+    DeviceVector<number> t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
+                                              temp_subdomain_vector_dst.size());
 
     // solve for interior, A_II^{-1} * F_I
     temp_subdomain_vector_src = 0.;
     dirichlet_solve_subdomain(temp_subdomain_vector_src, rhs_subdomain);
 
     // multiply by A_GI *A_II^{-1} * F_I
-    this->subdomain_operator->vmult_interface_cell_range(
-      temp_subdomain_vector_dst, temp_subdomain_vector_src);
+    this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_dst,
+                                                         temp_subdomain_vector_src);
 
     // distribute interface dofs into rhs_schur: F_G - A_GI *A_II^{-1} * F_I
     Kokkos::parallel_for(
-      "distribute_interface_dofs",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         const auto idx_subdomain = interface_dofs(i);
-        number     output_value  = rhs_subdomain_view(idx_subdomain) -
-                                   t_subdomain_dst_view(idx_subdomain);
+        number     output_value =
+          rhs_subdomain_view(idx_subdomain) - t_subdomain_dst_view(idx_subdomain);
         Kokkos::atomic_add(&rhs_schur_view(i), output_value);
         // rhs_schur_view(i) += output_value;
       });
@@ -602,35 +523,26 @@ namespace Portable
 
   template <int dim, typename number>
   void
-  SchurInterfaceOperator<dim, number>::
-    reconstruct_subdomain_solution_from_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &subdomain_solution,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &interface_solution,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &rhs_subdomain) const
+  SchurInterfaceOperator<dim, number>::reconstruct_subdomain_solution_from_interface(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &subdomain_solution,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_solution,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs_subdomain) const
   {
-    Assert(
-      interface_solution.get_partitioner() ==
-        this->subdomain_dof_handler->get_interface_vector_partitioner(),
-      ExcMessage(
-        "This function expects a vector initialized by SubdomainDoFHandler's \
+    Assert(interface_solution.get_partitioner() ==
+             this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
          interface vector partitioner."));
 
     subdomain_solution = 0.;
 
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
-    DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(),
-                                            rhs_subdomain.size()),
-      interface_solution_view(interface_solution.get_values(),
-                              interface_solution.size()),
-      subdomain_solution_view(subdomain_solution.get_values(),
-                              subdomain_solution.size());
+    DeviceVector<number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size()),
+      interface_solution_view(interface_solution.get_values(), interface_solution.size()),
+      subdomain_solution_view(subdomain_solution.get_values(), subdomain_solution.size());
 
-    DeviceVector<number> t_subdomain_src_view(
-      temp_subdomain_vector_src.get_values(), temp_subdomain_vector_src.size()),
+    DeviceVector<number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
+                                              temp_subdomain_vector_src.size()),
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size()),
       t_subdomain_work_view(temp_subdomain_vector_work.get_values(),
@@ -639,15 +551,13 @@ namespace Portable
     // read interface_values
     temp_subdomain_vector_src = 0.;
     Kokkos::parallel_for(
-      "read_interface_solution",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "read_interface_solution", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         t_subdomain_src_view(interface_dofs(i)) = interface_solution_view(i);
       });
 
     // apply A_IG * src_interface
-    this->subdomain_operator->vmult_interface_cell_range(
-      temp_subdomain_vector_dst, temp_subdomain_vector_src);
+    this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_dst,
+                                                         temp_subdomain_vector_src);
 
     // prepare F_I - A_IG * src_interface
     temp_subdomain_vector_src = rhs_subdomain;
@@ -659,9 +569,7 @@ namespace Portable
 
     // distribute interface dofs into subdomain solution
     Kokkos::parallel_for(
-      "distribute_interface_dofs",
-      interface_dofs.size(),
-      KOKKOS_LAMBDA(const int i) {
+      "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         subdomain_solution_view(interface_dofs(i)) = interface_solution_view(i);
       });
 
@@ -673,8 +581,7 @@ namespace Portable
   void
   SchurInterfaceOperator<dim, number>::Tvmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src)
-    const
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     this->vmult(dst, src);
   }
@@ -683,16 +590,14 @@ namespace Portable
   types::global_dof_index
   SchurInterfaceOperator<dim, number>::m() const
   {
-    return this->subdomain_dof_handler->get_interface_vector_partitioner()
-      ->size();
+    return this->subdomain_dof_handler->get_interface_vector_partitioner()->size();
   }
 
   template <int dim, typename number>
   types::global_dof_index
   SchurInterfaceOperator<dim, number>::n() const
   {
-    return this->subdomain_dof_handler->get_interface_vector_partitioner()
-      ->size();
+    return this->subdomain_dof_handler->get_interface_vector_partitioner()->size();
   }
 
   template <int dim, typename number>

@@ -58,8 +58,7 @@ template <int dim, int fe_degree>
 class LaplaceProblem
 {
 public:
-  LaplaceProblem(const unsigned int n_pre_smooth,
-                 const unsigned int n_post_smooth);
+  LaplaceProblem(const unsigned int n_pre_smooth, const unsigned int n_post_smooth);
 
   void
   run();
@@ -124,11 +123,9 @@ private:
   IndexSet locally_owned_dofs;
   IndexSet locally_relevant_dofs;
 
-  std::vector<std::shared_ptr<SubdomainTriangulation<dim>>>
-    level_subdomain_triangulations;
+  std::vector<std::shared_ptr<SubdomainTriangulation<dim>>> level_subdomain_triangulations;
 
-  std::vector<std::shared_ptr<parallel::fullydistributed::Triangulation<dim>>>
-    level_triangulations;
+  std::vector<std::shared_ptr<parallel::fullydistributed::Triangulation<dim>>> level_triangulations;
 
   MGLevelObject<SubdomainDoFHandler<dim>> level_subdomain_dof_handlers;
   MGLevelObject<DoFHandler<dim>>          level_dof_handlers;
@@ -136,8 +133,7 @@ private:
   MGLevelObject<AffineConstraints<double>> level_subdomain_constraints;
   MGLevelObject<AffineConstraints<double>> level_subdomain_constraints_physical;
 
-  using VectorTypeMG =
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+  using VectorTypeMG = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
   using LevelMatrixType = Portable::SubdomainLaplaceOperatorBase<dim, double>;
 
@@ -147,8 +143,7 @@ private:
 
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_matrices;
 
-  MGLevelObject<std::unique_ptr<LevelMatrixType>>
-    level_subdomain_neumann_matrices;
+  MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_neumann_matrices;
 
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_dirichlet;
 
@@ -158,32 +153,24 @@ private:
 
   MGLevelObject<SmootherType> subdomain_mg_smoothers_neumann;
 
-  std::unique_ptr<Portable::VCycleMultigridBase<dim, double>>
-    subdomain_mg_preconditioner_dirichlet;
+  std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_dirichlet;
 
-  std::unique_ptr<Portable::VCycleMultigridBase<dim, double>>
-    subdomain_mg_preconditioner_neumann;
+  std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_neumann;
 
-  std::unique_ptr<Portable::SchurInterfaceOperator<dim, double>>
-    interface_operator;
+  std::unique_ptr<Portable::SchurInterfaceOperator<dim, double>> interface_operator;
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, double>> bnn_preconditioner;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-    global_solution_host, subdomain_solution_host;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    subdomain_solution_device;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    subdomain_rhs_device, schur_rhs;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_solution_host,
+    subdomain_solution_host;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> subdomain_solution_device;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> subdomain_rhs_device, schur_rhs;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    rhs_schur_device;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> rhs_schur_device;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    solution_interface_device;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_interface_device;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-    global_interface_weights;
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_interface_weights;
 
   const unsigned int n_pre_smooth;
   const unsigned int n_post_smooth;
@@ -212,15 +199,14 @@ private:
     void
     run()
     {
-      parent_problem.level_subdomain_matrices[level] = std::make_unique<
-        Portable::SubdomainLaplaceOperator<dim, degree, double>>(
-        subomain_dof_handler, constraints, overlap_communication_computation);
+      parent_problem.level_subdomain_matrices[level] =
+        std::make_unique<Portable::SubdomainLaplaceOperator<dim, degree, double>>(
+          subomain_dof_handler, constraints, overlap_communication_computation);
 
 
-      parent_problem.level_subdomain_neumann_matrices[level] = std::make_unique<
-        typename Portable::
-          SubdomainNeumannOperatorWrapper<dim, degree, double>>(
-        *parent_problem.level_subdomain_matrices[level]);
+      parent_problem.level_subdomain_neumann_matrices[level] =
+        std::make_unique<typename Portable::SubdomainNeumannOperatorWrapper<dim, degree, double>>(
+          *parent_problem.level_subdomain_matrices[level]);
     }
   };
 
@@ -240,22 +226,21 @@ private:
     void
     run()
     {
-      parent_problem.subdomain_mg_transfers_dirichlet[level] = std::make_unique<
-        Portable::
-          PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
+      parent_problem.subdomain_mg_transfers_dirichlet[level] =
+        std::make_unique<Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
-      parent_problem.subdomain_mg_transfers_dirichlet[level]->reinit(
-        mf_coarse, mf_fine, constraints_coarse, constraints_fine);
+      parent_problem.subdomain_mg_transfers_dirichlet[level]->reinit(mf_coarse,
+                                                                     mf_fine,
+                                                                     constraints_coarse,
+                                                                     constraints_fine);
 
-      parent_problem.subdomain_mg_transfers_neumann[level] = std::make_unique<
-        Portable::
-          PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
+      parent_problem.subdomain_mg_transfers_neumann[level] =
+        std::make_unique<Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
-      parent_problem.subdomain_mg_transfers_neumann[level]->reinit(
-        mf_coarse,
-        mf_fine,
-        physical_constraints_coarse,
-        physical_constraints_fine);
+      parent_problem.subdomain_mg_transfers_neumann[level]->reinit(mf_coarse,
+                                                                   mf_fine,
+                                                                   physical_constraints_coarse,
+                                                                   physical_constraints_fine);
     }
   };
 };
@@ -269,9 +254,7 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem(const unsigned int n_pre_smooth,
   , n_post_smooth(n_post_smooth)
   , setup_time(0.)
   , pcout(std::cout, Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
-  , time_details(std::cout,
-                 true &&
-                   Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+  , time_details(std::cout, true && Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
 {
   Assert(n_pre_smooth == n_post_smooth,
          ExcNotImplemented("Change of pre- and post-smoother degree "
@@ -280,13 +263,11 @@ LaplaceProblem<dim, fe_degree>::LaplaceProblem(const unsigned int n_pre_smooth,
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(
-  unsigned int n_refinement_cycles)
+LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(unsigned int n_refinement_cycles)
 {
   Timer time;
 
-  const unsigned int n_subdomains =
-    Utilities::MPI::n_mpi_processes(mpi_communicator);
+  const unsigned int n_subdomains = Utilities::MPI::n_mpi_processes(mpi_communicator);
 
   std::vector<unsigned int> subdomains_per_axis(dim);
 
@@ -314,10 +295,7 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(
   for (int d = 0; d < dim; ++d)
     p2[d] = 1.;
 
-  GridGenerator::subdivided_hyper_rectangle(coarse_triangulation,
-                                            subdomains_per_axis,
-                                            p1,
-                                            p2);
+  GridGenerator::subdivided_hyper_rectangle(coarse_triangulation, subdomains_per_axis, p1, p2);
 
   unsigned int cell_counter = 0;
   for (auto cell : coarse_triangulation.active_cell_iterators())
@@ -334,36 +312,32 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(
       n_cells_total = coarse_triangulation.n_global_active_cells();
 
       const TriangulationDescription::Description<dim> description =
-        TriangulationDescription::Utilities::
-          create_description_from_triangulation(coarse_triangulation,
-                                                mpi_communicator);
+        TriangulationDescription::Utilities::create_description_from_triangulation(
+          coarse_triangulation, mpi_communicator);
 
       this->triangulation.clear();
       this->triangulation.create_triangulation(description);
 
       this->level_triangulations.push_back(
-        std::make_shared<parallel::fullydistributed::Triangulation<dim>>(
-          mpi_communicator));
+        std::make_shared<parallel::fullydistributed::Triangulation<dim>>(mpi_communicator));
       this->level_triangulations.back()->create_triangulation(description);
 
       this->level_subdomain_triangulations.push_back(
         std::make_shared<SubdomainTriangulation<dim>>());
 
       if (cycle == 0)
-        this->level_subdomain_triangulations.back()
-          ->create_subdomain_triangulation(*level_triangulations.back());
+        this->level_subdomain_triangulations.back()->create_subdomain_triangulation(
+          *level_triangulations.back());
       else
         {
-          this->level_subdomain_triangulations.back()
-            ->copy_subdomain_triangulation(
-              *level_subdomain_triangulations[cycle - 1]);
+          this->level_subdomain_triangulations.back()->copy_subdomain_triangulation(
+            *level_subdomain_triangulations[cycle - 1]);
           this->level_subdomain_triangulations.back()->refine_global(1);
         }
     }
   setup_time += time.wall_time();
-  time_details
-    << "           Subdomain triangulations extracted        (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Subdomain triangulations extracted        (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   // const double subdomain_diameter = Utilities::MPI::max(
   //   GridTools::diameter(
@@ -385,8 +359,7 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 {
   Timer time;
 
-  const unsigned int n_h_levels =
-    static_cast<unsigned int>(level_triangulations.size());
+  const unsigned int n_h_levels = static_cast<unsigned int>(level_triangulations.size());
 
   AssertDimension(n_h_levels, level_subdomain_triangulations.size());
 
@@ -398,26 +371,20 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   p_level_fes.resize(0, p_levels.size() - 1);
 
   for (unsigned int level = 0; level < p_levels.size(); ++level)
-    p_level_fes[level] =
-      std::make_unique<FE_Q<dim>>(p_levels[p_levels.size() - 1 - level]);
+    p_level_fes[level] = std::make_unique<FE_Q<dim>>(p_levels[p_levels.size() - 1 - level]);
 
   level_dof_handlers.resize(0, n_h_levels - 1 + p_level_fes.max_level());
-  level_subdomain_dof_handlers.resize(0,
-                                      n_h_levels - 1 + p_level_fes.max_level());
+  level_subdomain_dof_handlers.resize(0, n_h_levels - 1 + p_level_fes.max_level());
 
   level_subdomain_constraints.resize(0, level_dof_handlers.max_level());
-  level_subdomain_constraints_physical.resize(0,
-                                              level_dof_handlers.max_level());
+  level_subdomain_constraints_physical.resize(0, level_dof_handlers.max_level());
 
-  Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
-  std::map<types::boundary_id, const Function<dim> *>
-    dirichlet_boundary_functions = {
-      {types::boundary_id(0), &homogeneous_dirichlet_bc},
-      {level_subdomain_triangulations.back()->get_interface_id(),
-       &homogeneous_dirichlet_bc}};
-  std::map<types::boundary_id, const Function<dim> *>
-    dirichlet_boundary_functions_physical = {
-      {types::boundary_id(0), &homogeneous_dirichlet_bc}};
+  Functions::ZeroFunction<dim>                        homogeneous_dirichlet_bc;
+  std::map<types::boundary_id, const Function<dim> *> dirichlet_boundary_functions = {
+    {types::boundary_id(0), &homogeneous_dirichlet_bc},
+    {level_subdomain_triangulations.back()->get_interface_id(), &homogeneous_dirichlet_bc}};
+  std::map<types::boundary_id, const Function<dim> *> dirichlet_boundary_functions_physical = {
+    {types::boundary_id(0), &homogeneous_dirichlet_bc}};
 
   for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
     {
@@ -429,25 +396,21 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
       else
         dof_h.distribute_dofs(*p_level_fes[level + 1 - n_h_levels]);
 
-      SubdomainDoFHandler<dim> &subdomain_dof_h =
-        level_subdomain_dof_handlers[level];
+      SubdomainDoFHandler<dim> &subdomain_dof_h = level_subdomain_dof_handlers[level];
 
-      subdomain_dof_h.reinit(
-        level_subdomain_triangulations[std::min(level, n_h_levels - 1)], dof_h);
+      subdomain_dof_h.reinit(level_subdomain_triangulations[std::min(level, n_h_levels - 1)],
+                             dof_h);
       subdomain_dof_h.distribute_subdomain_dofs();
 
       {
-        AffineConstraints<double> &constraints =
-          level_subdomain_constraints[level];
+        AffineConstraints<double> &constraints = level_subdomain_constraints[level];
 
         constraints.clear();
 
-        DoFTools::make_hanging_node_constraints(
-          subdomain_dof_h.get_dof_handler(), constraints);
-        VectorTools::interpolate_boundary_values(
-          subdomain_dof_h.get_dof_handler(),
-          dirichlet_boundary_functions,
-          constraints);
+        DoFTools::make_hanging_node_constraints(subdomain_dof_h.get_dof_handler(), constraints);
+        VectorTools::interpolate_boundary_values(subdomain_dof_h.get_dof_handler(),
+                                                 dirichlet_boundary_functions,
+                                                 constraints);
         constraints.close();
       }
 
@@ -457,34 +420,27 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
         constraints_physical.clear();
 
-        DoFTools::make_hanging_node_constraints(
-          subdomain_dof_h.get_dof_handler(), constraints_physical);
-        VectorTools::interpolate_boundary_values(
-          subdomain_dof_h.get_dof_handler(),
-          dirichlet_boundary_functions_physical,
-          constraints_physical);
+        DoFTools::make_hanging_node_constraints(subdomain_dof_h.get_dof_handler(),
+                                                constraints_physical);
+        VectorTools::interpolate_boundary_values(subdomain_dof_h.get_dof_handler(),
+                                                 dirichlet_boundary_functions_physical,
+                                                 constraints_physical);
         constraints_physical.close();
       }
     }
 
-  locally_owned_dofs = level_dof_handlers.back().locally_owned_dofs();
-  locally_relevant_dofs =
-    DoFTools::extract_locally_relevant_dofs(level_dof_handlers.back());
+  locally_owned_dofs    = level_dof_handlers.back().locally_owned_dofs();
+  locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(level_dof_handlers.back());
 
-  pcout << "           Total number of DoFs: "
-        << level_dof_handlers.back().n_dofs() << std::endl;
+  pcout << "           Total number of DoFs: " << level_dof_handlers.back().n_dofs() << std::endl;
 
-  global_solution_host.reinit(locally_owned_dofs,
-                              locally_relevant_dofs,
-                              mpi_communicator);
+  global_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
 
-  subdomain_solution_host.reinit(
-    level_subdomain_dof_handlers.back().get_dof_handler().n_dofs());
+  subdomain_solution_host.reinit(level_subdomain_dof_handlers.back().get_dof_handler().n_dofs());
 
   setup_time += time.wall_time();
-  time_details
-    << "           Subdomain DoFs setup                      (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Subdomain DoFs setup                      (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -494,23 +450,18 @@ LaplaceProblem<dim, fe_degree>::compute_interface_weights()
   if (!level_subdomain_dof_handlers.back().get_interface_vector_partitioner())
     return;
 
-  level_subdomain_dof_handlers.back().initialize_interface_dof_vector(
-    global_interface_weights);
+  level_subdomain_dof_handlers.back().initialize_interface_dof_vector(global_interface_weights);
 
   const unsigned int n_locally_relevant_interface_indices =
-    this->level_subdomain_dof_handlers.back()
-      .n_locally_relevant_interface_indices();
+    this->level_subdomain_dof_handlers.back().n_locally_relevant_interface_indices();
   for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
     global_interface_weights[this->level_subdomain_dof_handlers.back()
-                               .local_to_global_interface_partitioner(i)] +=
-      1.0;
+                               .local_to_global_interface_partitioner(i)] += 1.0;
 
   global_interface_weights.compress(VectorOperation::add);
 
-  for (unsigned int i = 0; i < global_interface_weights.locally_owned_size();
-       ++i)
-    global_interface_weights.local_element(i) =
-      1. / global_interface_weights.local_element(i);
+  for (unsigned int i = 0; i < global_interface_weights.locally_owned_size(); ++i)
+    global_interface_weights.local_element(i) = 1. / global_interface_weights.local_element(i);
 
   global_interface_weights.update_ghost_values();
 }
@@ -519,8 +470,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 {
-  const unsigned int n_h_levels =
-    static_cast<unsigned int>(level_triangulations.size());
+  const unsigned int n_h_levels = static_cast<unsigned int>(level_triangulations.size());
 
   Kokkos::fence();
   Timer time;
@@ -533,45 +483,38 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
     {
       if (level < n_h_levels)
         {
-          level_subdomain_matrices[level] = std::make_unique<
-            Portable::SubdomainLaplaceOperator<dim, 1, double>>(
-            level_subdomain_dof_handlers[level],
-            level_subdomain_constraints[level]);
+          level_subdomain_matrices[level] =
+            std::make_unique<Portable::SubdomainLaplaceOperator<dim, 1, double>>(
+              level_subdomain_dof_handlers[level], level_subdomain_constraints[level]);
 
 
-          level_subdomain_neumann_matrices[level] = std::make_unique<
-            typename Portable::SubdomainNeumannOperatorWrapper<dim, 1, double>>(
-            *level_subdomain_matrices[level]);
+          level_subdomain_neumann_matrices[level] =
+            std::make_unique<typename Portable::SubdomainNeumannOperatorWrapper<dim, 1, double>>(
+              *level_subdomain_matrices[level]);
         }
       else
         {
-          SubdomainLaplaceOperatorRunner runner{
-            level,
-            level_subdomain_dof_handlers[level],
-            level_subdomain_constraints[level],
-            false,
-            *this};
+          SubdomainLaplaceOperatorRunner runner{level,
+                                                level_subdomain_dof_handlers[level],
+                                                level_subdomain_constraints[level],
+                                                false,
+                                                *this};
 
 
           bool success = Portable::SubdomainOperatorDispatchFactory::dispatch(
             p_level_fes[level + 1 - n_h_levels]->degree, runner);
 
-          Assert(
-            success,
-            ExcMessage(
-              "Failed to find a matching polynomial degree in dispatcher."));
+          Assert(success, ExcMessage("Failed to find a matching polynomial degree in dispatcher."));
         }
     }
 
-  level_subdomain_matrices.back()->initialize_dof_vector(
-    subdomain_solution_device);
+  level_subdomain_matrices.back()->initialize_dof_vector(subdomain_solution_device);
   level_subdomain_matrices.back()->initialize_dof_vector(subdomain_rhs_device);
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           Matrix-free operators setup               (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Matrix-free operators setup               (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -581,8 +524,7 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
   Kokkos::fence();
   Timer time;
 
-  const unsigned int n_h_levels =
-    static_cast<unsigned int>(level_triangulations.size());
+  const unsigned int n_h_levels = static_cast<unsigned int>(level_triangulations.size());
 
   subdomain_mg_transfers_dirichlet.resize(level_subdomain_matrices.min_level(),
                                           level_subdomain_matrices.max_level());
@@ -615,23 +557,19 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
       else
         {
           const unsigned int p_coarse = p_level_fes[level - n_h_levels]->degree;
-          const unsigned int p_fine =
-            p_level_fes[level + 1 - n_h_levels]->degree;
+          const unsigned int p_fine   = p_level_fes[level + 1 - n_h_levels]->degree;
 
-          PolynomialTransferRunner runner{
-            level,
-            level_subdomain_matrices[level - 1]->get_matrix_free(),
-            level_subdomain_matrices[level]->get_matrix_free(),
-            level_subdomain_constraints[level - 1],
-            level_subdomain_constraints[level],
-            level_subdomain_constraints_physical[level - 1],
-            level_subdomain_constraints_physical[level],
-            *this};
+          PolynomialTransferRunner runner{level,
+                                          level_subdomain_matrices[level - 1]->get_matrix_free(),
+                                          level_subdomain_matrices[level]->get_matrix_free(),
+                                          level_subdomain_constraints[level - 1],
+                                          level_subdomain_constraints[level],
+                                          level_subdomain_constraints_physical[level - 1],
+                                          level_subdomain_constraints_physical[level],
+                                          *this};
 
           bool success =
-            Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse,
-                                                                  p_fine,
-                                                                  runner);
+            Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse, p_fine, runner);
 
           Assert(success,
                  ExcMessage("Failed to find a matching polynomial degree "
@@ -641,9 +579,8 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           MG transfers setup                        (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           MG transfers setup                        (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 
@@ -678,15 +615,13 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
         }
       else
         {
-          smoother_data_dirichlet.smoothing_range = 1e-3;
-          smoother_data_dirichlet.degree = numbers::invalid_unsigned_int;
-          smoother_data_dirichlet.eig_cg_n_iterations =
-            level_subdomain_matrices[0]->m();
+          smoother_data_dirichlet.smoothing_range     = 1e-3;
+          smoother_data_dirichlet.degree              = numbers::invalid_unsigned_int;
+          smoother_data_dirichlet.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
 
-          smoother_data_neumann.smoothing_range = 1e-3;
-          smoother_data_neumann.degree          = numbers::invalid_unsigned_int;
-          smoother_data_neumann.eig_cg_n_iterations =
-            level_subdomain_matrices[0]->m();
+          smoother_data_neumann.smoothing_range     = 1e-3;
+          smoother_data_neumann.degree              = numbers::invalid_unsigned_int;
+          smoother_data_neumann.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
         }
 
       level_subdomain_matrices[level]->compute_diagonal();
@@ -696,18 +631,17 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
       smoother_data_neumann.preconditioner =
         level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann();
 
-      subdomain_mg_smoothers_dirichlet[level].initialize(
-        *level_subdomain_matrices[level], smoother_data_dirichlet);
+      subdomain_mg_smoothers_dirichlet[level].initialize(*level_subdomain_matrices[level],
+                                                         smoother_data_dirichlet);
 
-      subdomain_mg_smoothers_neumann[level].initialize(
-        *level_subdomain_neumann_matrices[level], smoother_data_neumann);
+      subdomain_mg_smoothers_neumann[level].initialize(*level_subdomain_neumann_matrices[level],
+                                                       smoother_data_neumann);
     }
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           Smoothers setup                           (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Smoothers setup                           (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 
@@ -719,37 +653,24 @@ LaplaceProblem<dim, fe_degree>::setup_mg_preconditioners()
   Kokkos::fence();
   Timer time;
 
-  subdomain_mg_preconditioner_dirichlet =
-    std::make_unique<Portable::SubdomainVCycleMultigrid<dim,
-                                                        double,
-                                                        LevelMatrixType,
-                                                        TransferType,
-                                                        SmootherType>>(
-      level_subdomain_matrices,
-      subdomain_mg_transfers_dirichlet,
-      subdomain_mg_smoothers_dirichlet);
+  subdomain_mg_preconditioner_dirichlet = std::make_unique<
+    Portable::SubdomainVCycleMultigrid<dim, double, LevelMatrixType, TransferType, SmootherType>>(
+    level_subdomain_matrices, subdomain_mg_transfers_dirichlet, subdomain_mg_smoothers_dirichlet);
 
   const bool impose_zero_mean =
-    level_subdomain_matrices.back()
-      ->get_physical_boundary_dof_indices_subdomain()
-      .size() == 0;
+    level_subdomain_matrices.back()->get_physical_boundary_dof_indices_subdomain().size() == 0;
 
-  subdomain_mg_preconditioner_neumann =
-    std::make_unique<Portable::SubdomainVCycleMultigrid<dim,
-                                                        double,
-                                                        LevelMatrixType,
-                                                        TransferType,
-                                                        SmootherType>>(
-      level_subdomain_neumann_matrices,
-      subdomain_mg_transfers_neumann,
-      subdomain_mg_smoothers_neumann,
-      impose_zero_mean);
+  subdomain_mg_preconditioner_neumann = std::make_unique<
+    Portable::SubdomainVCycleMultigrid<dim, double, LevelMatrixType, TransferType, SmootherType>>(
+    level_subdomain_neumann_matrices,
+    subdomain_mg_transfers_neumann,
+    subdomain_mg_smoothers_neumann,
+    impose_zero_mean);
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           MG Preconditioners setup                  (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           MG Preconditioners setup                  (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 
@@ -760,23 +681,21 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
   Kokkos::fence();
   Timer time;
 
-  interface_operator =
-    std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
-      *level_subdomain_matrices.back(),
-      *subdomain_mg_preconditioner_dirichlet,
-      *subdomain_mg_preconditioner_neumann);
+  interface_operator = std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
+    *level_subdomain_matrices.back(),
+    *subdomain_mg_preconditioner_dirichlet,
+    *subdomain_mg_preconditioner_neumann);
 
-  rhs_schur_device.reinit(this->level_subdomain_dof_handlers.back()
-                            .get_interface_vector_partitioner());
+  rhs_schur_device.reinit(
+    this->level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
 
-  solution_interface_device.reinit(this->level_subdomain_dof_handlers.back()
-                                     .get_interface_vector_partitioner());
+  solution_interface_device.reinit(
+    this->level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           Interface system setup                    (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Interface system setup                    (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -787,14 +706,13 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
   Timer time;
 
   this->bnn_preconditioner =
-    std::make_unique<Portable::BNNPreconditioner<dim, double>>(
-      *interface_operator, *level_subdomain_matrices.back());
+    std::make_unique<Portable::BNNPreconditioner<dim, double>>(*interface_operator,
+                                                               *level_subdomain_matrices.back());
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           BNN preconditioner setup                  (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           BNN preconditioner setup                  (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   Kokkos::fence();
   time.restart();
@@ -803,9 +721,8 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           Coarse matrix for BNN computed            (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Coarse matrix for BNN computed            (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 template <int dim, int fe_degree>
 void
@@ -819,9 +736,7 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   const QGauss<dim> quadrature_formula(fe_degree + 1);
 
-  FEValues<dim> fe_values(fe,
-                          quadrature_formula,
-                          update_values | update_JxW_values);
+  FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
 
   const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
   const unsigned int n_q_points    = quadrature_formula.size();
@@ -830,9 +745,8 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-  for (const auto &cell : level_subdomain_dof_handlers.back()
-                            .get_dof_handler()
-                            .active_cell_iterators())
+  for (const auto &cell :
+       level_subdomain_dof_handlers.back().get_dof_handler().active_cell_iterators())
     {
       cell_rhs = 0;
 
@@ -840,8 +754,7 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
       for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
         for (unsigned int i = 0; i < dofs_per_cell; ++i)
-          cell_rhs(i) +=
-            (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
+          cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
 
       cell->get_dof_indices(local_dof_indices);
 
@@ -849,9 +762,8 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
         system_rhs_host[local_dof_indices[i]] += cell_rhs[i];
     }
 
-  for (const auto &index : level_subdomain_dof_handlers.back()
-                             .get_dof_info()
-                             .subdomain_physical_boundary_dofs)
+  for (const auto &index :
+       level_subdomain_dof_handlers.back().get_dof_info().subdomain_physical_boundary_dofs)
     system_rhs_host[index] = 0.;
 
 
@@ -863,19 +775,16 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           RHS assembled                             (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           RHS assembled                             (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   Kokkos::fence();
   time.restart();
-  this->interface_operator->assemble_rhs_schur(rhs_schur_device,
-                                               subdomain_rhs_device);
+  this->interface_operator->assemble_rhs_schur(rhs_schur_device, subdomain_rhs_device);
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details
-    << "           Schur RHS assembled                       (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Schur RHS assembled                       (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 
@@ -889,9 +798,8 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // ReductionControl solver_control(1000, 1e-14, 1e-7);
   ReductionControl solver_control(100, 1e-16, 1e-9);
 
-  Portable::SolverProjectedCG<
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-    cg(solver_control);
+  Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
+    solver_control);
 
   // solution_interface_device = 0.;
   // cg.solve(*interface_operator,
@@ -926,15 +834,13 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   Kokkos::fence();
   const double time_solve = time.wall_time();
 
-  pcout << "           Interface solver converged in "
-        << solver_control.last_step() << " iterations.    (CPU/wall) "
-        << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  pcout << "           Interface solver converged in " << solver_control.last_step()
+        << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
+        << std::endl;
 
-  const auto max_mg_iterations =
-    interface_operator->get_maximum_subdomain_mg_iterations();
+  const auto max_mg_iterations = interface_operator->get_maximum_subdomain_mg_iterations();
 
-  const auto max_mg_iterations_dir =
-    Utilities::MPI::max(max_mg_iterations.first, mpi_communicator);
+  const auto max_mg_iterations_dir = Utilities::MPI::max(max_mg_iterations.first, mpi_communicator);
 
   const auto max_mg_iterations_neu =
     Utilities::MPI::max(max_mg_iterations.second, mpi_communicator);
@@ -969,10 +875,8 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
   const bool communication_on = true;
   const bool computation_on   = true;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-    dummy_solution, dummy_rhs;
-  level_subdomain_dof_handlers.back().initialize_interface_dof_vector(
-    dummy_solution);
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dummy_solution, dummy_rhs;
+  level_subdomain_dof_handlers.back().initialize_interface_dof_vector(dummy_solution);
   dummy_rhs.reinit(dummy_solution);
 
   dummy_rhs = 1.;
@@ -1104,8 +1008,9 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 {
   Timer time;
   Kokkos::fence();
-  this->interface_operator->reconstruct_subdomain_solution_from_interface(
-    subdomain_solution_device, solution_interface_device, subdomain_rhs_device);
+  this->interface_operator->reconstruct_subdomain_solution_from_interface(subdomain_solution_device,
+                                                                          solution_interface_device,
+                                                                          subdomain_rhs_device);
 
   LinearAlgebra::ReadWriteVector<double> rw_vector(
     level_subdomain_dof_handlers.back().get_dof_handler().n_dofs());
@@ -1114,12 +1019,10 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 
   subdomain_solution_host.update_ghost_values();
 
-  level_subdomain_constraints_physical.back().distribute(
-    subdomain_solution_host);
+  level_subdomain_constraints_physical.back().distribute(subdomain_solution_host);
 
-  const auto &subdomain_to_global_dof_map = level_subdomain_dof_handlers.back()
-                                              .get_dof_info()
-                                              .subdomain_to_global_dof_map;
+  const auto &subdomain_to_global_dof_map =
+    level_subdomain_dof_handlers.back().get_dof_info().subdomain_to_global_dof_map;
 
   for (unsigned int i = 0; i < subdomain_to_global_dof_map.size(); ++i)
     {
@@ -1131,8 +1034,8 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
   global_solution_host.compress(VectorOperation::add);
 
 
-  for (unsigned int i = 0; i < level_subdomain_dof_handlers.back()
-                                 .n_locally_relevant_interface_indices();
+  for (unsigned int i = 0;
+       i < level_subdomain_dof_handlers.back().n_locally_relevant_interface_indices();
        ++i)
     {
       const auto subdomain_index =
@@ -1146,9 +1049,8 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
   global_solution_host.update_ghost_values();
 
   Kokkos::fence();
-  time_details
-    << "           Subdomain solution post-processed         (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Subdomain solution post-processed         (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -1178,17 +1080,15 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
                                     cellwise_norm,
                                     QGauss<dim>(fe.degree + 2),
                                     VectorTools::L2_norm);
-  const double global_norm =
-    VectorTools::compute_global_error(*level_triangulations.back(),
-                                      cellwise_norm,
-                                      VectorTools::L2_norm);
+  const double global_norm = VectorTools::compute_global_error(*level_triangulations.back(),
+                                                               cellwise_norm,
+                                                               VectorTools::L2_norm);
 
   pcout << "        solution norm: " << global_norm << std::endl;
 
   Kokkos::fence();
-  time_details
-    << "           Output results                            (CPU/wall) "
-    << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+  time_details << "           Output results                            (CPU/wall) "
+               << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   // Vector<float> cellwise_norm_subdomain(
   //   subdomain_triangulation.get_triangulation().n_active_cells());
@@ -1213,18 +1113,15 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::test_coarse_problem()
 {
-  MGLevelObject<
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-    temp1, temp2, src, err;
+  MGLevelObject<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> temp1, temp2, src,
+    err;
 
   temp1.resize(0, this->level_subdomain_matrices.max_level());
   temp2.resize(0, this->level_subdomain_matrices.max_level());
   src.resize(0, this->level_subdomain_matrices.max_level());
   err.resize(0, this->level_subdomain_matrices.max_level());
 
-  for (unsigned int level = 0;
-       level <= this->level_subdomain_matrices.max_level();
-       ++level)
+  for (unsigned int level = 0; level <= this->level_subdomain_matrices.max_level(); ++level)
     {
       level_subdomain_matrices[level]->initialize_dof_vector(src[level]);
       src[level] = 1.;
@@ -1236,8 +1133,7 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
 
 
       this->level_subdomain_matrices[level]->vmult(temp1[level], src[level]);
-      this->level_subdomain_matrices[level]->vmult_bk3(temp2[level],
-                                                       src[level]);
+      this->level_subdomain_matrices[level]->vmult_bk3(temp2[level], src[level]);
 
       // temp1[level].print(std::cout);
       // temp2[level].print(std::cout);
@@ -1262,12 +1158,9 @@ LaplaceProblem<dim, fe_degree>::test_coarse_problem()
       // std::cout << std::endl;
       // MPI_Barrier(mpi_communicator);
 
-      std::cout << "  temp1[" << level
-                << "].l2_norm() = " << temp1[level].l2_norm() << std::endl;
-      std::cout << "  temp2[" << level
-                << "].l2_norm() = " << temp2[level].l2_norm() << std::endl;
-      std::cout << "  error[" << level
-                << "].l2_norm() = " << err[level].l2_norm() << std::endl;
+      std::cout << "  temp1[" << level << "].l2_norm() = " << temp1[level].l2_norm() << std::endl;
+      std::cout << "  temp2[" << level << "].l2_norm() = " << temp2[level].l2_norm() << std::endl;
+      std::cout << "  error[" << level << "].l2_norm() = " << err[level].l2_norm() << std::endl;
       MPI_Barrier(mpi_communicator);
     }
 
@@ -1339,8 +1232,7 @@ LaplaceProblem<dim, fe_degree>::run()
 
       create_subdomain_triangulations(cycle + 1);
 
-      pcout << "    N_cells = "
-            << level_triangulations.back()->n_global_active_cells()
+      pcout << "    N_cells = " << level_triangulations.back()->n_global_active_cells()
             << std::endl;
 
       setup_dofs();
@@ -1445,33 +1337,28 @@ main(int argc, char *argv[])
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth,
-                                                     n_post_smooth);
+      LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       laplace_problem.run();
     }
   catch (std::exception &exc)
     {
       std::cerr << std::endl
                 << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
+                << "----------------------------------------------------" << std::endl;
       std::cerr << "Exception on processing: " << std::endl
                 << exc.what() << std::endl
                 << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
+                << "----------------------------------------------------" << std::endl;
       return 1;
     }
   catch (...)
     {
       std::cerr << std::endl
                 << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
+                << "----------------------------------------------------" << std::endl;
       std::cerr << "Unknown exception!" << std::endl
                 << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
+                << "----------------------------------------------------" << std::endl;
       return 1;
     }
 
