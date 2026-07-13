@@ -63,9 +63,6 @@ public:
   void
   run();
 
-  void
-  test_coarse_problem();
-
 private:
   void
   create_subdomain_triangulations(unsigned int n_refinement_cycles);
@@ -108,9 +105,6 @@ private:
 
   void
   output_results(const unsigned int cycle) const;
-
-  void
-  test_triangulation(int n_refinements);
 
   MPI_Comm mpi_communicator;
 
@@ -310,7 +304,7 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(unsigned int n_r
 
   this->level_subdomain_triangulations.clear();
 
-  for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle)
+  for (unsigned int cycle = 0; cycle <= n_refinement_cycles; ++cycle)
     {
       if (cycle > 0)
         coarse_triangulation.refine_global(1);
@@ -337,7 +331,10 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(unsigned int n_r
         }
     }
   setup_time += time.wall_time();
-  time_details << "           Subdomain triangulations extracted        (CPU/wall) "
+
+  pcout << "                      N_cells = " << triangulation.n_global_active_cells() << std::endl << std::endl;
+
+  time_details << "                      Subdomain triangulations extracted        (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   // const double subdomain_diameter = Utilities::MPI::max(
@@ -361,8 +358,6 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   Timer time;
 
   const unsigned int n_h_levels = static_cast<unsigned int>(level_subdomain_triangulations.size());
-
-  AssertDimension(n_h_levels, level_subdomain_triangulations.size());
 
   std::vector<unsigned int> p_levels({fe.degree});
 
@@ -455,14 +450,14 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
   locally_owned_dofs    = dof_handler_fine.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler_fine);
 
-  pcout << "           Total number of DoFs: " << dof_handler_fine.n_dofs() << std::endl;
+  pcout << "                      Total number of DoFs: " << dof_handler_fine.n_dofs() << std::endl;
 
   global_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
 
   subdomain_solution_host.reinit(subdomain_dof_handler_fine.get_dof_handler().n_dofs());
 
   setup_time += time.wall_time();
-  time_details << "           Subdomain DoFs setup                      (CPU/wall) "
+  time_details << "                      Subdomain DoFs setup                      (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -554,7 +549,7 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Matrix-free operators setup               (CPU/wall) "
+  time_details << "                      Matrix-free operators setup               (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -619,29 +614,52 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
     }
 
   {
-    const unsigned int level    = level_subdomain_plain_dof_handlers.max_level() + 1;
-    const unsigned int p_coarse = p_level_fes[level - n_h_levels]->degree;
-    const unsigned int p_fine   = p_level_fes[level + 1 - n_h_levels]->degree;
+    const unsigned int level = level_subdomain_plain_dof_handlers.max_level() + 1;
 
-    PolynomialTransferRunner runner{level,
-                                    level_subdomain_matrices[level - 1]->get_matrix_free(),
-                                    level_subdomain_matrices[level]->get_matrix_free(),
-                                    level_subdomain_constraints[level - 1],
-                                    subdomain_constraints_fine,
-                                    level_subdomain_constraints_physical[level - 1],
-                                    subdomain_constraints_physical_fine,
-                                    *this};
+    if constexpr (fe_degree == 1)
+      {
+        subdomain_mg_transfers_dirichlet[level] =
+          std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
+        subdomain_mg_transfers_dirichlet[level]->reinit(
+          level_subdomain_matrices[level - 1]->get_matrix_free(),
+          level_subdomain_matrices[level]->get_matrix_free(),
+          level_subdomain_constraints[level - 1],
+          subdomain_constraints_fine);
 
-    bool success = Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse, p_fine, runner);
+        subdomain_mg_transfers_neumann[level] =
+          std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
+        subdomain_mg_transfers_neumann[level]->reinit(
+          level_subdomain_matrices[level - 1]->get_matrix_free(),
+          level_subdomain_matrices[level]->get_matrix_free(),
+          level_subdomain_constraints_physical[level - 1],
+          subdomain_constraints_physical_fine);
+      }
+    else
+      {
+        const unsigned int p_coarse = p_level_fes[level - n_h_levels]->degree;
+        const unsigned int p_fine   = p_level_fes[level + 1 - n_h_levels]->degree;
 
-    Assert(success,
-           ExcMessage("Failed to find a matching polynomial degree "
-                      "pair in transfer dispatcher."));
+        PolynomialTransferRunner runner{level,
+                                        level_subdomain_matrices[level - 1]->get_matrix_free(),
+                                        level_subdomain_matrices[level]->get_matrix_free(),
+                                        level_subdomain_constraints[level - 1],
+                                        subdomain_constraints_fine,
+                                        level_subdomain_constraints_physical[level - 1],
+                                        subdomain_constraints_physical_fine,
+                                        *this};
+
+        bool success =
+          Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse, p_fine, runner);
+
+        Assert(success,
+               ExcMessage("Failed to find a matching polynomial degree "
+                          "pair in transfer dispatcher."));
+      }
   }
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           MG transfers setup                        (CPU/wall) "
+  time_details << "                      MG transfers setup                        (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -703,7 +721,7 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Smoothers setup                           (CPU/wall) "
+  time_details << "                      Smoothers setup                           (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -732,7 +750,7 @@ LaplaceProblem<dim, fe_degree>::setup_mg_preconditioners()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           MG Preconditioners setup                  (CPU/wall) "
+  time_details << "                      MG Preconditioners setup                  (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -756,7 +774,7 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Interface system setup                    (CPU/wall) "
+  time_details << "                      Interface system setup                    (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -773,7 +791,7 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           BNN preconditioner setup                  (CPU/wall) "
+  time_details << "                      BNN preconditioner setup                  (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   Kokkos::fence();
@@ -783,7 +801,7 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Coarse matrix for BNN computed            (CPU/wall) "
+  time_details << "                      Coarse matrix for BNN computed            (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 template <int dim, int fe_degree>
@@ -836,7 +854,7 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
 
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           RHS assembled                             (CPU/wall) "
+  time_details << "                      RHS assembled                             (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
   Kokkos::fence();
@@ -844,7 +862,7 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   this->interface_operator->assemble_rhs_schur(rhs_schur_device, subdomain_rhs_device);
   Kokkos::fence();
   setup_time += time.wall_time();
-  time_details << "           Schur RHS assembled                       (CPU/wall) "
+  time_details << "                      Schur RHS assembled                       (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -895,7 +913,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   Kokkos::fence();
   const double time_solve = time.wall_time();
 
-  pcout << "           Interface solver converged in " << solver_control.last_step()
+  pcout << "                      Interface solver converged in " << solver_control.last_step()
         << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
         << std::endl;
 
@@ -1108,7 +1126,7 @@ LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
   global_solution_host.update_ghost_values();
 
   Kokkos::fence();
-  time_details << "           Subdomain solution post-processed         (CPU/wall) "
+  time_details << "                      Subdomain solution post-processed         (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 }
 
@@ -1122,15 +1140,30 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 
   // DataOut<dim> data_out;
 
-  // data_out.attach_dof_handler(level_dof_handlers.back());
+  // data_out.attach_dof_handler(dof_handler_fine);
   // data_out.add_data_vector(global_solution_host, "solution");
   // data_out.build_patches();
 
   // DataOutBase::VtkFlags flags;
   // flags.compression_level = DataOutBase::CompressionLevel::best_speed;
   // data_out.set_flags(flags);
-  // data_out.write_vtu_with_pvtu_record(
-  //   "./", "solution", cycle, mpi_communicator, 2);
+  // data_out.write_vtu_with_pvtu_record("./", "solution", cycle, mpi_communicator, 2);
+
+  // DataOut<dim> data_out_subdomain;
+
+  // data_out_subdomain.attach_dof_handler(subdomain_dof_handler_fine.get_dof_handler());
+  // data_out_subdomain.add_data_vector(
+  //   subdomain_solution_host,
+  //   "solution_subdomain_" + std::to_string(subdomain_dof_handler_fine.get_subdomain_id()));
+  // data_out_subdomain.build_patches();
+
+  // data_out_subdomain.set_flags(flags);
+  // data_out_subdomain.write_vtu_with_pvtu_record("./",
+  //                                               "solution_subdomain_" +std::to_string(
+  //                                                 subdomain_dof_handler_fine.get_subdomain_id()),
+  //                                               cycle,
+  //                                               mpi_communicator,
+  //                                               1);
 
   Vector<float> cellwise_norm(triangulation.n_active_cells());
   VectorTools::integrate_difference(dof_handler_fine,
@@ -1142,11 +1175,13 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   const double global_norm =
     VectorTools::compute_global_error(triangulation, cellwise_norm, VectorTools::L2_norm);
 
-  pcout << "        solution norm: " << global_norm << std::endl;
 
   Kokkos::fence();
-  time_details << "           Output results                            (CPU/wall) "
+  time_details << "                      Output results                            (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+
+  pcout << "                      solution norm: " << global_norm << std::endl;
+
 
   // Vector<float> cellwise_norm_subdomain(
   //   subdomain_triangulation.get_triangulation().n_active_cells());
@@ -1169,129 +1204,15 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::test_coarse_problem()
-{
-  MGLevelObject<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> temp1, temp2, src,
-    err;
-
-  temp1.resize(0, this->level_subdomain_matrices.max_level());
-  temp2.resize(0, this->level_subdomain_matrices.max_level());
-  src.resize(0, this->level_subdomain_matrices.max_level());
-  err.resize(0, this->level_subdomain_matrices.max_level());
-
-  for (unsigned int level = 0; level <= this->level_subdomain_matrices.max_level(); ++level)
-    {
-      level_subdomain_matrices[level]->initialize_dof_vector(src[level]);
-      src[level] = 1.;
-
-      temp1[level].reinit(src[level]);
-      temp2[level].reinit(src[level]);
-
-      // level_subdomain_constraints[level].distribute(src[level]);
-
-
-      this->level_subdomain_matrices[level]->vmult(temp1[level], src[level]);
-      this->level_subdomain_matrices[level]->vmult_bk3(temp2[level], src[level]);
-
-      // temp1[level].print(std::cout);
-      // temp2[level].print(std::cout);
-
-
-
-      err[level] = temp1[level];
-      err[level] -= temp2[level];
-
-      MPI_Barrier(mpi_communicator);
-
-      // std::cout << "temp1[" << level << "] = ";
-      // for (const auto x : temp1[level])
-      //   std::cout << x << "  ";
-      // std::cout << std::endl;
-
-      // MPI_Barrier(mpi_communicator);
-
-      // std::cout << "temp2[" << level << "] = ";
-      // for (const auto x : temp2[level])
-      //   std::cout << x << "  ";
-      // std::cout << std::endl;
-      // MPI_Barrier(mpi_communicator);
-
-      std::cout << "  temp1[" << level << "].l2_norm() = " << temp1[level].l2_norm() << std::endl;
-      std::cout << "  temp2[" << level << "].l2_norm() = " << temp2[level].l2_norm() << std::endl;
-      std::cout << "  error[" << level << "].l2_norm() = " << err[level].l2_norm() << std::endl;
-      MPI_Barrier(mpi_communicator);
-    }
-
-  // LinearAlgebra::distributed::Vector<double, MemorySpace::Default> temp1,
-  // temp2,
-  //   src, err;
-
-  // const auto &matrix = *level_subdomain_matrices.back();
-  // matrix.initialize_dof_vector(src);
-  // src = 1.;
-
-  // temp1.reinit(src);
-  // temp2.reinit(src);
-
-  // MPI_Barrier(mpi_communicator);
-
-  // if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
-  //   matrix.vmult(temp1, src);
-  // MPI_Barrier(mpi_communicator);
-
-  // if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
-  //   matrix.vmult_bk3(temp2, src);
-
-  // MPI_Barrier(mpi_communicator);
-
-  // err = temp1;
-  // err -= temp2;
-
-  // MPI_Barrier(mpi_communicator);
-
-  // std::cout << "temp1[" << level << "] = ";
-  // for (const auto x : temp1[level])
-  //   std::cout << x << "  ";
-  // std::cout << std::endl;
-
-  // MPI_Barrier(mpi_communicator);
-
-  // std::cout << "temp2[" << level << "] = ";
-  // for (const auto x : temp2[level])
-  //   std::cout << x << "  ";
-  // std::cout << std::endl;
-  // MPI_Barrier(mpi_communicator);
-
-  // if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
-  //   {
-  //     std::cout << "  temp1.l2_norm() = " << temp1.l2_norm() << std::endl;
-  //     std::cout << "  temp2.l2_norm() = " << temp2.l2_norm() << std::endl;
-  //     std::cout << "  error.l2_norm() = " << err.l2_norm() << std::endl;
-  //   }
-  // Kokkos::fence();
-  // MPI_Barrier(mpi_communicator);
-}
-
-
-template <int dim, int fe_degree>
-void
-LaplaceProblem<dim, fe_degree>::test_triangulation(int n_refinements)
-{}
-
-
-
-template <int dim, int fe_degree>
-void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 8; ++cycle)
+  for (unsigned int cycle = 0; cycle < 5; ++cycle)
     {
-      pcout << "Cycle " << cycle << std::endl;
+      pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
+            << std::endl;
 
       create_subdomain_triangulations(cycle + 1);
 
-      pcout << "    N_cells = " << triangulation.n_global_active_cells()
-            << std::endl;
 
       setup_dofs();
 
@@ -1311,11 +1232,11 @@ LaplaceProblem<dim, fe_degree>::run()
 
       assemble_rhs();
 
-      pcout << "           setup time: " << setup_time << "s" << std::endl;
+      pcout << "                      setup time: " << setup_time << "s" << std::endl;
 
       solve_interface();
 
-      matvec_ghost_timing();
+      // matvec_ghost_timing();
 
       // test_coarse_problem();
 
@@ -1325,60 +1246,62 @@ LaplaceProblem<dim, fe_degree>::run()
 
       // test_triangulation();
 
-      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        {
-          std::cout << std::endl << std::endl;
+      // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      //   {
+      //     std::cout << std::endl << std::endl;
 
-          timing_table.set_scientific("Dirichlet", true);
-          timing_table.set_precision("Dirichlet", 3);
-          timing_table.set_scientific("Neumann", true);
-          timing_table.set_precision("Neumann", 3);
-          timing_table.set_scientific("Coarse", true);
-          timing_table.set_precision("Coarse", 3);
-          timing_table.set_scientific("Project", true);
-          timing_table.set_precision("Project", 3);
-          timing_table.set_scientific("CG_time", true);
-          timing_table.set_precision("CG_time", 3);
+      //     timing_table.set_scientific("Dirichlet", true);
+      //     timing_table.set_precision("Dirichlet", 3);
+      //     timing_table.set_scientific("Neumann", true);
+      //     timing_table.set_precision("Neumann", 3);
+      //     timing_table.set_scientific("Coarse", true);
+      //     timing_table.set_precision("Coarse", 3);
+      //     timing_table.set_scientific("Project", true);
+      //     timing_table.set_precision("Project", 3);
+      //     timing_table.set_scientific("CG_time", true);
+      //     timing_table.set_precision("CG_time", 3);
 
-          timing_table_per_iteration.set_scientific("Dir_per_iter", true);
-          timing_table_per_iteration.set_precision("Dir_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Neu_per_iter", true);
-          timing_table_per_iteration.set_precision("Neu_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Crs_per_iter", true);
-          timing_table_per_iteration.set_precision("Crs_per_iter", 3);
-          timing_table_per_iteration.set_scientific("Prj_per_iter", true);
-          timing_table_per_iteration.set_precision("Prj_per_iter", 3);
-          timing_table_per_iteration.set_scientific("CG_per_iter", true);
-          timing_table_per_iteration.set_precision("CG_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Dir_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Dir_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Neu_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Neu_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Crs_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Crs_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("Prj_per_iter", true);
+      //     timing_table_per_iteration.set_precision("Prj_per_iter", 3);
+      //     timing_table_per_iteration.set_scientific("CG_per_iter", true);
+      //     timing_table_per_iteration.set_precision("CG_per_iter", 3);
 
-          timing_table.write_text(std::cout);
+      //     timing_table.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
+      //     std::cout << std::endl << std::endl;
 
-          timing_table_per_iteration.write_text(std::cout);
+      //     timing_table_per_iteration.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
-
-
-          ghost_timing_table.set_scientific("subdomain_total", true);
-          ghost_timing_table.set_precision("subdomain_total", 4);
-          ghost_timing_table.set_scientific("subdomain_compute", true);
-          ghost_timing_table.set_precision("subdomain_compute", 4);
-          ghost_timing_table.set_scientific("subdomain_communicate", true);
-          ghost_timing_table.set_precision("subdomain_communicate", 4);
+      //     std::cout << std::endl << std::endl;
 
 
-          ghost_timing_table.set_scientific("coarse_total", true);
-          ghost_timing_table.set_precision("coarse_total", 4);
-          ghost_timing_table.set_scientific("coarse_compute", true);
-          ghost_timing_table.set_precision("coarse_compute", 4);
-          ghost_timing_table.set_scientific("coarse_communicate", true);
-          ghost_timing_table.set_precision("coarse_communicate", 4);
+      //     ghost_timing_table.set_scientific("subdomain_total", true);
+      //     ghost_timing_table.set_precision("subdomain_total", 4);
+      //     ghost_timing_table.set_scientific("subdomain_compute", true);
+      //     ghost_timing_table.set_precision("subdomain_compute", 4);
+      //     ghost_timing_table.set_scientific("subdomain_communicate", true);
+      //     ghost_timing_table.set_precision("subdomain_communicate", 4);
 
-          ghost_timing_table.write_text(std::cout);
 
-          std::cout << std::endl << std::endl;
-        }
+      //     ghost_timing_table.set_scientific("coarse_total", true);
+      //     ghost_timing_table.set_precision("coarse_total", 4);
+      //     ghost_timing_table.set_scientific("coarse_compute", true);
+      //     ghost_timing_table.set_precision("coarse_compute", 4);
+      //     ghost_timing_table.set_scientific("coarse_communicate", true);
+      //     ghost_timing_table.set_precision("coarse_communicate", 4);
+
+      //     ghost_timing_table.write_text(std::cout);
+
+      //     std::cout << std::endl << std::endl;
+      //   }
+
+      pcout << std::endl << std::endl;
     }
 }
 
@@ -1389,17 +1312,68 @@ main(int argc, char *argv[])
     {
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      // constexpr int dim       = 2;
-      constexpr int fe_degree = 2;
 
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      LaplaceProblem<2, fe_degree> laplace_problem_2d(n_pre_smooth, n_post_smooth);
-      laplace_problem_2d.run();
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 1;
 
-      LaplaceProblem<3, fe_degree> laplace_problem_3d(n_pre_smooth, n_post_smooth);
-      laplace_problem_3d.run();
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 2;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 3;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 4;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+
+
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 1;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 2;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 3;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 4;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
     }
   catch (std::exception &exc)
     {
