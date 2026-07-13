@@ -76,6 +76,15 @@ namespace Portable
     }
 
     void
+    vmult_bddc_preconditioner(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override
+    {
+      dirichlet_operator->vmult_bddc_preconditioner(dst, src);
+    }
+
+
+    void
     Tvmult(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override

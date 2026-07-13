@@ -258,10 +258,11 @@ namespace Portable
 
     dst = 0.;
 
-    DeviceVector<Number> src_view(src.get_values(), src.size()),
-      dst_view(dst.get_values(), dst.size());
+    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
+      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
 
-    DeviceVector<Number> weights_view(interface_weights.get_values(), interface_weights.size());
+    DeviceVector<Number> weights_view(interface_weights.get_values(),
+                                      interface_dof_indices_subdomain.size());
 
     DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
                                               temp_subdomain_vector_src.size()),
@@ -278,8 +279,7 @@ namespace Portable
         t_subdomain_src_view(interface_dofs(i)) = weights_view(i) * src_view(i);
       });
 
-    SolverControl solver_control(temp_subdomain_vector_src.size(),
-     1e-12 * src.l2_norm());
+    SolverControl solver_control(temp_subdomain_vector_src.size(), 1e-12 * src.l2_norm());
 
     // ReductionControl solver_control(100, 1e-16, 1e-9);
 
@@ -289,8 +289,7 @@ namespace Portable
         temp_subdomain_vector_src.add(-mean_value_src);
       }
 
-    SolverCG<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>
-    cg(solver_control);
+    SolverCG<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>> cg(solver_control);
 
     temp_subdomain_vector_dst = 0.;
     cg.solve(this->subdomain_neumann_operator,
@@ -351,8 +350,8 @@ namespace Portable
 
     src.update_ghost_values();
 
-    DeviceVector<Number> src_view(src.get_values(), src.size()),
-      dst_view(dst.get_values(), dst.size());
+    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
+      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
 
     DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
                                               temp_subdomain_vector_src.size()),
@@ -422,8 +421,8 @@ namespace Portable
     if (communication_on)
       src.update_ghost_values();
 
-    DeviceVector<Number> src_view(src.get_values(), src.size()),
-      dst_view(dst.get_values(), dst.size());
+    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
+      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
 
     DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
                                               temp_subdomain_vector_src.size()),
@@ -495,7 +494,8 @@ namespace Portable
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<Number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size());
-    DeviceVector<Number> rhs_schur_view(rhs_schur.get_values(), rhs_schur.size());
+    DeviceVector<Number> rhs_schur_view(rhs_schur.get_values(),
+                                        interface_dofs.size());
     DeviceVector<Number> t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                                               temp_subdomain_vector_dst.size());
 
@@ -539,7 +539,8 @@ namespace Portable
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<Number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size()),
-      interface_solution_view(interface_solution.get_values(), interface_solution.size()),
+      interface_solution_view(interface_solution.get_values(),
+                              interface_dofs.size()),
       subdomain_solution_view(subdomain_solution.get_values(), subdomain_solution.size());
 
     DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),

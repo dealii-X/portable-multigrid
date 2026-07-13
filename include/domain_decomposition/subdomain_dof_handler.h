@@ -83,6 +83,21 @@ struct SubdomainDoFInfo
 
   /**
    * Subdomain interface vertex (corner) DoFs.
+   */
+  IndexSet interface_vertex_dofs_subdomain;
+
+  /**
+   * Subdomain interface edge DoFs.
+   */
+  IndexSet interface_edge_dofs_subdomain;
+
+  /**
+   * Subdomain interface face DoFs in 3d.
+   */
+  IndexSet interface_face_dofs_subdomain;
+
+  /**
+   * Subdomain interface vertex (corner) DoFs.
    * 0: global numbering, 1: local subdomain numbering, 2: shared by N subdomains
    */
   std::vector<std::tuple<types::global_dof_index, unsigned int, unsigned int>>
@@ -117,6 +132,9 @@ struct SubdomainDoFInfo
     interface_vertex_dofs_global.clear();
     interface_edge_dofs_global.clear();
     interface_face_dofs_global.clear();
+    interface_vertex_dofs_subdomain.clear();
+    interface_edge_dofs_subdomain.clear();
+    interface_face_dofs_subdomain.clear();
     subdomain_interface_vertex_dofs.clear();
     subdomain_interface_edge_dofs.clear();
     subdomain_interface_face_dofs.clear();
@@ -387,6 +405,10 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
   subdomain_dof_info.interface_edge_dofs_global.set_size(this->distributed_dof_handler->n_dofs());
   subdomain_dof_info.interface_face_dofs_global.set_size(this->distributed_dof_handler->n_dofs());
 
+  subdomain_dof_info.interface_vertex_dofs_subdomain.set_size(this->subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.interface_edge_dofs_subdomain.set_size(this->subdomain_dof_handler.n_dofs());
+  subdomain_dof_info.interface_face_dofs_subdomain.set_size(this->subdomain_dof_handler.n_dofs());
+
   const IndexSet    &all_interface_dofs      = subdomain_dof_info.all_interface_dofs_global;
   const unsigned int n_global_interface_dofs = all_interface_dofs.n_elements();
 
@@ -442,11 +464,17 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
               subdomain_dof_info.interface_vertex_dofs_global.add_index(global_idx);
               used_dofs.add_index(global_idx);
 
+
               if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                subdomain_dof_info.subdomain_interface_vertex_dofs.push_back(
-                  std::make_tuple(global_idx,
-                                  subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
-                                  class_set.size()));
+                {
+                  const unsigned int subdomain_idx =
+                    subdomain_dof_info.global_to_subdomain_interface_map[global_idx];
+
+                  subdomain_dof_info.interface_vertex_dofs_subdomain.add_index(subdomain_idx);
+
+                  subdomain_dof_info.subdomain_interface_vertex_dofs.push_back(
+                    std::make_tuple(global_idx, subdomain_idx, class_set.size()));
+                }
             }
         }
       else if constexpr (dim == 2)
@@ -461,10 +489,15 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
 
               if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                subdomain_dof_info.subdomain_interface_edge_dofs.push_back(
-                  std::make_tuple(global_idx,
-                                  subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
-                                  class_set.size()));
+                {
+                  const unsigned int subdomain_idx =
+                    subdomain_dof_info.global_to_subdomain_interface_map[global_idx];
+
+                  subdomain_dof_info.interface_edge_dofs_subdomain.add_index(subdomain_idx);
+
+                  subdomain_dof_info.subdomain_interface_edge_dofs.push_back(
+                    std::make_tuple(global_idx, subdomain_idx, class_set.size()));
+                }
             }
         }
       else if constexpr (dim == 3)
@@ -481,12 +514,16 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
                   subdomain_dof_info.interface_face_dofs_global.add_index(global_idx);
                   used_dofs.add_index(global_idx);
 
-
                   if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                    subdomain_dof_info.subdomain_interface_face_dofs.push_back(std::make_tuple(
-                      global_idx,
-                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
-                      class_set.size()));
+                    {
+                      const unsigned int subdomain_idx =
+                        subdomain_dof_info.global_to_subdomain_interface_map[global_idx];
+
+                      subdomain_dof_info.interface_face_dofs_subdomain.add_index(subdomain_idx);
+
+                      subdomain_dof_info.subdomain_interface_face_dofs.push_back(
+                        std::make_tuple(global_idx, subdomain_idx, class_set.size()));
+                    }
                 }
             }
           else
@@ -501,10 +538,15 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
 
                   if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                    subdomain_dof_info.subdomain_interface_edge_dofs.push_back(std::make_tuple(
-                      global_idx,
-                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
-                      class_set.size()));
+                    {
+                      const unsigned int subdomain_idx =
+                        subdomain_dof_info.global_to_subdomain_interface_map[global_idx];
+
+                      subdomain_dof_info.interface_edge_dofs_subdomain.add_index(subdomain_idx);
+
+                      subdomain_dof_info.subdomain_interface_edge_dofs.push_back(
+                        std::make_tuple(global_idx, subdomain_idx, class_set.size()));
+                    }
                 }
             }
         }

@@ -49,6 +49,11 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
 
     virtual void
+    vmult_bddc_preconditioner(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
+
+    virtual void
     Tvmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
 

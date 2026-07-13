@@ -1,6 +1,5 @@
-#ifndef portable_bnn_preconditioner_h
-#define portable_bnn_preconditioner_h
-
+#ifndef portable_bddc_preconditioner_h
+#define portable_bddc_preconditioner_h
 
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
@@ -11,6 +10,13 @@ DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
+
+  enum class BDDCVariant
+  {
+    corner,
+    corner_edge,
+    corner_edge_face
+  };
 
   template <int dim, typename number>
   class BNNPreconditioner
@@ -414,10 +420,9 @@ namespace Portable
     interface_vector.update_ghost_values();
 
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
-                                               interface_dof_indices_subdomain.size());
+                                               interface_vector.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
     // retrieve subdomain coarse value by the interface weighted sum
     number subdomain_coarse_value = 0.;
@@ -460,10 +465,9 @@ namespace Portable
            ExcMessage("Interface vector is not initialized correctly."));
 
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
-                                               interface_dof_indices_subdomain.size());
+                                               interface_vector.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
 
     // copy coarse Vector to std::vector for MPi::scatter
@@ -505,11 +509,10 @@ namespace Portable
            ExcMessage("Interface vector is not initialized correctly."));
 
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
-                                               interface_dof_indices_subdomain.size());
+                                               interface_vector.size());
 
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    DeviceVector<number> weights_view(interface_weights.get_values(), interface_weights.size());
 
     // copy coarse Vector to std::vector for MPi::scatter
     if (this->this_subdomain == this->coarse_problem_rank)
