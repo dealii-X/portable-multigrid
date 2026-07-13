@@ -83,23 +83,25 @@ struct SubdomainDoFInfo
 
   /**
    * Subdomain interface vertex (corner) DoFs.
-   * first - global numbering, second- local subdomain numbering
+   * 0: global numbering, 1: local subdomain numbering, 2: shared by N subdomains
    */
-  std::vector<std::pair<types::global_dof_index, unsigned int>> subdomain_interface_vertex_dofs;
+  std::vector<std::tuple<types::global_dof_index, unsigned int, unsigned int>>
+    subdomain_interface_vertex_dofs;
 
   /**
    * Subdomain interface edge DoFs.
-   * first - global numbering, second- local subdomain numbering
+   * 0: global numbering, 1: local subdomain numbering, 2: shared by N subdomains
    *
    */
-  std::vector<std::pair<types::global_dof_index, unsigned int>> subdomain_interface_edge_dofs;
+  std::vector<std::tuple<types::global_dof_index, unsigned int, unsigned int>>
+    subdomain_interface_edge_dofs;
 
   /**
    * Subdomain interface face DoFs in 3d.
-   * first - global numbering, second- local subdomain numbering
-   *
+   * 0: global numbering, 1: local subdomain numbering, 2: shared by N subdomains
    */
-  std::vector<std::pair<types::global_dof_index, unsigned int>> subdomain_interface_face_dofs;
+  std::vector<std::tuple<types::global_dof_index, unsigned int, unsigned int>>
+    subdomain_interface_face_dofs;
 
   void
   clear()
@@ -388,9 +390,6 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
   const IndexSet    &all_interface_dofs      = subdomain_dof_info.all_interface_dofs_global;
   const unsigned int n_global_interface_dofs = all_interface_dofs.n_elements();
 
-  std::map<std::set<unsigned int>, std::vector<std::pair<types::global_dof_index, unsigned int>>>
-    equivalence_dof_classes;
-
   std::vector<std::set<unsigned int>> subdomains_per_dof(n_global_interface_dofs);
 
   for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
@@ -445,8 +444,9 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
               if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
                 subdomain_dof_info.subdomain_interface_vertex_dofs.push_back(
-                  std::make_pair(global_idx,
-                                 subdomain_dof_info.global_to_subdomain_interface_map[global_idx]));
+                  std::make_tuple(global_idx,
+                                  subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
+                                  class_set.size()));
             }
         }
       else if constexpr (dim == 2)
@@ -462,8 +462,9 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
               if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
                 subdomain_dof_info.subdomain_interface_edge_dofs.push_back(
-                  std::make_pair(global_idx,
-                                 subdomain_dof_info.global_to_subdomain_interface_map[global_idx]));
+                  std::make_tuple(global_idx,
+                                  subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
+                                  class_set.size()));
             }
         }
       else if constexpr (dim == 3)
@@ -482,9 +483,10 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
 
                   if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                    subdomain_dof_info.subdomain_interface_face_dofs.push_back(std::make_pair(
+                    subdomain_dof_info.subdomain_interface_face_dofs.push_back(std::make_tuple(
                       global_idx,
-                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx]));
+                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
+                      class_set.size()));
                 }
             }
           else
@@ -499,14 +501,15 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
 
                   if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                    subdomain_dof_info.subdomain_interface_edge_dofs.push_back(std::make_pair(
+                    subdomain_dof_info.subdomain_interface_edge_dofs.push_back(std::make_tuple(
                       global_idx,
-                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx]));
+                      subdomain_dof_info.global_to_subdomain_interface_map[global_idx],
+                      class_set.size()));
                 }
             }
         }
     }
-    
+
   used_dofs.compress();
 
   AssertThrow(
