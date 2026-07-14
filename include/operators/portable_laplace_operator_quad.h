@@ -15,7 +15,7 @@ namespace Portable
   namespace internal
   {
     // needed for MatrixFreeTools::compute_diagonal()
-    template <int dim, int fe_degree, int n_q_points_1d, typename number>
+    template <int dim, int fe_degree, typename number>
     class LaplaceOperatorQuad
     {
     public:
@@ -24,17 +24,19 @@ namespace Portable
       {}
 
       DEAL_II_HOST_DEVICE void
-      operator()(Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> *fe_eval,
-                 const int                                                         q_point) const;
+      operator()(
+        Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number>
+                 *fe_eval,
+        const int q_point) const;
 
-      static const unsigned int n_q_points = Utilities::pow(n_q_points_1d, dim);
+      static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
     };
 
-    template <int dim, int fe_degree, int n_q_points_1d, typename number>
+    template <int dim, int fe_degree, typename number>
     DEAL_II_HOST_DEVICE void
-    LaplaceOperatorQuad<dim, fe_degree, n_q_points_1d, number>::operator()(
-      Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> *fe_eval,
-      const int                                                         q_point) const
+    LaplaceOperatorQuad<dim, fe_degree, number>::operator()(
+      Portable::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, number> *fe_eval,
+      const int q_point) const
     {
       auto value = fe_eval->get_value(q_point);
       fe_eval->submit_value(value, q_point);

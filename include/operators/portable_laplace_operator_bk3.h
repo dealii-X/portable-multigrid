@@ -538,7 +538,7 @@ namespace Portable
       inverse_diagonal_entries->get_vector();
     initialize_dof_vector(inverse_diagonal);
 
-    internal::LaplaceOperatorQuad<dim, fe_degree, fe_degree + 1, number> operator_quad;
+    internal::LaplaceOperatorQuad<dim, fe_degree, number> operator_quad;
 
     MatrixFreeTools::compute_diagonal<dim, fe_degree, fe_degree + 1, 1, number>(
       matrix_free,

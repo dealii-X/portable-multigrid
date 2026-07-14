@@ -6657,3 +6657,360 @@ Best timings for ndof = 227673985   on level 9|  ghost & compute =  0.0015788   
 
 Cycle 21
 Projected size 454756609 higher than max size, terminating.
+
+double free or corruption (!prev)
+double free or corruption (!prev)
+[jpbo-111-06:612923] *** Process received signal ***
+[jpbo-111-21:2482221] *** Process received signal ***
+[jpbo-111-21:2482221] Signal: Aborted (6)
+[jpbo-111-21:2482221] Signal code:  (-6)
+[jpbo-111-06:612923] Signal: Aborted (6)
+[jpbo-111-06:612923] Signal code:  (-6)
+[jpbo-111-21:2482221] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000284b07f0]
+[jpbo-111-21:2482221] [ 1] /lib64/libc.so.6(+0x82a78)[0x400036b22a78]
+[jpbo-111-21:2482221] [ 2] /lib64/libc.so.6(raise+0x1c)[0x400036adacfc]
+[jpbo-111-21:2482221] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400036ac7274]
+[jpbo-111-06:612923] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x400023d307f0]
+[jpbo-111-06:612923] [ 1] /lib64/libc.so.6(+0x82a78)[0x4000323a2a78]
+[jpbo-111-06:612923] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40003235acfc]
+[jpbo-111-06:612923] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400032347274]
+[jpbo-111-21:2482221] [ 4] /lib64/libc.so.6(+0x76a68)[0x400036b16a68]
+[jpbo-111-06:612923] [ 4] /lib64/libc.so.6(+0x76a68)[0x400032396a68]
+[jpbo-111-21:2482221] [ 5] /lib64/libc.so.6(+0x8d028)[0x400036b2d028]
+[jpbo-111-21:2482221] [ 6] /lib64/libc.so.6(+0x8ed88)[0x400036b2ed88]
+[jpbo-111-21:2482221] [ 7] /lib64/libc.so.6(free+0xc4)[0x400036b31774]
+[jpbo-111-06:612923] [ 5] /lib64/libc.so.6(+0x8d028)[0x4000323ad028]
+[jpbo-111-06:612923] [ 6] /lib64/libc.so.6(+0x8ed88)[0x4000323aed88]
+[jpbo-111-21:2482221] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-06:612923] [ 7] /lib64/libc.so.6(free+0xc4)[0x4000323b1774]
+[jpbo-111-21:2482221] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x400036adcbc8]
+[jpbo-111-06:612923] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-06:612923] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40003235cbc8]
+[jpbo-111-21:2482221] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400031459abc]
+[jpbo-111-21:2482221] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400028445948]
+[jpbo-111-06:612923] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40002ccd9abc]
+[jpbo-111-06:612923] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400023cc5948]
+[jpbo-111-06:612923] [12] /lib64/libc.so.6(+0x3d1ac)[0x40003235d1ac]
+[jpbo-111-21:2482221] [12] /lib64/libc.so.6(+0x3d1ac)[0x400036add1ac]
+[jpbo-111-06:612923] [13] /lib64/libc.so.6(+0x3d28c)[0x40003235d28c]
+[jpbo-111-21:2482221] [13] /lib64/libc.so.6(+0x3d28c)[0x400036add28c]
+[jpbo-111-06:612923] [14] /lib64/libc.so.6(+0x27544)[0x400032347544]
+[jpbo-111-21:2482221] [14] /lib64/libc.so.6(+0x27544)[0x400036ac7544]
+[jpbo-111-06:612923] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400032347618]
+[jpbo-111-06:612923] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-06:612923] *** End of error message ***
+[jpbo-111-21:2482221] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400036ac7618]
+[jpbo-111-21:2482221] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-21:2482221] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-34:643851] *** Process received signal ***
+[jpbo-111-34:643851] Signal: Aborted (6)
+[jpbo-111-34:643851] Signal code:  (-6)
+[jpbo-111-34:643851] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000365407f0]
+[jpbo-111-34:643851] [ 1] /lib64/libc.so.6(+0x82a78)[0x400044bb2a78]
+[jpbo-111-34:643851] [ 2] /lib64/libc.so.6(raise+0x1c)[0x400044b6acfc]
+[jpbo-111-34:643851] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400044b57274]
+[jpbo-111-34:643851] [ 4] /lib64/libc.so.6(+0x76a68)[0x400044ba6a68]
+[jpbo-111-34:643851] [ 5] /lib64/libc.so.6(+0x8d028)[0x400044bbd028]
+[jpbo-111-34:643851] [ 6] /lib64/libc.so.6(+0x8ed88)[0x400044bbed88]
+[jpbo-111-34:643851] [ 7] /lib64/libc.so.6(free+0xc4)[0x400044bc1774]
+[jpbo-111-34:643851] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-34:643851] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x400044b6cbc8]
+[jpbo-111-34:643851] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40003f4e9abc]
+[jpbo-111-34:643851] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x4000364d5948]
+[jpbo-111-34:643851] [12] /lib64/libc.so.6(+0x3d1ac)[0x400044b6d1ac]
+[jpbo-111-34:643851] [13] /lib64/libc.so.6(+0x3d28c)[0x400044b6d28c]
+[jpbo-111-34:643851] [14] /lib64/libc.so.6(+0x27544)[0x400044b57544]
+[jpbo-111-34:643851] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400044b57618]
+[jpbo-111-34:643851] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-34:643851] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-21:2482223] *** Process received signal ***
+[jpbo-111-21:2482223] Signal: Aborted (6)
+[jpbo-111-21:2482223] Signal code:  (-6)
+[jpbo-111-21:2482223] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x40002ba807f0]
+[jpbo-111-21:2482223] [ 1] /lib64/libc.so.6(+0x82a78)[0x40003a0f2a78]
+[jpbo-111-21:2482223] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40003a0aacfc]
+[jpbo-111-21:2482223] [ 3] /lib64/libc.so.6(abort+0xe8)[0x40003a097274]
+[jpbo-111-21:2482223] [ 4] /lib64/libc.so.6(+0x76a68)[0x40003a0e6a68]
+[jpbo-111-21:2482223] [ 5] /lib64/libc.so.6(+0x8d028)[0x40003a0fd028]
+[jpbo-111-21:2482223] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40003a0fed88]
+[jpbo-111-21:2482223] [ 7] /lib64/libc.so.6(free+0xc4)[0x40003a101774]
+[jpbo-111-21:2482223] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-21:2482223] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40003a0acbc8]
+[jpbo-111-21:2482223] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400034a29abc]
+[jpbo-111-21:2482223] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x40002ba15948]
+[jpbo-111-21:2482223] [12] /lib64/libc.so.6(+0x3d1ac)[0x40003a0ad1ac]
+[jpbo-111-21:2482223] [13] /lib64/libc.so.6(+0x3d28c)[0x40003a0ad28c]
+[jpbo-111-21:2482223] [14] /lib64/libc.so.6(+0x27544)[0x40003a097544]
+[jpbo-111-21:2482223] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x40003a097618]
+[jpbo-111-21:2482223] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-21:2482223] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-34:643848] *** Process received signal ***
+[jpbo-111-34:643848] Signal: Aborted (6)
+[jpbo-111-34:643848] Signal code:  (-6)
+[jpbo-111-34:643848] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x400032d307f0]
+[jpbo-111-34:643848] [ 1] /lib64/libc.so.6(+0x82a78)[0x4000413a2a78]
+[jpbo-111-34:643848] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40004135acfc]
+[jpbo-111-34:643848] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400041347274]
+[jpbo-111-34:643848] [ 4] /lib64/libc.so.6(+0x76a68)[0x400041396a68]
+[jpbo-111-34:643848] [ 5] /lib64/libc.so.6(+0x8d028)[0x4000413ad028]
+[jpbo-111-34:643848] [ 6] /lib64/libc.so.6(+0x8ed88)[0x4000413aed88]
+[jpbo-111-34:643848] [ 7] /lib64/libc.so.6(free+0xc4)[0x4000413b1774]
+[jpbo-111-34:643848] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-34:643848] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40004135cbc8]
+[jpbo-111-34:643848] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40003bcd9abc]
+[jpbo-111-34:643848] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400032cc5948]
+[jpbo-111-34:643848] [12] /lib64/libc.so.6(+0x3d1ac)[0x40004135d1ac]
+[jpbo-111-34:643848] [13] /lib64/libc.so.6(+0x3d28c)[0x40004135d28c]
+[jpbo-111-34:643848] [14] /lib64/libc.so.6(+0x27544)[0x400041347544]
+[jpbo-111-34:643848] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400041347618]
+[jpbo-111-34:643848] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-34:643848] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-21:2482220] *** Process received signal ***
+[jpbo-111-21:2482220] Signal: Aborted (6)
+[jpbo-111-21:2482220] Signal code:  (-6)
+[jpbo-111-21:2482220] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x40001f6a07f0]
+[jpbo-111-21:2482220] [ 1] /lib64/libc.so.6(+0x82a78)[0x40002dd12a78]
+[jpbo-111-21:2482220] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40002dccacfc]
+[jpbo-111-21:2482220] [ 3] /lib64/libc.so.6(abort+0xe8)[0x40002dcb7274]
+[jpbo-111-21:2482220] [ 4] /lib64/libc.so.6(+0x76a68)[0x40002dd06a68]
+[jpbo-111-21:2482220] [ 5] /lib64/libc.so.6(+0x8d028)[0x40002dd1d028]
+[jpbo-111-21:2482220] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40002dd1ed88]
+[jpbo-111-21:2482220] [ 7] /lib64/libc.so.6(free+0xc4)[0x40002dd21774]
+[jpbo-111-21:2482220] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-21:2482220] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40002dcccbc8]
+[jpbo-111-21:2482220] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400028649abc]
+[jpbo-111-21:2482220] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x40001f635948]
+double free or corruption (!prev)
+[jpbo-111-22:2452280] *** Process received signal ***
+[jpbo-111-21:2482220] [12] /lib64/libc.so.6(+0x3d1ac)[0x40002dccd1ac]
+[jpbo-111-22:2452280] Signal: Aborted (6)
+[jpbo-111-22:2452280] Signal code:  (-6)
+[jpbo-111-21:2482220] [13] /lib64/libc.so.6(+0x3d28c)[0x40002dccd28c]
+[jpbo-111-22:2452280] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000029807f0]
+[jpbo-111-21:2482220] [14] /lib64/libc.so.6(+0x27544)[0x40002dcb7544]
+[jpbo-111-22:2452280] [ 1] /lib64/libc.so.6(+0x82a78)[0x400010ff2a78]
+[jpbo-111-21:2482220] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x40002dcb7618]
+[jpbo-111-22:2452280] [ 2] /lib64/libc.so.6(raise+0x1c)[0x400010faacfc]
+[jpbo-111-21:2482220] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-21:2482220] *** End of error message ***
+[jpbo-111-22:2452280] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400010f97274]
+[jpbo-111-22:2452280] [ 4] /lib64/libc.so.6(+0x76a68)[0x400010fe6a68]
+[jpbo-111-22:2452280] [ 5] /lib64/libc.so.6(+0x8d028)[0x400010ffd028]
+[jpbo-111-22:2452280] [ 6] /lib64/libc.so.6(+0x8ed88)[0x400010ffed88]
+[jpbo-111-22:2452280] [ 7] /lib64/libc.so.6(free+0xc4)[0x400011001774]
+[jpbo-111-22:2452280] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-22:2452280] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x400010facbc8]
+[jpbo-111-22:2452280] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40000b929abc]
+[jpbo-111-22:2452280] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400002915948]
+[jpbo-111-22:2452280] [12] /lib64/libc.so.6(+0x3d1ac)[0x400010fad1ac]
+[jpbo-111-22:2452280] [13] /lib64/libc.so.6(+0x3d28c)[0x400010fad28c]
+[jpbo-111-22:2452280] [14] /lib64/libc.so.6(+0x27544)[0x400010f97544]
+[jpbo-111-22:2452280] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400010f97618]
+[jpbo-111-22:2452280] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-22:2452280] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-06:612922] *** Process received signal ***
+[jpbo-111-06:612922] Signal: Aborted (6)
+[jpbo-111-06:612922] Signal code:  (-6)
+[jpbo-111-06:612922] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000023007f0]
+[jpbo-111-06:612922] [ 1] /lib64/libc.so.6(+0x82a78)[0x400010972a78]
+[jpbo-111-06:612922] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40001092acfc]
+[jpbo-111-06:612922] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400010917274]
+[jpbo-111-06:612922] [ 4] /lib64/libc.so.6(+0x76a68)[0x400010966a68]
+[jpbo-111-06:612922] [ 5] /lib64/libc.so.6(+0x8d028)[0x40001097d028]
+[jpbo-111-06:612922] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40001097ed88]
+[jpbo-111-06:612922] [ 7] /lib64/libc.so.6(free+0xc4)[0x400010981774]
+[jpbo-111-06:612922] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-06:612922] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40001092cbc8]
+[jpbo-111-06:612922] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40000b2a9abc]
+[jpbo-111-06:612922] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400002295948]
+[jpbo-111-06:612922] [12] /lib64/libc.so.6(+0x3d1ac)[0x40001092d1ac]
+[jpbo-111-06:612922] [13] /lib64/libc.so.6(+0x3d28c)[0x40001092d28c]
+[jpbo-111-06:612922] [14] /lib64/libc.so.6(+0x27544)[0x400010917544]
+[jpbo-111-06:612922] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400010917618]
+[jpbo-111-06:612922] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-06:612922] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-06:612920] *** Process received signal ***
+[jpbo-111-06:612920] Signal: Aborted (6)
+[jpbo-111-06:612920] Signal code:  (-6)
+[jpbo-111-06:612920] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000150207f0]
+[jpbo-111-06:612920] [ 1] /lib64/libc.so.6(+0x82a78)[0x400023692a78]
+[jpbo-111-06:612920] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40002364acfc]
+[jpbo-111-06:612920] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400023637274]
+[jpbo-111-06:612920] [ 4] /lib64/libc.so.6(+0x76a68)[0x400023686a68]
+[jpbo-111-06:612920] [ 5] /lib64/libc.so.6(+0x8d028)[0x40002369d028]
+[jpbo-111-06:612920] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40002369ed88]
+[jpbo-111-06:612920] [ 7] /lib64/libc.so.6(free+0xc4)[0x4000236a1774]
+[jpbo-111-06:612920] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3setIiSt4lessIiESaIiEED2Ev+0x2c)[0x75918c]
+[jpbo-111-06:612920] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40002364cbc8]
+double free or corruption (!prev)
+[jpbo-111-06:612921] *** Process received signal ***
+[jpbo-111-06:612921] Signal: Aborted (6)
+[jpbo-111-06:612921] Signal code:  (-6)
+[jpbo-111-06:612921] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x400006d707f0]
+[jpbo-111-06:612921] [ 1] /lib64/libc.so.6(+0x82a78)[0x4000153e2a78]
+[jpbo-111-06:612921] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40001539acfc]
+[jpbo-111-06:612921] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400015387274]
+[jpbo-111-06:612921] [ 4] /lib64/libc.so.6(+0x76a68)[0x4000153d6a68]
+[jpbo-111-06:612921] [ 5] /lib64/libc.so.6(+0x8d028)[0x4000153ed028]
+[jpbo-111-06:612921] [ 6] /lib64/libc.so.6(+0x8ed88)[0x4000153eed88]
+[jpbo-111-06:612921] [ 7] /lib64/libc.so.6(free+0xc4)[0x4000153f1774]
+[jpbo-111-06:612920] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40001dfc9abc]
+[jpbo-111-06:612920] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400014fb5948]
+[jpbo-111-06:612921] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-06:612920] [12] /lib64/libc.so.6(+0x3d1ac)[0x40002364d1ac]
+[jpbo-111-06:612920] [13] /lib64/libc.so.6(+0x3d28c)[0x40002364d28c]
+[jpbo-111-06:612921] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40001539cbc8]
+[jpbo-111-06:612920] [14] /lib64/libc.so.6(+0x27544)[0x400023637544]
+[jpbo-111-06:612920] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400023637618]
+[jpbo-111-06:612920] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-06:612920] *** End of error message ***
+[jpbo-111-06:612921] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40000fd19abc]
+[jpbo-111-06:612921] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400006d05948]
+[jpbo-111-06:612921] [12] /lib64/libc.so.6(+0x3d1ac)[0x40001539d1ac]
+[jpbo-111-06:612921] [13] /lib64/libc.so.6(+0x3d28c)[0x40001539d28c]
+[jpbo-111-06:612921] [14] /lib64/libc.so.6(+0x27544)[0x400015387544]
+[jpbo-111-06:612921] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400015387618]
+[jpbo-111-06:612921] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-06:612921] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-34:643849] *** Process received signal ***
+[jpbo-111-34:643849] Signal: Aborted (6)
+[jpbo-111-34:643849] Signal code:  (-6)
+[jpbo-111-34:643849] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x400025b207f0]
+[jpbo-111-34:643849] [ 1] /lib64/libc.so.6(+0x82a78)[0x400034192a78]
+[jpbo-111-34:643849] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40003414acfc]
+[jpbo-111-34:643849] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400034137274]
+[jpbo-111-34:643849] [ 4] /lib64/libc.so.6(+0x76a68)[0x400034186a68]
+[jpbo-111-34:643849] [ 5] /lib64/libc.so.6(+0x8d028)[0x40003419d028]
+[jpbo-111-34:643849] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40003419ed88]
+[jpbo-111-34:643849] [ 7] /lib64/libc.so.6(free+0xc4)[0x4000341a1774]
+[jpbo-111-34:643849] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-34:643849] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40003414cbc8]
+[jpbo-111-34:643849] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40002eac9abc]
+[jpbo-111-34:643849] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400025ab5948]
+[jpbo-111-34:643849] [12] /lib64/libc.so.6(+0x3d1ac)[0x40003414d1ac]
+[jpbo-111-34:643849] [13] /lib64/libc.so.6(+0x3d28c)[0x40003414d28c]
+[jpbo-111-34:643849] [14] /lib64/libc.so.6(+0x27544)[0x400034137544]
+[jpbo-111-34:643849] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400034137618]
+[jpbo-111-34:643849] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-34:643849] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-22:2452278] *** Process received signal ***
+[jpbo-111-22:2452278] Signal: Aborted (6)
+[jpbo-111-22:2452278] Signal code:  (-6)
+[jpbo-111-22:2452278] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000329907f0]
+[jpbo-111-22:2452278] [ 1] /lib64/libc.so.6(+0x82a78)[0x400041002a78]
+[jpbo-111-22:2452278] [ 2] /lib64/libc.so.6(raise+0x1c)[0x400040fbacfc]
+[jpbo-111-22:2452278] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400040fa7274]
+[jpbo-111-22:2452278] [ 4] /lib64/libc.so.6(+0x76a68)[0x400040ff6a68]
+[jpbo-111-22:2452278] [ 5] /lib64/libc.so.6(+0x8d028)[0x40004100d028]
+[jpbo-111-22:2452278] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40004100ed88]
+[jpbo-111-22:2452278] [ 7] /lib64/libc.so.6(free+0xc4)[0x400041011774]
+[jpbo-111-22:2452278] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-22:2452278] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x400040fbcbc8]
+[jpbo-111-22:2452278] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40003b939abc]
+[jpbo-111-22:2452278] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400032925948]
+[jpbo-111-22:2452278] [12] /lib64/libc.so.6(+0x3d1ac)[0x400040fbd1ac]
+[jpbo-111-22:2452278] [13] /lib64/libc.so.6(+0x3d28c)[0x400040fbd28c]
+[jpbo-111-22:2452278] [14] /lib64/libc.so.6(+0x27544)[0x400040fa7544]
+[jpbo-111-22:2452278] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400040fa7618]
+[jpbo-111-22:2452278] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-22:2452278] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-22:2452279] *** Process received signal ***
+[jpbo-111-22:2452279] Signal: Aborted (6)
+[jpbo-111-22:2452279] Signal code:  (-6)
+[jpbo-111-22:2452279] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x40001c8807f0]
+[jpbo-111-22:2452279] [ 1] /lib64/libc.so.6(+0x82a78)[0x40002aef2a78]
+[jpbo-111-22:2452279] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40002aeaacfc]
+[jpbo-111-22:2452279] [ 3] /lib64/libc.so.6(abort+0xe8)[0x40002ae97274]
+[jpbo-111-22:2452279] [ 4] /lib64/libc.so.6(+0x76a68)[0x40002aee6a68]
+[jpbo-111-22:2452279] [ 5] /lib64/libc.so.6(+0x8d028)[0x40002aefd028]
+[jpbo-111-22:2452279] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40002aefed88]
+[jpbo-111-22:2452279] [ 7] /lib64/libc.so.6(free+0xc4)[0x40002af01774]
+[jpbo-111-22:2452279] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-22:2452279] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40002aeacbc8]
+double free or corruption (!prev)
+[jpbo-111-22:2452279] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400025829abc]
+[jpbo-111-22:2452279] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x40001c815948]
+[jpbo-111-22:2452279] [12] /lib64/libc.so.6(+0x3d1ac)[0x40002aead1ac]
+[jpbo-111-22:2452279] [13] /lib64/libc.so.6(+0x3d28c)[0x40002aead28c]
+[jpbo-111-22:2452277] *** Process received signal ***
+[jpbo-111-22:2452279] [14] /lib64/libc.so.6(+0x27544)[0x40002ae97544]
+[jpbo-111-22:2452279] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x40002ae97618]
+[jpbo-111-22:2452277] Signal: Aborted (6)
+[jpbo-111-22:2452277] Signal code:  (-6)
+[jpbo-111-22:2452279] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-22:2452279] *** End of error message ***
+[jpbo-111-22:2452277] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x400011a107f0]
+[jpbo-111-22:2452277] [ 1] /lib64/libc.so.6(+0x82a78)[0x400020082a78]
+[jpbo-111-22:2452277] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40002003acfc]
+[jpbo-111-22:2452277] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400020027274]
+[jpbo-111-22:2452277] [ 4] /lib64/libc.so.6(+0x76a68)[0x400020076a68]
+[jpbo-111-22:2452277] [ 5] /lib64/libc.so.6(+0x8d028)[0x40002008d028]
+[jpbo-111-22:2452277] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40002008ed88]
+[jpbo-111-22:2452277] [ 7] /lib64/libc.so.6(free+0xc4)[0x400020091774]
+[jpbo-111-22:2452277] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-22:2452277] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40002003cbc8]
+[jpbo-111-22:2452277] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x40001a9b9abc]
+[jpbo-111-22:2452277] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x4000119a5948]
+[jpbo-111-22:2452277] [12] /lib64/libc.so.6(+0x3d1ac)[0x40002003d1ac]
+[jpbo-111-22:2452277] [13] /lib64/libc.so.6(+0x3d28c)[0x40002003d28c]
+[jpbo-111-22:2452277] [14] /lib64/libc.so.6(+0x27544)[0x400020027544]
+[jpbo-111-22:2452277] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400020027618]
+[jpbo-111-22:2452277] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-22:2452277] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-21:2482222] *** Process received signal ***
+[jpbo-111-21:2482222] Signal: Aborted (6)
+[jpbo-111-21:2482222] Signal code:  (-6)
+[jpbo-111-21:2482222] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x40003fc707f0]
+[jpbo-111-21:2482222] [ 1] /lib64/libc.so.6(+0x82a78)[0x40004e2e2a78]
+[jpbo-111-21:2482222] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40004e29acfc]
+[jpbo-111-21:2482222] [ 3] /lib64/libc.so.6(abort+0xe8)[0x40004e287274]
+[jpbo-111-21:2482222] [ 4] /lib64/libc.so.6(+0x76a68)[0x40004e2d6a68]
+[jpbo-111-21:2482222] [ 5] /lib64/libc.so.6(+0x8d028)[0x40004e2ed028]
+[jpbo-111-21:2482222] [ 6] /lib64/libc.so.6(+0x8ed88)[0x40004e2eed88]
+[jpbo-111-21:2482222] [ 7] /lib64/libc.so.6(free+0xc4)[0x40004e2f1774]
+[jpbo-111-21:2482222] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-21:2482222] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40004e29cbc8]
+[jpbo-111-21:2482222] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400048c19abc]
+[jpbo-111-21:2482222] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x40003fc05948]
+[jpbo-111-21:2482222] [12] /lib64/libc.so.6(+0x3d1ac)[0x40004e29d1ac]
+[jpbo-111-21:2482222] [13] /lib64/libc.so.6(+0x3d28c)[0x40004e29d28c]
+[jpbo-111-21:2482222] [14] /lib64/libc.so.6(+0x27544)[0x40004e287544]
+[jpbo-111-21:2482222] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x40004e287618]
+[jpbo-111-21:2482222] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-21:2482222] *** End of error message ***
+double free or corruption (!prev)
+[jpbo-111-34:643850] *** Process received signal ***
+[jpbo-111-34:643850] Signal: Aborted (6)
+[jpbo-111-34:643850] Signal code:  (-6)
+[jpbo-111-34:643850] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000387e07f0]
+[jpbo-111-34:643850] [ 1] /lib64/libc.so.6(+0x82a78)[0x400046e52a78]
+[jpbo-111-34:643850] [ 2] /lib64/libc.so.6(raise+0x1c)[0x400046e0acfc]
+[jpbo-111-34:643850] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400046df7274]
+[jpbo-111-34:643850] [ 4] /lib64/libc.so.6(+0x76a68)[0x400046e46a68]
+[jpbo-111-34:643850] [ 5] /lib64/libc.so.6(+0x8d028)[0x400046e5d028]
+[jpbo-111-34:643850] [ 6] /lib64/libc.so.6(+0x8ed88)[0x400046e5ed88]
+[jpbo-111-34:643850] [ 7] /lib64/libc.so.6(free+0xc4)[0x400046e61774]
+[jpbo-111-34:643850] [ 8] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_ZNSt3mapIiPmSt4lessIiESaISt4pairIKiS0_EEED2Ev+0x2c)[0x758fcc]
+[jpbo-111-34:643850] [ 9] /lib64/libc.so.6(__cxa_finalize+0x168)[0x400046e0cbc8]
+[jpbo-111-34:643850] [10] /e/home/jusers/kronbichler3/jupiter/sw/build_deal/lib/libdeal_II.so.9.8.0-pre(+0x1de9abc)[0x400041789abc]
+[jpbo-111-34:643850] [11] /lib/ld-linux-aarch64.so.1(+0x5948)[0x400038775948]
+[jpbo-111-34:643850] [12] /lib64/libc.so.6(+0x3d1ac)[0x400046e0d1ac]
+[jpbo-111-34:643850] [13] /lib64/libc.so.6(+0x3d28c)[0x400046e0d28c]
+[jpbo-111-34:643850] [14] /lib64/libc.so.6(+0x27544)[0x400046df7544]
+[jpbo-111-34:643850] [15] /lib64/libc.so.6(__libc_start_main+0x98)[0x400046df7618]
+[jpbo-111-34:643850] [16] /e/home/jusers/kronbichler3/jupiter/sw/performance_tests/portable-multigrid/tests/poisson_cube_bk3/./program(_start+0x30)[0x52e4f0]
+[jpbo-111-34:643850] *** End of error message ***
+srun: error: jpbo-111-06: tasks 0-3: Aborted
+srun: error: jpbo-111-21: tasks 4-7: Aborted
+srun: error: jpbo-111-34: tasks 12-15: Aborted
+srun: error: jpbo-111-22: tasks 8-11: Aborted

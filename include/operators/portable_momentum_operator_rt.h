@@ -1371,39 +1371,39 @@ namespace Portable
         // const unsigned int nn_t = shape_info[0].fe_degree;
         // const unsigned int nn_q = shape_info[0].n_q_points_1d;
 
-        // std::cout << "-----------------------------------\n";
-        // std::cout << "shape_info[0].shape_data_on_face[0].size() = "
-        //           << shape_info[0].shape_data_on_face[0].size() << std::endl;
-        // std::cout << "shape_info[0].shape_data_on_face[1].size() = "
-        //           << shape_info[0].shape_data_on_face[1].size() << std::endl;
-        // std::cout << "-----------------------------------\n";
+        std::cout << "-----------------------------------\n";
+        std::cout << "shape_info[0].shape_data_on_face[0].size() = "
+                  << shape_info[0].shape_data_on_face[0].size() << std::endl;
+        std::cout << "shape_info[0].shape_data_on_face[1].size() = "
+                  << shape_info[0].shape_data_on_face[1].size() << std::endl;
+        std::cout << "-----------------------------------\n";
 
-        // std::cout << "-----------------------------------\n";
-        // std::cout << "shape_info[1].shape_data_on_face[0].size() = "
-        //           << shape_info[1].shape_data_on_face[0].size() << std::endl;
-        // std::cout << "shape_info[1].shape_data_on_face[1].size() = "
-        //           << shape_info[1].shape_data_on_face[1].size() << std::endl;
-        // std::cout << "-----------------------------------\n";
+        std::cout << "-----------------------------------\n";
+        std::cout << "shape_info[1].shape_data_on_face[0].size() = "
+                  << shape_info[1].shape_data_on_face[0].size() << std::endl;
+        std::cout << "shape_info[1].shape_data_on_face[1].size() = "
+                  << shape_info[1].shape_data_on_face[1].size() << std::endl;
+        std::cout << "-----------------------------------\n";
 
-        // std::cout << "-----------------------------------\n";
-        // for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[0].size(); ++i)
-        //   std::cout << shape_info[0].shape_data_on_face[0][i] << "  ";
-        // std::cout << std::endl << std::endl;
+        std::cout << "-----------------------------------\n";
+        for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[0].size(); ++i)
+          std::cout << shape_info[0].shape_data_on_face[0][i] << "  ";
+        std::cout << std::endl << std::endl;
 
-        // for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[1].size(); ++i)
-        //   std::cout << shape_info[0].shape_data_on_face[1][i] << "  ";
-        // std::cout << std::endl << std::endl;
+        for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[1].size(); ++i)
+          std::cout << shape_info[0].shape_data_on_face[1][i] << "  ";
+        std::cout << std::endl << std::endl;
 
-        // for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[0].size(); ++i)
-        //   std::cout << shape_info[1].shape_data_on_face[0][i] << "  ";
-        // std::cout << std::endl << std::endl;
+        for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[0].size(); ++i)
+          std::cout << shape_info[1].shape_data_on_face[0][i] << "  ";
+        std::cout << std::endl << std::endl;
 
 
-        // for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[1].size(); ++i)
-        //   std::cout << shape_info[1].shape_data_on_face[1][i] << "  ";
-        // std::cout << std::endl << std::endl;
+        for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[1].size(); ++i)
+          std::cout << shape_info[1].shape_data_on_face[1][i] << "  ";
+        std::cout << std::endl << std::endl;
 
-        // std::cout << "-----------------------------------\n";
+        std::cout << "-----------------------------------\n";
 
 
         // std::cout << std::endl << std::endl;

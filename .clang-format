@@ -151,7 +151,7 @@ IndentWrappedFunctionNames: false
 
 KeepEmptyLinesAtTheStartOfBlocks: false
 
-# Language: Cpp
+Language: Cpp
 
 MaxEmptyLinesToKeep: 3
 
@@ -186,7 +186,3 @@ Standard: c++20
 TabWidth: 2
 
 UseTab: Never
-
-# ---
-# Language: ObjC
-# BasedOnStyle: LLVM

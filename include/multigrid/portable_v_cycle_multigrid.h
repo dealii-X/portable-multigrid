@@ -33,7 +33,9 @@ namespace Portable
     {}
 
     virtual void
-    operator()(const unsigned int level, VectorType &dst, const VectorType &src) const override
+    operator()(const unsigned int level,
+               VectorType        &dst,
+               const VectorType  &src) const override
     {
       if (is_empty)
         return;
@@ -49,13 +51,15 @@ namespace Portable
   class VCycleMultigrid : public EnableObserverPointer
   {
   public:
-    using VectorType      = LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
+    using VectorType =
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
     using LevelMatrixType = LaplaceOperatorBase<dim, number>;
     using SmootherType    = PreconditionChebyshev<LevelMatrixType, VectorType>;
 
-    VCycleMultigrid(const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
-                    const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
-                    const MGLevelObject<SmootherType>                     &mg_smoothers);
+    VCycleMultigrid(
+      const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
+      const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
+      const MGLevelObject<SmootherType>                     &mg_smoothers);
 
     void
     vmult(VectorType &dst, const VectorType &src) const;
@@ -143,7 +147,8 @@ namespace Portable
 
   template <int dim, typename number, typename TransferType>
   void
-  VCycleMultigrid<dim, number, TransferType>::vmult(VectorType &dst, const VectorType &src) const
+  VCycleMultigrid<dim, number, TransferType>::vmult(VectorType       &dst,
+                                                    const VectorType &src) const
   {
     defect[maxlevel] = src;
 
@@ -154,7 +159,8 @@ namespace Portable
 
   template <int dim, typename number, typename TransferType>
   void
-  VCycleMultigrid<dim, number, TransferType>::v_cycle(const unsigned int level) const
+  VCycleMultigrid<dim, number, TransferType>::v_cycle(
+    const unsigned int level) const
   {
     if (level == minlevel)
       {
@@ -180,7 +186,8 @@ namespace Portable
     v_cycle(level - 1);
 
     // Prolongate coarse correction and add to current solution
-    mg_transfers[level]->prolongate_and_add(solution[level], solution[level - 1]);
+    mg_transfers[level]->prolongate_and_add(solution[level],
+                                            solution[level - 1]);
 
     // Post-smoothing
     mg_smoothers[level].step(solution[level], defect[level]);

@@ -39,7 +39,6 @@
 #include "operators/portable_laplace_operator_bk3.h"
 #include "portable_multigrid_solver.h"
 
-
 namespace multigrid
 {
   using namespace dealii;
@@ -79,10 +78,12 @@ namespace multigrid
     // void
     // run();
 
-    using VectorTypeMG = LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>;
+    using VectorTypeMG =
+      LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>;
 
     using SmootherType =
-      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, vcycle_number>, VectorTypeMG>;
+      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, vcycle_number>,
+                            VectorTypeMG>;
 
     void
     test();
@@ -104,7 +105,8 @@ namespace multigrid
     setup_mg_transfers();
 
     void
-    setup_smoothers(const unsigned int n_pre_smooth, const unsigned int n_post_smooth);
+    setup_smoothers(const unsigned int n_pre_smooth,
+                    const unsigned int n_post_smooth);
 
     void
     compute_rhs();
@@ -134,27 +136,34 @@ namespace multigrid
 
     std::set<types::boundary_id> dirichlet_boundary_ids;
 
-    LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Host>  ghost_solution_host;
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default> solution_device;
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default> system_rhs_device;
+    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host>
+      ghost_solution_host;
+    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default>
+      solution_device;
+    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default>
+      system_rhs_device;
 
-    std::vector<std::shared_ptr<const Triangulation<dim>>> coarse_triangulations;
+    std::vector<std::shared_ptr<const Triangulation<dim>>>
+      coarse_triangulations;
 
     MGLevelObject<DoFHandler<dim>>                  level_dof_handlers;
     MGLevelObject<AffineConstraints<vcycle_number>> level_constraints;
 
     MGLevelObject<std::unique_ptr<FE_Q<dim>>> p_level_fes;
 
-    MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, vcycle_number>>>
+    MGLevelObject<
+      std::unique_ptr<Portable::LaplaceOperatorBase<dim, vcycle_number>>>
       level_matrices;
 
-    MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, vcycle_number>>> mg_transfers;
+    MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, vcycle_number>>>
+      mg_transfers;
 
     MGLevelObject<SmootherType> mg_smoothers;
 
     AffineConstraints<full_number> fine_level_constraints;
 
-    std::unique_ptr<Portable::LaplaceOperatorBase<dim, full_number>> fine_level_matrix;
+    std::unique_ptr<Portable::LaplaceOperatorBase<dim, full_number>>
+      fine_level_matrix;
 
     const unsigned int refinement_cycles = 10;
 
@@ -183,9 +192,9 @@ namespace multigrid
       void
       run()
       {
-        parent_problem.level_matrices[level] =
-          std::make_unique<Portable::LaplaceOperatorBK3<dim, degree, vcycle_number>>(
-            dof_handler, constraints, overlap_communication_computation);
+        parent_problem.level_matrices[level] = std::make_unique<
+          Portable::LaplaceOperatorBK3<dim, degree, vcycle_number>>(
+          dof_handler, constraints, overlap_communication_computation);
       }
     };
 
@@ -203,8 +212,11 @@ namespace multigrid
       void
       run()
       {
-        parent_problem.mg_transfers[level] = std::make_unique<
-          Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, vcycle_number>>();
+        parent_problem.mg_transfers[level] =
+          std::make_unique<Portable::PolynomialTransfer<dim,
+                                                        degree_coarse,
+                                                        degree_fine,
+                                                        vcycle_number>>();
 
         parent_problem.mg_transfers[level]->reinit(mf_coarse,
                                                    mf_fine,
@@ -215,7 +227,8 @@ namespace multigrid
   };
 
   template <int dim, int fe_degree>
-  LaplaceProblem<dim, fe_degree>::LaplaceProblem(const bool overlap_communication_computation)
+  LaplaceProblem<dim, fe_degree>::LaplaceProblem(
+    const bool overlap_communication_computation)
     : mpi_communicator(MPI_COMM_WORLD)
     , triangulation(mpi_communicator)
     , fe(fe_degree)
@@ -224,7 +237,9 @@ namespace multigrid
     , setup_time(0.)
 
     , pcout(std::cout, Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
-    , time_details(std::cout, true && Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    , time_details(std::cout,
+                   true &&
+                     Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
 
   {
     dirichlet_boundary_ids.insert(0);
@@ -252,7 +267,10 @@ namespace multigrid
     // for (unsigned int d = 0; d < dim; ++d)
     //   projected_size *= base_refine * subdivisions[d] * degree_finite_element
     //   + 1;
-    GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, p1, p2);
+    GridGenerator::subdivided_hyper_rectangle(triangulation,
+                                              subdivisions,
+                                              p1,
+                                              p2);
 
     triangulation.refine_global(n_refine);
   }
@@ -267,13 +285,16 @@ namespace multigrid
 
     Timer time;
 
-    coarse_triangulations = MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
-      triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
+    coarse_triangulations =
+      MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+        triangulation,
+        RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
 
     setup_time += time.wall_time();
 
-    time_details << "Coarse triangulations created  (CPU/wall)" << time.cpu_time() << "s/"
-                 << time.wall_time() << 's' << std::endl;
+    time_details << "Coarse triangulations created  (CPU/wall)"
+                 << time.cpu_time() << "s/" << time.wall_time() << 's'
+                 << std::endl;
   }
 
 
@@ -287,30 +308,36 @@ namespace multigrid
     dof_handler.distribute_dofs(fe);
 
     pcout << "Number of degrees of freedom: " << dof_handler.n_dofs() << " = ("
-          << ((int)std::pow(dof_handler.n_dofs() * 1.0000001, 1. / dim) - 1) / fe.degree << " x "
-          << fe.degree << " + 1)^" << dim << std::endl;
+          << ((int)std::pow(dof_handler.n_dofs() * 1.0000001, 1. / dim) - 1) /
+               fe.degree
+          << " x " << fe.degree << " + 1)^" << dim << std::endl;
 
-    locally_owned_dofs    = dof_handler.locally_owned_dofs();
-    locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
+    locally_owned_dofs = dof_handler.locally_owned_dofs();
+    locally_relevant_dofs =
+      DoFTools::extract_locally_relevant_dofs(dof_handler);
 
 
-    Functions::ZeroFunction<dim>                        homogeneous_dirichlet_bc;
-    std::map<types::boundary_id, const Function<dim> *> dirichlet_boundary_functions = {
-      {types::boundary_id(0), &homogeneous_dirichlet_bc}};
+    Functions::ZeroFunction<dim> homogeneous_dirichlet_bc;
+    std::map<types::boundary_id, const Function<dim> *>
+      dirichlet_boundary_functions = {
+        {types::boundary_id(0), &homogeneous_dirichlet_bc}};
 
     std::vector<unsigned int> p_levels({fe.degree});
 
     while (p_levels.back() > 1)
-      p_levels.push_back(std::max(p_levels.back() - 2, 1u));
+      p_levels.push_back(std::max(p_levels.back() - 1, 1u));
 
     p_level_fes.resize(0, p_levels.size() - 1);
 
     for (unsigned int level = 0; level < p_levels.size(); ++level)
       {
-        p_level_fes[level] = std::make_unique<FE_Q<dim>>(p_levels[p_levels.size() - 1 - level]);
+        p_level_fes[level] =
+          std::make_unique<FE_Q<dim>>(p_levels[p_levels.size() - 1 - level]);
       }
 
-    level_dof_handlers.resize(0, coarse_triangulations.size() - 1 + p_level_fes.max_level());
+    level_dof_handlers.resize(0,
+                              coarse_triangulations.size() - 1 +
+                                p_level_fes.max_level());
     level_constraints.resize(0, level_dof_handlers.max_level());
 
     for (unsigned int level = level_dof_handlers.min_level();
@@ -319,16 +346,20 @@ namespace multigrid
       {
         DoFHandler<dim> &dof_h = level_dof_handlers[level];
 
-        dof_h.reinit(*coarse_triangulations[std::min(level, triangulation.n_global_levels() - 1)]);
+        dof_h.reinit(*coarse_triangulations[std::min(
+          level, triangulation.n_global_levels() - 1)]);
 
         if (level < coarse_triangulations.size())
           dof_h.distribute_dofs(*p_level_fes[0]);
         else
-          dof_h.distribute_dofs(*p_level_fes[level + 1 - coarse_triangulations.size()]);
+          dof_h.distribute_dofs(
+            *p_level_fes[level + 1 - coarse_triangulations.size()]);
 
-        IndexSet level_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_h);
+        IndexSet level_relevant_dofs =
+          DoFTools::extract_locally_relevant_dofs(dof_h);
 
-        fine_level_constraints.reinit(dof_h.locally_owned_dofs(), level_relevant_dofs);
+        fine_level_constraints.reinit(dof_h.locally_owned_dofs(),
+                                      level_relevant_dofs);
 
         DoFTools::make_hanging_node_constraints(dof_h, fine_level_constraints);
 
@@ -339,7 +370,8 @@ namespace multigrid
 
         // because we might be initializing with float numbers, we must first
         // create a double-precision constraints object and work from there
-        AffineConstraints<vcycle_number> &constraints = level_constraints[level];
+        AffineConstraints<vcycle_number> &constraints =
+          level_constraints[level];
         constraints.reinit(dof_h.locally_owned_dofs(), level_relevant_dofs);
         constraints.copy_from(fine_level_constraints);
         constraints.close();
@@ -347,8 +379,8 @@ namespace multigrid
 
     setup_time += time.wall_time();
 
-    time_details << "DoFs and constraint setup  (CPU/wall)" << time.cpu_time() << "s/"
-                 << time.wall_time() << 's' << std::endl;
+    time_details << "DoFs and constraint setup  (CPU/wall)" << time.cpu_time()
+                 << "s/" << time.wall_time() << 's' << std::endl;
   }
 
 
@@ -361,15 +393,16 @@ namespace multigrid
     Timer time;
     level_matrices.resize(0, level_dof_handlers.max_level());
 
-    for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
+    for (unsigned int level = 0; level <= level_dof_handlers.max_level();
+         ++level)
       {
         if (level < coarse_triangulations.size())
           {
-            level_matrices[level] =
-              std::make_unique<Portable::LaplaceOperatorBK3<dim, 1, vcycle_number>>(
-                level_dof_handlers[level],
-                level_constraints[level],
-                overlap_communication_computation);
+            level_matrices[level] = std::make_unique<
+              Portable::LaplaceOperatorBK3<dim, 1, vcycle_number>>(
+              level_dof_handlers[level],
+              level_constraints[level],
+              overlap_communication_computation);
           }
 
         else
@@ -381,10 +414,13 @@ namespace multigrid
                                          *this};
 
             bool success = Portable::OperatorDispatchFactory::dispatch(
-              p_level_fes[level + 1 - coarse_triangulations.size()]->degree, runner);
+              p_level_fes[level + 1 - coarse_triangulations.size()]->degree,
+              runner);
 
-            Assert(success,
-                   ExcMessage("Failed to find a matching polynomial degree in dispatcher."));
+            Assert(
+              success,
+              ExcMessage(
+                "Failed to find a matching polynomial degree in dispatcher."));
           }
       }
 
@@ -397,20 +433,24 @@ namespace multigrid
       }
     else
       {
-        fine_level_matrix =
-          std::make_unique<Portable::LaplaceOperatorBK3<dim, fe_degree, full_number>>(
-            level_dof_handlers.back(), fine_level_constraints, overlap_communication_computation);
+        fine_level_matrix = std::make_unique<
+          Portable::LaplaceOperatorBK3<dim, fe_degree, full_number>>(
+          level_dof_handlers.back(),
+          fine_level_constraints,
+          overlap_communication_computation);
 
         fine_level_matrix->initialize_dof_vector(solution_device);
       }
     system_rhs_device.reinit(solution_device);
-    ghost_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    ghost_solution_host.reinit(locally_owned_dofs,
+                               locally_relevant_dofs,
+                               mpi_communicator);
     Kokkos::fence();
 
     setup_time += time.wall_time();
 
-    time_details << "Setup matrices   (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time()
-                 << 's' << std::endl;
+    time_details << "Setup matrices   (CPU/wall) " << time.cpu_time() << "s/"
+                 << time.wall_time() << 's' << std::endl;
   }
 
   template <int dim, int fe_degree>
@@ -421,33 +461,39 @@ namespace multigrid
     Timer time;
     mg_transfers.resize(level_matrices.min_level(), level_matrices.max_level());
 
-    for (unsigned int level = level_matrices.min_level() + 1; level <= level_matrices.max_level();
+    for (unsigned int level = level_matrices.min_level() + 1;
+         level <= level_matrices.max_level();
          ++level)
       {
         if (level < coarse_triangulations.size())
           {
-            mg_transfers[level] =
-              std::make_unique<Portable::GeometricTransfer<dim, 1, vcycle_number>>();
-            mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
-                                        level_matrices[level]->get_matrix_free(),
-                                        level_constraints[level - 1],
-                                        level_constraints[level]);
+            mg_transfers[level] = std::make_unique<
+              Portable::GeometricTransfer<dim, 1, vcycle_number>>();
+            mg_transfers[level]->reinit(
+              level_matrices[level - 1]->get_matrix_free(),
+              level_matrices[level]->get_matrix_free(),
+              level_constraints[level - 1],
+              level_constraints[level]);
           }
         else
           {
-            const unsigned int p_coarse = p_level_fes[level - coarse_triangulations.size()]->degree;
+            const unsigned int p_coarse =
+              p_level_fes[level - coarse_triangulations.size()]->degree;
             const unsigned int p_fine =
               p_level_fes[level + 1 - coarse_triangulations.size()]->degree;
 
-            PolynomialTransferRunner runner{level,
-                                            level_matrices[level - 1]->get_matrix_free(),
-                                            level_matrices[level]->get_matrix_free(),
-                                            level_constraints[level - 1],
-                                            level_constraints[level],
-                                            *this};
+            PolynomialTransferRunner runner{
+              level,
+              level_matrices[level - 1]->get_matrix_free(),
+              level_matrices[level]->get_matrix_free(),
+              level_constraints[level - 1],
+              level_constraints[level],
+              *this};
 
             bool success =
-              Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse, p_fine, runner);
+              Portable::PolynomialTransferDispatchFactory::dispatch(p_coarse,
+                                                                    p_fine,
+                                                                    runner);
 
             Assert(success,
                    ExcMessage("Failed to find a matching polynomial degree "
@@ -460,16 +506,17 @@ namespace multigrid
 
     setup_time += time.wall_time();
 
-    time_details << "Setup transfers   (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time()
-                 << 's' << std::endl;
+    time_details << "Setup transfers   (CPU/wall) " << time.cpu_time() << "s/"
+                 << time.wall_time() << 's' << std::endl;
   }
 
 
 
   template <int dim, int fe_degree>
   void
-  LaplaceProblem<dim, fe_degree>::setup_smoothers(const unsigned int n_pre_smooth,
-                                                  const unsigned int n_post_smooth)
+  LaplaceProblem<dim, fe_degree>::setup_smoothers(
+    const unsigned int n_pre_smooth,
+    const unsigned int n_post_smooth)
   {
     Assert(n_pre_smooth == n_post_smooth,
            ExcNotImplemented("Change of pre- and post-smoother degree "
@@ -479,7 +526,8 @@ namespace multigrid
     Timer time;
     mg_smoothers.resize(level_matrices.min_level(), level_matrices.max_level());
 
-    for (unsigned int level = level_matrices.min_level(); level <= level_matrices.max_level();
+    for (unsigned int level = level_matrices.min_level();
+         level <= level_matrices.max_level();
          ++level)
       {
         typename SmootherType::AdditionalData smoother_data;
@@ -497,7 +545,8 @@ namespace multigrid
           }
 
         level_matrices[level]->compute_diagonal();
-        smoother_data.preconditioner = level_matrices[level]->get_matrix_diagonal_inverse();
+        smoother_data.preconditioner =
+          level_matrices[level]->get_matrix_diagonal_inverse();
 
         mg_smoothers[level].initialize(*level_matrices[level], smoother_data);
       }
@@ -505,8 +554,8 @@ namespace multigrid
     Kokkos::fence();
     setup_time += time.wall_time();
 
-    time_details << "Setup smoothers   (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time()
-                 << 's' << std::endl;
+    time_details << "Setup smoothers   (CPU/wall) " << time.cpu_time() << "s/"
+                 << time.wall_time() << 's' << std::endl;
   }
 
   template <int dim, int fe_degree>
@@ -515,12 +564,16 @@ namespace multigrid
   {
     Timer time;
 
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host> system_rhs_host(
-      locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host>
+      system_rhs_host(locally_owned_dofs,
+                      locally_relevant_dofs,
+                      mpi_communicator);
 
     const QGauss<dim> quadrature_formula(fe_degree + 1);
 
-    FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
+    FEValues<dim> fe_values(fe,
+                            quadrature_formula,
+                            update_values | update_JxW_values);
 
     const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
     const unsigned int n_q_points    = quadrature_formula.size();
@@ -539,12 +592,12 @@ namespace multigrid
 
             for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
               for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
+                cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 *
+                                fe_values.JxW(q_index));
 
             cell->get_dof_indices(local_dof_indices);
-            level_constraints.back().distribute_local_to_global(cell_rhs,
-                                                                local_dof_indices,
-                                                                system_rhs_host);
+            level_constraints.back().distribute_local_to_global(
+              cell_rhs, local_dof_indices, system_rhs_host);
           }
       }
 
@@ -556,8 +609,8 @@ namespace multigrid
 
     setup_time += time.wall_time();
 
-    time_details << "Compute rhs   (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time()
-                 << 's' << std::endl;
+    time_details << "Compute rhs   (CPU/wall) " << time.cpu_time() << "s/"
+                 << time.wall_time() << 's' << std::endl;
   }
 
   template <int dim, int fe_degree>
@@ -565,32 +618,39 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::solve(const unsigned int n_pre_smooth,
                                         const unsigned int n_post_smooth)
   {
-    multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType> *solver;
+    multigrid::
+      MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>
+        *solver;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
       solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
-          level_matrices.back(),
-          level_dof_handlers,
-          level_constraints,
-          mg_transfers,
-          level_matrices,
-          mg_smoothers,
-          system_rhs_device,
-          n_pre_smooth,
-          n_post_smooth);
+        new multigrid::MultigridSolver<dim,
+                                       fe_degree,
+                                       vcycle_number,
+                                       full_number,
+                                       SmootherType>(level_matrices.back(),
+                                                     level_dof_handlers,
+                                                     level_constraints,
+                                                     mg_transfers,
+                                                     level_matrices,
+                                                     mg_smoothers,
+                                                     system_rhs_device,
+                                                     n_pre_smooth,
+                                                     n_post_smooth);
     else
-      solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
-          fine_level_matrix,
-          level_dof_handlers,
-          level_constraints,
-          mg_transfers,
-          level_matrices,
-          mg_smoothers,
-          system_rhs_device,
-          n_pre_smooth,
-          n_post_smooth);
+      solver = new multigrid::MultigridSolver<dim,
+                                              fe_degree,
+                                              vcycle_number,
+                                              full_number,
+                                              SmootherType>(fine_level_matrix,
+                                                            level_dof_handlers,
+                                                            level_constraints,
+                                                            mg_transfers,
+                                                            level_matrices,
+                                                            mg_smoothers,
+                                                            system_rhs_device,
+                                                            n_pre_smooth,
+                                                            n_post_smooth);
 
 
     Timer time;
@@ -600,8 +660,9 @@ namespace multigrid
     Utilities::MPI::MinMaxAvg memory =
       Utilities::MPI::min_max_avg(stats.VmRSS / 1024., MPI_COMM_WORLD);
 
-    pcout << "Memory stats [MB]: " << memory.min << " [p" << memory.min_index << "] " << memory.avg
-          << " " << memory.max << " [p" << memory.max_index << "]" << std::endl;
+    pcout << "Memory stats [MB]: " << memory.min << " [p" << memory.min_index
+          << "] " << memory.avg << " " << memory.max << " [p"
+          << memory.max_index << "]" << std::endl;
 
     double                          time_cg = 1e10;
     std::pair<unsigned int, double> cg_details;
@@ -634,9 +695,11 @@ namespace multigrid
         best_mv = std::min(best_mv, stat.max);
 
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-          std::cout << "matvec time dp " << stat.min << " [p" << stat.min_index << "] " << stat.avg
-                    << " " << stat.max << " [p" << stat.max_index << "]"
-                    << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
+          std::cout << "matvec time dp " << stat.min << " [p" << stat.min_index
+                    << "] " << stat.avg << " " << stat.max << " [p"
+                    << stat.max_index << "]"
+                    << " DoFs/s: " << dof_handler.n_dofs() / stat.max
+                    << std::endl;
       }
 
     double best_mvs = 1e10;
@@ -666,15 +729,16 @@ namespace multigrid
         prolongate_per_level[level - 1] = 1e10;
         restrict_per_level[level - 1]   = 1e10;
 
-        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> vec_fine,
-          vec_coarse;
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>
+          vec_fine, vec_coarse;
 
         level_matrices[level - 1]->initialize_dof_vector(vec_coarse);
         level_matrices[level]->initialize_dof_vector(vec_fine);
 
         for (unsigned int i = 0; i < 5; ++i)
           {
-            const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+            const unsigned int n_mv =
+              dof_handler.n_dofs() < 10000000 ? 200 : 50;
 
             Kokkos::fence();
             time.restart();
@@ -685,15 +749,18 @@ namespace multigrid
             Kokkos::fence();
 
             Utilities::MPI::MinMaxAvg stat =
-              Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              Utilities::MPI::min_max_avg(time.wall_time() / n_mv,
+                                          MPI_COMM_WORLD);
 
-            prolongate_per_level[level - 1] = std::min(prolongate_per_level[level - 1], stat.max);
+            prolongate_per_level[level - 1] =
+              std::min(prolongate_per_level[level - 1], stat.max);
           }
 
 
         for (unsigned int i = 0; i < 5; ++i)
           {
-            const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+            const unsigned int n_mv =
+              dof_handler.n_dofs() < 10000000 ? 200 : 50;
 
             Kokkos::fence();
             time.restart();
@@ -704,15 +771,18 @@ namespace multigrid
             Kokkos::fence();
 
             Utilities::MPI::MinMaxAvg stat =
-              Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              Utilities::MPI::min_max_avg(time.wall_time() / n_mv,
+                                          MPI_COMM_WORLD);
 
-            restrict_per_level[level - 1] = std::min(restrict_per_level[level - 1], stat.max);
+            restrict_per_level[level - 1] =
+              std::min(restrict_per_level[level - 1], stat.max);
           }
       }
 
     if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-      std::cout << "Best timings for ndof = " << dof_handler.n_dofs() << "   mv " << best_mv
-                << "    mv smooth " << best_mvs << "   cg-mg " << time_cg << std::endl;
+      std::cout << "Best timings for ndof = " << dof_handler.n_dofs()
+                << "   mv " << best_mv << "    mv smooth " << best_mvs
+                << "   cg-mg " << time_cg << std::endl;
 
 
     convergence_table.add_value("cells", triangulation.n_global_active_cells());
@@ -731,10 +801,11 @@ namespace multigrid
           // convergence_table.add_value("prolong_L_" + std::to_string(level),
           //                             restrict_per_level[level - 1]);
 
-          std::cout << "Best timings for ndof = " << level_dof_handlers[level].n_dofs()
+          std::cout << "Best timings for ndof = " << dof_handler.n_dofs()
                     << "   on level " << level
                     << "|  restriction = " << restrict_per_level[level - 1]
-                    << "   prolongation  =  " << prolongate_per_level[level - 1] << std::endl;
+                    << "   prolongation  =  " << prolongate_per_level[level - 1]
+                    << std::endl;
         }
   }
 
@@ -746,8 +817,10 @@ namespace multigrid
     const bool ghost_exchange_on = true;
     const bool computation_on    = true;
 
-    MGLevelObject<LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>>
-      dummy_solution(0, level_matrices.max_level()), dummy_rhs(0, level_matrices.max_level());
+    MGLevelObject<
+      LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>>
+      dummy_solution(0, level_matrices.max_level()),
+      dummy_rhs(0, level_matrices.max_level());
 
     for (unsigned int level = 0; level <= level_matrices.max_level(); ++level)
       {
@@ -787,7 +860,8 @@ namespace multigrid
               Kokkos::fence();
 
               Utilities::MPI::MinMaxAvg stat =
-                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv,
+                                            MPI_COMM_WORLD);
 
               best_mv_both = std::min(best_mv_both, stat.max);
             }
@@ -802,7 +876,8 @@ namespace multigrid
               Kokkos::fence();
 
               Utilities::MPI::MinMaxAvg stat =
-                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv,
+                                            MPI_COMM_WORLD);
 
               best_only_ghost = std::min(best_only_ghost, stat.max);
             }
@@ -818,22 +893,25 @@ namespace multigrid
               Kokkos::fence();
 
               Utilities::MPI::MinMaxAvg stat =
-                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv,
+                                            MPI_COMM_WORLD);
 
               best_only_comp = std::min(best_only_comp, stat.max);
             }
           }
 
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-          std::cout << "Best timings for ndof = " << level_dof_handlers[level].n_dofs()
-                    << "   on level " << level << "|  ghost & compute =  " << best_mv_both
+          std::cout << "Best timings for ndof = " << dof_handler.n_dofs()
+                    << "   on level " << level
+                    << "|  ghost & compute =  " << best_mv_both
                     << "   ghost only      =  " << best_only_ghost
                     << "   compute only    =  " << best_only_comp
 
                     << std::endl;
       }
 
-    ghost_timing_table.add_value("cells", triangulation.n_global_active_cells());
+    ghost_timing_table.add_value("cells",
+                                 triangulation.n_global_active_cells());
     ghost_timing_table.add_value("dofs", dof_handler.n_dofs());
     ghost_timing_table.add_value("mv_ghost_and_compute", best_mv_both);
     ghost_timing_table.add_value("mv_compute_only", best_only_comp);
@@ -910,13 +988,16 @@ namespace multigrid
                                       const bool         use_doubling_mesh)
   {
     pcout << "Testing " << fe.get_name() << std::endl;
-    const unsigned int sizes[] = {1,   2,   3,   4,   5,   6,   7,   8,   10,  12,   14,   16,  20,
-                                  24,  28,  32,  40,  48,  56,  64,  80,  96,  112,  128,  160, 192,
-                                  224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1280, 1536};
+    const unsigned int sizes[] = {1,   2,   3,   4,    5,    6,   7,   8,
+                                  10,  12,  14,  16,   20,   24,  28,  32,
+                                  40,  48,  56,  64,   80,   96,  112, 128,
+                                  160, 192, 224, 256,  320,  384, 448, 512,
+                                  640, 768, 896, 1024, 1280, 1536};
 
 
 
-    for (unsigned int cycle = 0; cycle < sizeof(sizes) / sizeof(unsigned int); ++cycle)
+    for (unsigned int cycle = 0; cycle < sizeof(sizes) / sizeof(unsigned int);
+         ++cycle)
       {
         triangulation.clear();
 
@@ -946,7 +1027,10 @@ namespace multigrid
             projected_size                 = 1;
             for (unsigned int d = 0; d < dim; ++d)
               projected_size *= base_refine * subdivisions[d] * fe_degree + 1;
-            GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, p1, p2);
+            GridGenerator::subdivided_hyper_rectangle(triangulation,
+                                                      subdivisions,
+                                                      p1,
+                                                      p2);
           }
         else
           {
@@ -960,9 +1044,13 @@ namespace multigrid
                 }
             if (dim == 2)
               n_refine += 3;
-            GridGenerator::subdivided_hyper_cube(triangulation, n_subdiv, -0.9, 1.0);
+            GridGenerator::subdivided_hyper_cube(triangulation,
+                                                 n_subdiv,
+                                                 -0.9,
+                                                 1.0);
             const unsigned int base_refine = (1 << n_refine);
-            projected_size = Utilities::pow(base_refine * n_subdiv * fe_degree + 1, dim);
+            projected_size =
+              Utilities::pow(base_refine * n_subdiv * fe_degree + 1, dim);
           }
 
         if (projected_size < min_size)
@@ -970,8 +1058,8 @@ namespace multigrid
 
         if (projected_size > max_size)
           {
-            pcout << "Projected size " << projected_size << " higher than max size, terminating."
-                  << std::endl;
+            pcout << "Projected size " << projected_size
+                  << " higher than max size, terminating." << std::endl;
             pcout << std::endl;
             break;
           }
@@ -1046,17 +1134,21 @@ namespace multigrid
         return;
       if (min_degree == target_degree)
         {
-          LaplaceProblem<dim, min_degree> laplace_problem(overlap_communication_computation);
-          laplace_problem.run(min_size, max_size, n_pre_smooth, n_post_smooth, use_doubling_mesh);
+          LaplaceProblem<dim, min_degree> laplace_problem(
+            overlap_communication_computation);
+          laplace_problem.run(
+            min_size, max_size, n_pre_smooth, n_post_smooth, use_doubling_mesh);
         }
-      LaplaceRunTime<dim, (min_degree <= max_degree ? (min_degree + 1) : min_degree), max_degree> m(
-        target_degree,
-        min_size,
-        max_size,
-        n_pre_smooth,
-        n_post_smooth,
-        use_doubling_mesh,
-        overlap_communication_computation);
+      LaplaceRunTime<dim,
+                     (min_degree <= max_degree ? (min_degree + 1) : min_degree),
+                     max_degree>
+        m(target_degree,
+          min_size,
+          max_size,
+          n_pre_smooth,
+          n_post_smooth,
+          use_doubling_mesh,
+          overlap_communication_computation);
     }
   };
 } // namespace multigrid
@@ -1070,12 +1162,12 @@ main(int argc, char *argv[])
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      unsigned int degree                            = numbers::invalid_unsigned_int;
-      std::size_t  maxsize                           = static_cast<std::size_t>(-1);
-      std::size_t  minsize                           = 1;
-      unsigned int n_pre_smooth                      = 3;
-      unsigned int n_post_smooth                     = 3;
-      bool         use_doubling_mesh                 = true;
+      unsigned int degree            = numbers::invalid_unsigned_int;
+      std::size_t  maxsize           = static_cast<std::size_t>(-1);
+      std::size_t  minsize           = 1;
+      unsigned int n_pre_smooth      = 3;
+      unsigned int n_post_smooth     = 3;
+      bool         use_doubling_mesh = true;
       bool         overlap_communication_computation = false;
 
       if (argc == 1)
@@ -1087,7 +1179,8 @@ main(int argc, char *argv[])
               << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling overlap_communication_computation"
               << std::endl
               << "The parameters degree to n_post_smooth are integers, "
-              << "the last selects between a square mesh or a doubling mesh" << std::endl;
+              << "the last selects between a square mesh or a doubling mesh"
+              << std::endl;
           return 1;
         }
 
@@ -1110,15 +1203,22 @@ main(int argc, char *argv[])
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         std::cout << "Settings of parameters:                " << std::endl
                   << "Number of MPI ranks:                   "
-                  << Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << std::endl
-                  << "Polynomial degree:                     " << degree << std::endl
-                  << "Minimum size:                          " << minsize << std::endl
-                  << "Maximum size:                          " << maxsize << std::endl
-                  << "Number of pre-smoother iters:          " << n_pre_smooth << std::endl
-                  << "Number of post-smoother iters:         " << n_post_smooth << std::endl
-                  << "Use doubling mesh:                     " << use_doubling_mesh << std::endl
-                  << "Use overlap_communication_computation: " << overlap_communication_computation
+                  << Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
                   << std::endl
+                  << "Polynomial degree:                     " << degree
+                  << std::endl
+                  << "Minimum size:                          " << minsize
+                  << std::endl
+                  << "Maximum size:                          " << maxsize
+                  << std::endl
+                  << "Number of pre-smoother iters:          " << n_pre_smooth
+                  << std::endl
+                  << "Number of post-smoother iters:         " << n_post_smooth
+                  << std::endl
+                  << "Use doubling mesh:                     "
+                  << use_doubling_mesh << std::endl
+                  << "Use overlap_communication_computation: "
+                  << overlap_communication_computation << std::endl
                   << std::endl;
 
       LaplaceRunTime<dimension, minimal_degree, maximal_degree> run(
@@ -1134,21 +1234,25 @@ main(int argc, char *argv[])
     {
       std::cerr << std::endl
                 << std::endl
-                << "----------------------------------------------------" << std::endl;
+                << "----------------------------------------------------"
+                << std::endl;
       std::cerr << "Exception on processing: " << std::endl
                 << exc.what() << std::endl
                 << "Aborting!" << std::endl
-                << "----------------------------------------------------" << std::endl;
+                << "----------------------------------------------------"
+                << std::endl;
       return 1;
     }
   catch (...)
     {
       std::cerr << std::endl
                 << std::endl
-                << "----------------------------------------------------" << std::endl;
+                << "----------------------------------------------------"
+                << std::endl;
       std::cerr << "Unknown exception!" << std::endl
                 << "Aborting!" << std::endl
-                << "----------------------------------------------------" << std::endl;
+                << "----------------------------------------------------"
+                << std::endl;
       return 1;
     }
 
