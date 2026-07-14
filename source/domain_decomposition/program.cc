@@ -38,6 +38,7 @@
 #include "base/portable_mg_transfer_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "base/portable_v_cycle_multigrid_base.h"
+#include "domain_decomposition/portable_bddc_preconditioner.h"
 #include "domain_decomposition/portable_bnn_preconditioner.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
 #include "domain_decomposition/portable_solver_projected_cg.h"
@@ -155,6 +156,9 @@ private:
   std::unique_ptr<Portable::SchurInterfaceOperator<dim, double>> interface_operator;
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, double>> bnn_preconditioner;
+
+  std::unique_ptr<Portable::BDDCPreconditioner<dim, double>> bddc_preconditioner;
+
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_solution_host,
     subdomain_solution_host;
@@ -332,7 +336,8 @@ LaplaceProblem<dim, fe_degree>::create_subdomain_triangulations(unsigned int n_r
     }
   setup_time += time.wall_time();
 
-  pcout << "                      N_cells = " << triangulation.n_global_active_cells() << std::endl << std::endl;
+  pcout << "                      N_cells = " << triangulation.n_global_active_cells() << std::endl
+        << std::endl;
 
   time_details << "                      Subdomain triangulations extracted        (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
@@ -789,6 +794,10 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
     std::make_unique<Portable::BNNPreconditioner<dim, double>>(*interface_operator,
                                                                *level_subdomain_matrices.back());
 
+  this->bddc_preconditioner =
+    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
+                                                                *level_subdomain_matrices.back());
+
   Kokkos::fence();
   setup_time += time.wall_time();
   time_details << "                      BNN preconditioner setup                  (CPU/wall) "
@@ -1206,7 +1215,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 5; ++cycle)
+  for (unsigned int cycle = 0; cycle < 3; ++cycle)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
