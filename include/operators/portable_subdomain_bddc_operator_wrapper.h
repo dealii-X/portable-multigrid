@@ -1,5 +1,5 @@
-#ifndef portable_subdomain_neumann_operator_wrapper_h
-#define portable_subdomain_neumann_operator_wrapper_h
+#ifndef portable_subdomain_bddc_operator_wrapper_h
+#define portable_subdomain_bddc_operator_wrapper_h
 
 #include <deal.II/base/observer_pointer.h>
 
@@ -23,13 +23,16 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
 
-  template <int dim, int fe_degree, typename Number>
-  class SubdomainNeumannOperatorWrapper : public SubdomainLaplaceOperatorBase<dim, Number>
+  template <int dim, typename Number>
+  class SubdomainBDDCOperatorWrapper : public SubdomainLaplaceOperatorBase<dim, Number>
   {
   public:
-    SubdomainNeumannOperatorWrapper(
+    SubdomainBDDCOperatorWrapper(
       const SubdomainLaplaceOperatorBase<dim, Number> &dirichlet_operator)
       : dirichlet_operator(&dirichlet_operator)
+      , inverse_diagonal_entries(
+          std::make_shared<
+            DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>())
     {}
 
     void
@@ -37,7 +40,17 @@ namespace Portable
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
     {
-      dirichlet_operator->vmult_neumann(dst, src);
+      dirichlet_operator->vmult_plain(dst, src);
+    }
+
+
+    void
+    vmult_plain(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
+    {
+      dirichlet_operator->vmult_plain(dst, src);
+
     }
 
     void
@@ -56,7 +69,12 @@ namespace Portable
                 const bool ghost_exchange_on,
                 const bool computation_on) const override
     {
-      dirichlet_operator->vmult_dummy(dst, src, ghost_exchange_on, computation_on);
+      (void)dst;
+      (void)src;
+      (void)ghost_exchange_on;
+      (void)computation_on;
+
+      DEAL_II_NOT_IMPLEMENTED();
     }
 
     void
@@ -65,15 +83,6 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
     {
       dirichlet_operator->vmult_interface_cell_range(dst, src);
-    }
-
-
-    void
-    vmult_plain(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
-    {
-      dirichlet_operator->vmult_plain(dst, src);
     }
 
     void
@@ -99,17 +108,42 @@ namespace Portable
       dirichlet_operator->initialize_dof_vector(vec);
     }
 
+
     void
     compute_diagonal() override
     {
-      DEAL_II_NOT_IMPLEMENTED();
+      inverse_diagonal_entries->reinit(
+        dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+
+      // Number *raw_diagonal = inverse_diagonal_entries->get_vector().get_values();
+
+      // Kokkos::parallel_for(
+      //   "SubdomainBDDCOperatorWrapper::set_constrained_digonal_dofs_to_ones",
+      //   subdomain_corner_dofs.size(),
+      //   KOKKOS_LAMBDA(int i) { raw_diagonal[subdomain_corner_dofs(i)] = Number(1.); });
     }
+
+
+    // void
+    // compute_diagonal(Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>
+    //                    subdomain_corner_dofs) override
+    // {
+    //   inverse_diagonal_entries->reinit(
+    //     dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+
+    //   Number *raw_diagonal = inverse_diagonal_entries->get_vector().get_values();
+
+    //   Kokkos::parallel_for(
+    //     "SubdomainBDDCOperatorWrapper::set_constrained_digonal_dofs_to_ones",
+    //     subdomain_corner_dofs.size(),
+    //     KOKKOS_LAMBDA(int i) { raw_diagonal[subdomain_corner_dofs(i)] = Number(1.); });
+    // }
 
     std::shared_ptr<
       DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
     get_matrix_diagonal_inverse() const override
     {
-      return dirichlet_operator->get_matrix_diagonal_inverse_neumann();
+      return this->inverse_diagonal_entries;
     }
 
     std::shared_ptr<
@@ -137,12 +171,10 @@ namespace Portable
       (void)col;
       Assert(row == col, ExcNotImplemented());
 
-      const auto &inverse_diagonal_neumann =
-        dirichlet_operator->get_matrix_diagonal_inverse_neumann();
-
-      Assert(inverse_diagonal_neumann.get() != nullptr && inverse_diagonal_neumann->m() > 0,
+      Assert(inverse_diagonal_entries.get() != nullptr && inverse_diagonal_entries->m() > 0,
              ExcNotInitialized());
-      return 1.0 / (*inverse_diagonal_neumann)(row, row);
+
+      return 1.0 / (*inverse_diagonal_entries)(row, row);
     }
 
     const MatrixFree<dim, Number> &
@@ -178,6 +210,10 @@ namespace Portable
 
   private:
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> dirichlet_operator;
+
+    std::shared_ptr<
+      DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
+      inverse_diagonal_entries;
   };
 } // namespace Portable
 

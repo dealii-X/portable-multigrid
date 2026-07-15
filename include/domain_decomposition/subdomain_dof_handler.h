@@ -35,13 +35,27 @@ struct LocalPrimalConstraint
   // The local subdomain DoF indices that belong to this specific constraint.
   std::vector<unsigned int> local_subdomain_dofs;
 
+  // The interface dofs in the local interface partitioner numbering.
+  std::vector<unsigned int> interface_partitioner_dofs_local;
+
+  // The interface dofs in the global interface partitioner numbering.
+  // std::vector<unsigned int> interface_partitioner_dofs_global;
+
   // The global DoF indices (from the distributed_dof_handler) for these DoFs.
   std::vector<types::global_dof_index> global_dof_indices;
-
   /**
    * The unique global index assigned to this constraint in the global coarse space S_C.
    */
   unsigned int global_coarse_dof_index;
+
+  void
+  clear()
+  {
+    sharing_subdomains.clear();
+    local_subdomain_dofs.clear();
+    global_dof_indices.clear();
+    global_coarse_dof_index = numbers::invalid_unsigned_int;
+  }
 };
 
 struct GlobalPrimalConstraint
@@ -96,6 +110,11 @@ struct SubdomainDoFInfo
    * Subdomain interface DoFs in the local subdomain numbering.
    */
   IndexSet subdomain_interface_dofs;
+
+  /**
+   * Subdomain interface vertex (corner) DoFs in the local subdomain numbering.
+   */
+  IndexSet subdomain_corner_dofs;
 
   /**
    * Subdomain interface DoFs in the global domain numbering.
@@ -162,6 +181,7 @@ struct SubdomainDoFInfo
     local_primal_constraints.clear();
     global_primal_constraints.clear();
     subdomain_coarse_dof_indices.clear();
+    subdomain_corner_dofs.clear();
     global_coarse_offsets.fill(numbers::invalid_unsigned_int);
     local_coarse_offsets.fill(numbers::invalid_unsigned_int);
   }
@@ -240,6 +260,9 @@ private:
   std::vector<types::global_dof_index> interface_indices_partitioner_to_subdomain_numbering;
 
   std::vector<types::global_dof_index> interface_indices_partitioner_to_global_numbering;
+
+  std::map<types::global_dof_index, unsigned int>
+    subdomain_inteface_to_interface_partitioner_local_map;
 };
 
 template <int dim>
@@ -266,6 +289,7 @@ SubdomainDoFHandler<dim>::reinit(
 
   interface_indices_partitioner_to_subdomain_numbering.clear();
   interface_indices_partitioner_to_global_numbering.clear();
+  subdomain_inteface_to_interface_partitioner_local_map.clear();
 
   subdomain_id = subdomain_triangulation->get_subdomain_id();
   interface_id = subdomain_triangulation->get_interface_id();
@@ -369,6 +393,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 
               interface_partitioner_to_global_numbering.push_back(global_index);
 
+
               ++rank_counter_ptr[r];
             }
         }
@@ -416,6 +441,8 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
       this->interface_indices_partitioner_to_subdomain_numbering[i] = subdomain_index;
 
       this->interface_indices_partitioner_to_global_numbering[i] = global_index;
+
+      subdomain_inteface_to_interface_partitioner_local_map[subdomain_index] = i;
     }
 
   this->categorize_interface_dofs(all_sets);
@@ -474,6 +501,7 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
   std::vector<unsigned int> local_corner_class_idxs;
   std::vector<unsigned int> local_edge_class_idxs;
   std::vector<unsigned int> local_face_class_idxs;
+
 
   // categorize inteface dofs
   {
@@ -572,32 +600,46 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
                 // assign temporarily, will be reassigned right after this loop
                 local_primal_constraint.global_coarse_dof_index = class_idx;
 
+                if (local_primal_constraint.type == PrimalConstraintType::Vertex)
+                  AssertDimension(dofs_in_class.size(), 1);
+
                 for (const auto global_idx : dofs_in_class)
                   {
                     // Only add DoFs that actually belong to our subdomain's interface
                     if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
                       {
+                        const unsigned int subdomain_idx =
+                          subdomain_dof_info.global_to_subdomain_interface_map.at(global_idx);
+
                         local_primal_constraint.global_dof_indices.push_back(global_idx);
-                        local_primal_constraint.local_subdomain_dofs.push_back(
-                          subdomain_dof_info.global_to_subdomain_interface_map.at(global_idx));
+                        local_primal_constraint.local_subdomain_dofs.push_back(subdomain_idx);
+                        local_primal_constraint.interface_partitioner_dofs_local.push_back(
+                          this->subdomain_inteface_to_interface_partitioner_local_map.at(
+                            subdomain_idx));
                       }
                   }
 
-                if (local_primal_constraint.type == PrimalConstraintType::Vertex)
+                if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
+                    local_primal_constraint.local_subdomain_dofs.size() > 0)
                   {
                     local_corner_blocks.push_back(local_primal_constraint);
                     local_corner_class_idxs.push_back(class_idx);
                   }
-                else if (local_primal_constraint.type == PrimalConstraintType::Edge)
+                else if (local_primal_constraint.type == PrimalConstraintType::Edge &&
+                         local_primal_constraint.local_subdomain_dofs.size() > 0)
                   {
                     local_edge_blocks.push_back(local_primal_constraint);
                     local_edge_class_idxs.push_back(class_idx);
                   }
-                else if (local_primal_constraint.type == PrimalConstraintType::Face)
+                else if (local_primal_constraint.type == PrimalConstraintType::Face &&
+                         local_primal_constraint.local_subdomain_dofs.size() > 0)
                   {
                     local_face_blocks.push_back(local_primal_constraint);
                     local_face_class_idxs.push_back(class_idx);
                   }
+                // if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
+                //     local_primal_constraint.local_subdomain_dofs.size() > 0)
+                //   AssertDimension(local_corner_blocks.back().local_subdomain_dofs, 1);
               }
           }
       }
@@ -608,6 +650,7 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
       ExcMessage(
         "SubdomainDoFHandler<dim>::categorize_interface_dofs() couldn't categorize some of the dofs."));
   }
+
 
   // compute global coarse dofs offsets
   {
@@ -621,6 +664,7 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
   // Create a mapping from original geometric class_idx to the new, sequential global coarse index
   std::map<unsigned int, unsigned int> class_idx_to_global_sequential;
+
 
   // enumerate global coarse dofs
   {
@@ -680,13 +724,23 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
       global_face_blocks.end());
   }
 
+
   // Map the local subdomain coarse dof to the new global numbering
   {
+    subdomain_dof_info.subdomain_corner_dofs.set_size(subdomain_dof_handler.n_dofs());
+
     for (unsigned int i = 0; i < local_corner_blocks.size(); ++i)
       {
         const unsigned int old_idx                     = local_corner_class_idxs[i];
         local_corner_blocks[i].global_coarse_dof_index = class_idx_to_global_sequential.at(old_idx);
+
+        AssertDimension(local_corner_blocks[i].local_subdomain_dofs.size(), 1);
+        AssertDimension(local_corner_blocks[i].interface_partitioner_dofs_local.size(), 1);
+
+        subdomain_dof_info.subdomain_corner_dofs.add_index(
+          local_corner_blocks[i].local_subdomain_dofs[0]);
       }
+    subdomain_dof_info.subdomain_corner_dofs.compress();
 
     for (unsigned int i = 0; i < local_edge_blocks.size(); ++i)
       {
@@ -700,7 +754,6 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
         local_face_blocks[i].global_coarse_dof_index = class_idx_to_global_sequential.at(old_idx);
       }
   }
-
   // compute local offsets for each coarse dof enity and store in  flattened format
   {
     subdomain_dof_info.local_coarse_offsets[0] = 0;

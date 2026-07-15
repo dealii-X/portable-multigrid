@@ -107,6 +107,9 @@ private:
   void
   output_results(const unsigned int cycle) const;
 
+  void
+  test_bddc();
+
   MPI_Comm mpi_communicator;
 
   parallel::fullydistributed::Triangulation<dim> triangulation;
@@ -794,9 +797,6 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
     std::make_unique<Portable::BNNPreconditioner<dim, double>>(*interface_operator,
                                                                *level_subdomain_matrices.back());
 
-  this->bddc_preconditioner =
-    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-                                                                *level_subdomain_matrices.back());
 
   Kokkos::fence();
   setup_time += time.wall_time();
@@ -1213,6 +1213,37 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 
 template <int dim, int fe_degree>
 void
+LaplaceProblem<dim, fe_degree>::test_bddc()
+{
+  // this->bddc_preconditioner =
+  //   std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
+  //                                                               *level_subdomain_matrices.back(),
+  //                                                              Portable::BDDCVariant::corner);
+
+  this->bddc_preconditioner =
+    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
+                                                                *level_subdomain_matrices.back());
+
+  using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+
+  InterfaceVectorType dst, src;
+
+  dst.reinit(subdomain_dof_handler_fine.get_interface_vector_partitioner());
+  src.reinit(dst);
+
+  // src = 1.0;
+
+  Portable::DeviceVector<double> src_view(src.get_values(), src.locally_owned_size());
+
+  Kokkos::parallel_for(src.locally_owned_size(), KOKKOS_LAMBDA(const int &i) { src_view(i) = i; });
+
+  src.compress(VectorOperation::insert);
+
+  bddc_preconditioner->solve_subdomain_with_constraints(dst, src);
+}
+
+template <int dim, int fe_degree>
+void
 LaplaceProblem<dim, fe_degree>::run()
 {
   for (unsigned int cycle = 0; cycle < 3; ++cycle)
@@ -1220,8 +1251,7 @@ LaplaceProblem<dim, fe_degree>::run()
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
 
-      create_subdomain_triangulations(cycle + 1);
-
+      create_subdomain_triangulations(cycle + 2);
 
       setup_dofs();
 
@@ -1239,21 +1269,21 @@ LaplaceProblem<dim, fe_degree>::run()
 
       setup_bnn_preconditioner();
 
-      assemble_rhs();
+      // assemble_rhs();
 
-      pcout << "                      setup time: " << setup_time << "s" << std::endl;
+      // pcout << "                      setup time: " << setup_time << "s" << std::endl;
 
-      solve_interface();
+      // solve_interface();
 
-      // matvec_ghost_timing();
+      // // matvec_ghost_timing();
 
-      // test_coarse_problem();
+      // // test_coarse_problem();
 
-      postprocess_subdomain_solution();
+      // postprocess_subdomain_solution();
 
-      output_results(cycle);
+      // output_results(cycle);
 
-      // test_triangulation();
+      test_bddc();
 
       // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       //   {
