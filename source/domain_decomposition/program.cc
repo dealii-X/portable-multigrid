@@ -1310,7 +1310,6 @@ LaplaceProblem<dim, fe_degree>::run()
       // matvec_ghost_timing();
 
       // // test_coarse_problem();
-
       test_bddc();
 
       postprocess_subdomain_solution();
@@ -1418,34 +1417,34 @@ main(int argc, char *argv[])
       // }
 
 
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 1;
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 1;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 2;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 2;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 3;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 3;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 4;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 4;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
     }
   catch (std::exception &exc)
     {
