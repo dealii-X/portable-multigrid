@@ -776,8 +776,7 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
   Timer time;
 
   interface_operator = std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
-    *level_subdomain_matrices.back(),
-    *subdomain_mg_preconditioner_dirichlet);
+    *level_subdomain_matrices.back(), *subdomain_mg_preconditioner_dirichlet);
 
   rhs_schur_device.reinit(this->subdomain_dof_handler_fine.get_interface_vector_partitioner());
 
@@ -797,10 +796,8 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
   Kokkos::fence();
   Timer time;
 
-  this->bnn_preconditioner =
-    std::make_unique<Portable::BNNPreconditioner<dim, double>>(*interface_operator,
-                                                               *level_subdomain_matrices.back(),
-                                                               *subdomain_mg_preconditioner_neumann);
+  this->bnn_preconditioner = std::make_unique<Portable::BNNPreconditioner<dim, double>>(
+    *interface_operator, *level_subdomain_matrices.back(), *subdomain_mg_preconditioner_neumann);
 
 
   Kokkos::fence();
@@ -949,9 +946,9 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     bnn_preconditioner->reset_timings();
 
     cg.solve_dd(*interface_operator,
-               solution_interface_device,
-               rhs_schur_device,
-               *bnn_preconditioner);
+                solution_interface_device,
+                rhs_schur_device,
+                *bnn_preconditioner);
 
     solution_interface_device.update_ghost_values();
 
@@ -1032,9 +1029,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            computation_on,
-                                            communication_on);
+                                                            dummy_rhs,
+                                                            computation_on,
+                                                            communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1063,9 +1060,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            !computation_on,
-                                            communication_on);
+                                                            dummy_rhs,
+                                                            !computation_on,
+                                                            communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1095,9 +1092,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            computation_on,
-                                            !communication_on);
+                                                            dummy_rhs,
+                                                            computation_on,
+                                                            !communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1243,75 +1240,9 @@ LaplaceProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
 
 template <int dim, int fe_degree>
 void
-<<<<<<< HEAD
 LaplaceProblem<dim, fe_degree>::run()
 {
   for (unsigned int cycle = 0; cycle < 9 - dim; ++cycle)
-=======
-LaplaceProblem<dim, fe_degree>::test_bddc()
-{
-  // this->bddc_preconditioner =
-  //   std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-  //                                                               *level_subdomain_matrices.back(),
-  //                                                              Portable::BDDCVariant::corner);
-
-  this->bddc_preconditioner =
-    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-                                                                *level_subdomain_matrices.back());
-
-  using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
-
-  InterfaceVectorType dst, src;
-
-  dst.reinit(subdomain_dof_handler_fine.get_interface_vector_partitioner());
-  src.reinit(dst);
-
-  // src = 1.0;
-
-  Portable::DeviceVector<double> src_view(src.get_values(), src.locally_owned_size());
-
-  Kokkos::parallel_for(src.locally_owned_size(), KOKKOS_LAMBDA(const int &i) { src_view(i) = i; });
-
-  src.compress(VectorOperation::insert);
-
-  // bddc_preconditioner->solve_subdomain_with_constraints(dst, src);
-
-  bddc_preconditioner->compute_coarse_matrix();
-
-  Timer time;
-  Kokkos::fence();
-  // SolverControl solver_control(1000, 1e-9 * rhs_schur_device.l2_norm());
-  ReductionControl solver_control(1000, 1e-12, 1e-7);
-
-  // SolverControl solver_control(10000, 1e-12 * rhs_schur_device.l2_norm());
-
-  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
-
-  SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
-
-  solution_interface_device = 0.;
-
-  cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
-
-  // cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, PreconditionIdentity());
-
-  pcout << "                      Interface solver converged in " << solver_control.last_step()
-        << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
-        << std::endl;
-
-  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(
-  //   solver_control);
-
-  solution_interface_device.update_ghost_values();
-}
-
-template <int dim, int fe_degree>
-void
-LaplaceProblem<dim, fe_degree>::run()
-{
-  for (unsigned int cycle = 0; cycle < 6; ++cycle)
->>>>>>> f6fd460 (finalize BDDC preconditioner)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
@@ -1426,7 +1357,6 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-<<<<<<< HEAD
       // {
       //   constexpr int dim       = 2;
       //   constexpr int fe_degree = 3;
@@ -1437,19 +1367,7 @@ main(int argc, char *argv[])
       {
         constexpr int dim       = 2;
         constexpr int fe_degree = 4;
-=======
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 3;
-
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
       }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 4;
->>>>>>> f6fd460 (finalize BDDC preconditioner)
-
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
