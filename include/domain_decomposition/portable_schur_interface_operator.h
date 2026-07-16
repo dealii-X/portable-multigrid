@@ -221,9 +221,8 @@ namespace Portable
     const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
   {
     dst = 0.;
-    SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
-    // ReductionControl solver_control(100, 1e-16, 1e-9);
-
+    // SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
+    ReductionControl solver_control(100, 1e-16, 1e-12);
 
     SolverCG<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>> cg(solver_control);
 

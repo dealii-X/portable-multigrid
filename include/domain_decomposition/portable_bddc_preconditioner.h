@@ -33,9 +33,8 @@ namespace Portable
                        const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
                        const BDDCVariant variant = BDDCVariant::corner_edge_face);
 
-    // void
-    // vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
+    void
+    vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
     void
     solve_subdomain_with_constraints(InterfaceVectorType       &dst,
@@ -54,47 +53,15 @@ namespace Portable
 
 
     void
-    lift_coarse_to_interface(InterfaceVectorType  &interface_vector,
+    lift_coarse_to_subdomain(SubdomainVectorType  &interface_vector,
                              const Vector<Number> &coarse_vector) const;
 
-    // void
-    // project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //         const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
-
-    // void
-    // balance(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //         const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
-
-    // void
-    // balance_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //               const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-    //               const bool computation_on,
-    //               const bool communication_on) const;
-
-    // void
-    // balance_and_vmult(
-    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &S_per_dst,
-    //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
-
     void
-    setup_coarse_matrix();
+    compute_coarse_matrix();
 
     void
     coarse_to_global_interface(InterfaceVectorType  &interface_vector,
                                const Vector<Number> &coarse_vector) const;
-
-    // void
-    // coarse_to_global_interface_and_S_update(
-    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &interface_vector,
-    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &S_per_interface_vector,
-    //   const Vector<Number>                                             &coarse_vector) const;
-
-    // void
-    // vmult_enhanced(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &z,
-    //                LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &s_tilde,
-    //                const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &r)
-    //                const;
 
     void
     global_interface_to_coarse(Vector<Number>            &coarse_vector,
@@ -106,11 +73,6 @@ namespace Portable
 
     const std::array<double, 4> &
     get_timings() const;
-
-    // void
-    // vmult_interface(
-    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
 
 
     struct SubdomainProjectorWrapper
@@ -130,15 +92,31 @@ namespace Portable
     };
 
 
-    // void
-    // test_subdomain_solve(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
   private:
     void
     setup_primal_constraint_views();
 
     void
-    compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix) const;
+    compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix);
+
+
+    void
+    vmult_fine_correction(SubdomainVectorType       &fine_solution,
+                          const SubdomainVectorType &fine_residual) const;
+
+    void
+    vmult_coarse_correction(SubdomainVectorType       &coarse_solution,
+                            const SubdomainVectorType &fine_residual) const;
+
+    void
+    gather_and_weight_global_interface(SubdomainVectorType       &dst,
+                                       const InterfaceVectorType &src) const;
+
+    void
+    weight_local_interface_and_scatter(InterfaceVectorType       &dst,
+                                       const SubdomainVectorType &src) const;
+
 
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> subdomain_operator;
@@ -152,6 +130,7 @@ namespace Portable
 
     unsigned int       n_global_coarse_dofs;
     unsigned int       n_local_coarse_dofs;
+    const unsigned int n_subdomain_dofs;
     const unsigned int interface_vector_size;
 
     const unsigned int coarse_problem_rank;
@@ -182,18 +161,20 @@ namespace Portable
 
     std::vector<unsigned int> coarse_dofs_local_to_global_vector_host;
 
+    std::vector<SubdomainVectorType> coarse_basis_functions;
+
     mutable InterfaceVectorType temp_interface;
+    mutable Vector<Number>      temp_coarse_local;
+    mutable Vector<Number>      temp_coarse_global;
 
-    //  mutable InterfaceVectorType z0, S_z0;
 
-    // std::vector<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>
-    //   S_per_coarse_basis_functions;
+    mutable SubdomainVectorType temp_subdomain_dst;
+    mutable SubdomainVectorType temp_subdomain_src;
+    mutable SubdomainVectorType temp_subdomain_coarse;
+    mutable SubdomainVectorType temp_subdomain_fine;
 
-    mutable std::vector<Number> temp_coarse_gather;
-    mutable std::vector<Number> temp_local_coarse;
 
-    // mutable Vector<Number> temp_coarse_rhs;
-    // mutable Vector<Number> temp_coarse_solution;
+    mutable std::vector<Number> temp_global_coarse_std;
 
     /**
      * timings[0] = Dirichler solve
@@ -202,9 +183,6 @@ namespace Portable
      * timings[3] = projection step
      */
     mutable std::array<double, 4> timings;
-
-    mutable SubdomainVectorType temp_subdomain_dst;
-    mutable SubdomainVectorType temp_subdomain_src;
   };
 
   template <int dim, typename Number>
@@ -216,6 +194,7 @@ namespace Portable
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
     , subdomain_bddc_operator(subdomain_operator)
+    , n_subdomain_dofs(subdomain_operator.get_subdomain_dof_handler().get_dof_handler().n_dofs())
     , interface_vector_size(subdomain_operator.get_interface_dof_indices_subdomain().size())
     , coarse_problem_rank(subdomain_dof_handler->n_subdomains() - 1)
     , n_subdomains(subdomain_dof_handler->n_subdomains())
@@ -236,43 +215,43 @@ namespace Portable
         {
           n_global_coarse_dofs = subdomain_dof_info.global_coarse_offsets[1]; // End of Vertices
           n_local_coarse_dofs  = subdomain_dof_info.local_coarse_offsets[1];
+
+          if (n_local_coarse_dofs == 0)
+            bddc_variant = BDDCVariant::corner_edge;
         }
-      else if (bddc_variant == BDDCVariant::corner_edge)
+
+      if (bddc_variant == BDDCVariant::corner_edge)
         {
           n_global_coarse_dofs = subdomain_dof_info.global_coarse_offsets[2]; // End of Edges
           n_local_coarse_dofs  = subdomain_dof_info.local_coarse_offsets[2];
+
+          if (n_local_coarse_dofs == 0)
+            bddc_variant = BDDCVariant::corner_edge_face;
         }
-      else // corner_edge_face
+
+      if (bddc_variant == BDDCVariant::corner_edge_face)
         {
           n_global_coarse_dofs = subdomain_dof_info.global_coarse_offsets[3]; // End of Faces
           n_local_coarse_dofs  = subdomain_dof_info.local_coarse_offsets[3];
         }
+
+      AssertThrow(n_global_coarse_dofs > 0, ExcMessage("There's zero global constraints"));
+      AssertThrow(n_local_coarse_dofs > 0, ExcMessage("There's zero local constraints"));
 
       setup_primal_constraint_views();
     }
 
     temp_interface.reinit(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
-    AssertThrow(n_global_coarse_dofs > 0, ExcMessage("There's zero global constraints"));
-    AssertThrow(n_local_coarse_dofs > 0, ExcMessage("There's zero local constraints"));
+    temp_coarse_local.reinit(n_local_coarse_dofs);
+    temp_coarse_global.reinit(n_global_coarse_dofs);
 
-
-    // S_per_coarse_basis_functions.resize(n_subdomains);
-
-    // for (unsigned int i = 0; i < n_subdomains; ++i)
-    //   S_per_coarse_basis_functions[i].reinit(temp_interface);
-
-    // z0.reinit(temp_interface);
-    // S_z0.reinit(temp_interface);
-
-    temp_coarse_gather.resize(n_global_coarse_dofs);
-    temp_local_coarse.resize(n_local_coarse_dofs);
-
-    // temp_coarse_rhs.reinit(n_global_coarse_dofs);
-    // temp_coarse_solution.reinit(n_global_coarse_dofs);
+    temp_global_coarse_std.resize(n_global_coarse_dofs);
 
     subdomain_operator.initialize_dof_vector(temp_subdomain_dst);
     temp_subdomain_src.reinit(temp_subdomain_dst);
+    temp_subdomain_coarse.reinit(temp_subdomain_dst);
+    temp_subdomain_fine.reinit(temp_subdomain_dst);
   }
 
   template <int dim, typename Number>
@@ -290,6 +269,198 @@ namespace Portable
     return timings;
   }
 
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::vmult(InterfaceVectorType       &dst,
+                                         const InterfaceVectorType &src) const
+  {
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+
+    dst = 0;
+    src.update_ghost_values();
+
+    const SubdomainProjectorWrapper projector(*this);
+
+    gather_and_weight_global_interface(temp_subdomain_src, src);
+
+    vmult_coarse_correction(temp_subdomain_coarse, temp_subdomain_src);
+
+    vmult_fine_correction(temp_subdomain_fine, temp_subdomain_src);
+
+    temp_subdomain_coarse += temp_subdomain_fine;
+
+    weight_local_interface_and_scatter(dst, temp_subdomain_coarse);
+
+    dst.compress(VectorOperation::add);
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::vmult_fine_correction(
+    SubdomainVectorType       &fine_solution,
+    const SubdomainVectorType &fine_residual) const
+  {
+    AssertDimension(fine_solution.size(), n_subdomain_dofs);
+    AssertDimension(fine_residual.size(), n_subdomain_dofs);
+
+    fine_solution = 0;
+
+    SubdomainProjectorWrapper projector(*this);
+
+    // SolverControl                          solver_control(1000, 1e-12 * fine_residual.l2_norm());
+    ReductionControl solver_control(100000, 1e-16,  1e-12);
+
+    SolverProjectedCG<SubdomainVectorType> solver(solver_control);
+
+    solver.solve_projected(this->subdomain_bddc_operator,
+                           fine_solution,
+                           fine_residual,
+                           PreconditionIdentity(),
+                           projector);
+  }
+
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::vmult_coarse_correction(
+    SubdomainVectorType       &coarse_solution,
+    const SubdomainVectorType &fine_residual) const
+  {
+    AssertDimension(coarse_solution.size(), n_subdomain_dofs);
+    AssertDimension(fine_residual.size(), n_subdomain_dofs);
+
+    coarse_solution = 0;
+
+    const unsigned int n_coarse_local  = this->n_local_coarse_dofs;
+    const unsigned int n_coarse_global = this->n_global_coarse_dofs;
+
+    const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
+
+    temp_coarse_local = 0;
+
+    DeviceVector<const Number> fine_residual_view(fine_residual.get_values(), fine_residual.size());
+    DeviceVector<Number> coarse_solution_view(coarse_solution.get_values(), coarse_solution.size());
+
+    for (unsigned int j = 0; j < n_coarse_local; ++j)
+      {
+        const SubdomainVectorType &basis_function = this->coarse_basis_functions[j];
+
+        DeviceVector<const Number> basis_function_view(basis_function.get_values(),
+                                                       basis_function.size());
+
+        Number local_inner_product = 0;
+
+        Kokkos::parallel_reduce(
+          "coarse_rhs_inner_product",
+          this->interface_vector_size,
+          KOKKOS_LAMBDA(const int i, Number &sum) {
+            const unsigned int subdomain_idx = interface_dof_subdomain(i);
+            sum += fine_residual_view(subdomain_idx) * basis_function_view(subdomain_idx);
+          },
+          local_inner_product);
+        Kokkos::fence();
+
+        temp_coarse_local(j) = local_inner_product;
+      }
+
+    std::fill(temp_global_coarse_std.begin(), temp_global_coarse_std.end(), Number(0));
+
+    const auto &local_to_global = this->coarse_dofs_local_to_global_vector_host;
+
+    for (unsigned int i = 0; i < n_coarse_local; ++i)
+      {
+        temp_global_coarse_std[local_to_global[i]] = temp_coarse_local(i);
+      }
+
+    Utilities::MPI::sum(temp_global_coarse_std,
+                        this->subdomain_dof_handler->get_mpi_communicator(),
+                        temp_global_coarse_std);
+
+    temp_coarse_global = 0;
+
+    for (unsigned int i = 0; i < n_coarse_global; ++i)
+      temp_coarse_global(i) = temp_global_coarse_std[i];
+
+    coarse_matrix.solve(temp_coarse_global);
+
+    for (unsigned int j = 0; j < n_coarse_local; ++j)
+      {
+        const Number local_coarse_value = temp_coarse_global[local_to_global[j]];
+
+        const SubdomainVectorType &basis_function = this->coarse_basis_functions[j];
+
+        DeviceVector<const Number> basis_function_view(basis_function.get_values(),
+                                                       basis_function.size());
+
+        Kokkos::parallel_for(
+          "coarse_prolongation", this->interface_vector_size, KOKKOS_LAMBDA(const int i) {
+            const unsigned int subdomain_idx = interface_dof_subdomain(i);
+            coarse_solution_view(subdomain_idx) +=
+              local_coarse_value * basis_function_view(subdomain_idx);
+          });
+        Kokkos::fence();
+      }
+  }
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::gather_and_weight_global_interface(
+    SubdomainVectorType       &dst,
+    const InterfaceVectorType &src) const
+  {
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+
+    AssertDimension(dst.size(), n_subdomain_dofs);
+
+    dst = 0;
+
+    DeviceVector<Number>       dst_view(dst.get_values(), dst.size());
+    DeviceVector<const Number> src_view(src.get_values(), this->interface_vector_size);
+
+    const DeviceVector<const Number> weights(interface_weights.get_values(),
+                                             this->interface_vector_size);
+    const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
+
+    Kokkos::parallel_for(
+      "scale_interface_residual", this->interface_vector_size, KOKKOS_LAMBDA(const int i) {
+        dst_view(interface_dof_subdomain(i)) = src_view(i) * weights(i);
+      });
+    Kokkos::fence();
+  }
+
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::weight_local_interface_and_scatter(
+    InterfaceVectorType       &dst,
+    const SubdomainVectorType &src) const
+  {
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+
+    AssertDimension(src.size(), n_subdomain_dofs);
+
+    dst = 0;
+
+    DeviceVector<Number>       dst_view(dst.get_values(), this->interface_vector_size);
+    DeviceVector<const Number> src_view(src.get_values(), src.size());
+
+    const DeviceVector<const Number> weights(interface_weights.get_values(),
+                                             this->interface_vector_size);
+
+    const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
+
+    Kokkos::parallel_for(
+      "scale_interface_residual", this->interface_vector_size, KOKKOS_LAMBDA(const int i) {
+        dst_view(i) = src_view(interface_dof_subdomain(i)) * weights(i);
+      });
+    Kokkos::fence();
+  }
 
   template <int dim, typename Number>
   void
@@ -358,125 +529,6 @@ namespace Portable
               << " converged in " << solver_control.last_step() << std::endl;
   }
 
-
-  template <int dim, typename Number>
-  void
-  BDDCPreconditioner<dim, Number>::setup_primal_constraint_views()
-  {
-    const auto &dof_info          = this->subdomain_dof_handler->get_dof_info();
-    const auto &local_constraints = dof_info.local_primal_constraints;
-
-    std::vector<unsigned int> primal_constraint_dofs_interface_local_v;
-    std::vector<unsigned int> primal_constraint_dofs_subdomain_v;
-    std::vector<unsigned int> constraint_dofs_offsets_v;
-    std::vector<unsigned int> corner_dofs_subdomain_v;
-
-    coarse_dofs_local_to_global_vector_host.clear();
-
-    std::vector<Number> coarse_weights_v;
-
-    constraint_dofs_offsets_v.push_back(0);
-    for (const auto &constraint : local_constraints)
-      {
-        if (bddc_variant == BDDCVariant::corner && constraint.type != PrimalConstraintType::Vertex)
-          continue;
-
-        if (bddc_variant == BDDCVariant::corner_edge &&
-            constraint.type == PrimalConstraintType::Face)
-          continue;
-
-        if (constraint.type == PrimalConstraintType::Vertex)
-          {
-            AssertDimension(constraint.interface_partitioner_dofs_local.size(), 1);
-            AssertDimension(constraint.local_subdomain_dofs.size(), 1);
-
-            corner_dofs_subdomain_v.push_back(constraint.local_subdomain_dofs[0]);
-          }
-
-        primal_constraint_dofs_interface_local_v.insert(
-          primal_constraint_dofs_interface_local_v.end(),
-          constraint.interface_partitioner_dofs_local.begin(),
-          constraint.interface_partitioner_dofs_local.end());
-
-        primal_constraint_dofs_subdomain_v.insert(primal_constraint_dofs_subdomain_v.end(),
-                                                  constraint.local_subdomain_dofs.begin(),
-                                                  constraint.local_subdomain_dofs.end());
-
-
-        constraint_dofs_offsets_v.push_back(primal_constraint_dofs_interface_local_v.size());
-
-        coarse_dofs_local_to_global_vector_host.push_back(constraint.global_coarse_dof_index);
-
-        Number weight = Number(1) / Number(constraint.interface_partitioner_dofs_local.size());
-
-        AssertThrow(weight > 0, ExcInternalError());
-        coarse_weights_v.push_back(weight);
-      }
-
-    AssertThrow(primal_constraint_dofs_interface_local_v.size() > 0, ExcInternalError());
-    AssertThrow(primal_constraint_dofs_subdomain_v.size() > 0, ExcInternalError());
-    AssertThrow(constraint_dofs_offsets_v.size() > 0, ExcInternalError());
-    AssertThrow(corner_dofs_subdomain_v.size() > 0, ExcInternalError());
-    AssertThrow(coarse_dofs_local_to_global_vector_host.size() > 0, ExcInternalError());
-    AssertThrow(coarse_weights_v.size() > 0, ExcInternalError());
-
-
-    // Allocate and copy to Device Kokkos::Views
-    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_dofs_interface_local_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing,
-                         "primal_constraint_dofs_interface_local_host"),
-      primal_constraint_dofs_interface_local_v.size());
-    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_dofs_subdomain_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "primal_constraint_dofs_subdomain_host"),
-      primal_constraint_dofs_subdomain_v.size());
-    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_constraint_offsets_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "primal_constraint_constraint_offsets_host"),
-      constraint_dofs_offsets_v.size());
-    Kokkos::View<unsigned int *, Kokkos::HostSpace> coarse_dofs_local_to_global_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "coarse_dofs_local_to_global_host"),
-      coarse_dofs_local_to_global_vector_host.size());
-
-    Kokkos::View<unsigned int *, Kokkos::HostSpace> corner_dofs_subdomain_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "corner_dofs_subdomain_host"),
-      corner_dofs_subdomain_v.size());
-
-    Kokkos::View<Number *, Kokkos::HostSpace> coarse_weights_host(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "coarse_weights_host"),
-      coarse_weights_v.size());
-
-    std::copy(primal_constraint_dofs_interface_local_v.begin(),
-              primal_constraint_dofs_interface_local_v.end(),
-              primal_constraint_dofs_interface_local_host.data());
-    std::copy(primal_constraint_dofs_subdomain_v.begin(),
-              primal_constraint_dofs_subdomain_v.end(),
-              primal_constraint_dofs_subdomain_host.data());
-    std::copy(constraint_dofs_offsets_v.begin(),
-              constraint_dofs_offsets_v.end(),
-              primal_constraint_constraint_offsets_host.data());
-    std::copy(coarse_dofs_local_to_global_vector_host.begin(),
-              coarse_dofs_local_to_global_vector_host.end(),
-              coarse_dofs_local_to_global_host.data());
-    std::copy(corner_dofs_subdomain_v.begin(),
-              corner_dofs_subdomain_v.end(),
-              corner_dofs_subdomain_host.data());
-    std::copy(coarse_weights_v.begin(), coarse_weights_v.end(), coarse_weights_host.data());
-
-    dealii::MemorySpace::Default::kokkos_space::execution_space exec_space;
-
-    this->primal_constraint_dofs_interface_local =
-      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_dofs_interface_local_host);
-    this->primal_constraint_dofs_subdomain =
-      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_dofs_subdomain_host);
-    this->primal_constraint_offsets =
-      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_constraint_offsets_host);
-    this->coarse_dofs_local_to_global =
-      Kokkos::create_mirror_view_and_copy(exec_space, coarse_dofs_local_to_global_host);
-    this->corner_dofs_subdomain =
-      Kokkos::create_mirror_view_and_copy(exec_space, corner_dofs_subdomain_host);
-    this->coarse_weights = Kokkos::create_mirror_view_and_copy(exec_space, coarse_weights_host);
-
-    exec_space.fence();
-  }
 
 
   template <int dim, typename Number>
@@ -631,18 +683,21 @@ namespace Portable
         local_coarse_contribution(coarse_local_idx) = average;
       });
 
+    Kokkos::fence();
+
     auto local_coarse_contribution_host =
       Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), local_coarse_contribution);
 
-    std::fill(temp_coarse_gather.begin(), temp_coarse_gather.end(), Number(0));
+    AssertDimension(temp_global_coarse_std.size(), this->n_global_coarse_dofs);
+    std::fill(temp_global_coarse_std.begin(), temp_global_coarse_std.end(), Number(0));
 
     for (unsigned int local_idx = 0; local_idx < this->n_local_coarse_dofs; ++local_idx)
       {
-        const unsigned int global_coarse_idx  = coarse_dofs_local_to_global_vector_host[local_idx];
-        temp_coarse_gather[global_coarse_idx] = local_coarse_contribution_host(local_idx);
+        const unsigned int global_coarse_idx = coarse_dofs_local_to_global_vector_host[local_idx];
+        temp_global_coarse_std[global_coarse_idx] = local_coarse_contribution_host(local_idx);
       }
 
-    Utilities::MPI::sum(temp_coarse_gather,
+    Utilities::MPI::sum(temp_global_coarse_std,
                         this->subdomain_dof_handler->get_mpi_communicator(),
                         coarse_vector.get_values());
 
@@ -663,13 +718,14 @@ namespace Portable
 
     interface_vector = 0;
 
-    std::fill(temp_local_coarse.begin(), temp_local_coarse.end(), Number(0));
+    AssertDimension(temp_global_coarse_std.size(), this->n_global_coarse_dofs);
+    std::fill(temp_global_coarse_std.begin(), temp_global_coarse_std.end(), Number(0));
 
     for (unsigned int i = 0; i < this->n_local_coarse_dofs; ++i)
-      temp_local_coarse[i] = coarse_vector(coarse_dofs_local_to_global_vector_host[i]);
+      temp_global_coarse_std[i] = coarse_vector(coarse_dofs_local_to_global_vector_host[i]);
 
     // copy to host
-    Kokkos::View<Number *, Kokkos::HostSpace> local_coarse_host_view(temp_local_coarse.data(),
+    Kokkos::View<Number *, Kokkos::HostSpace> local_coarse_host_view(temp_global_coarse_std.data(),
                                                                      this->n_local_coarse_dofs);
 
     auto local_coarse_device_view =
@@ -704,32 +760,31 @@ namespace Portable
 
   template <int dim, typename Number>
   void
-  BDDCPreconditioner<dim, Number>::lift_coarse_to_interface(
-    InterfaceVectorType  &interface_vector,
+  BDDCPreconditioner<dim, Number>::lift_coarse_to_subdomain(
+    SubdomainVectorType  &subdomain_vector,
     const Vector<Number> &coarse_vector) const
   {
-    interface_vector = 0.;
+    AssertDimension(subdomain_vector.size(), this->n_subdomain_dofs);
 
-    std::fill(temp_local_coarse.begin(), temp_local_coarse.end(), Number(0));
+    AssertDimension(coarse_vector.size(), this->n_local_coarse_dofs);
 
-    for (unsigned int i = 0; i < this->n_local_coarse_dofs; ++i)
-      temp_local_coarse[i] = coarse_vector(coarse_dofs_local_to_global_vector_host[i]);
+    subdomain_vector = 0.;
 
     // copy to host
-    Kokkos::View<Number *, Kokkos::HostSpace> local_coarse_host_view(temp_local_coarse.data(),
-                                                                     this->n_local_coarse_dofs);
+    const Kokkos::View<const Number *, Kokkos::HostSpace> local_coarse_host_view(
+      coarse_vector.data(), this->n_local_coarse_dofs);
 
     auto local_coarse_device_view =
       Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(),
                                           local_coarse_host_view);
     Kokkos::fence();
 
-    DeviceVector<Number> interface_vector_view(interface_vector.get_values(),
-                                               this->interface_vector_size);
+    DeviceVector<Number> subdomain_vector_view(subdomain_vector.get_values(),
+                                               subdomain_vector.size());
 
-    const auto constraint_dof_local = this->primal_constraint_dofs_interface_local;
-    const auto offsets              = this->primal_constraint_offsets;
-    const auto weights              = this->coarse_weights;
+    const auto constraint_dof_subdomain = this->primal_constraint_dofs_subdomain;
+    const auto offsets                  = this->primal_constraint_offsets;
+    const auto weights                  = this->coarse_weights;
 
     Kokkos::parallel_for(
       "lift_coarse_constraints",
@@ -743,116 +798,284 @@ namespace Portable
 
         for (unsigned int i = start; i < end; ++i)
           {
-            interface_vector_view(constraint_dof_local(i)) = coarse_value;
+            subdomain_vector_view(constraint_dof_subdomain(i)) = coarse_value;
           }
       });
     Kokkos::fence();
-
-    interface_vector.compress(VectorOperation::add);
   }
 
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::compute_local_coarse_matrix(
-  //   LAPACKFullMatrix<Number> &local_coarse_matrix) const
-  // {
-  //   const unsigned int n_local_coarse = this->n_local_coarse_dofs;
-  //   local_coarse_matrix.reinit(n_local_coarse, n_local_coarse);
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::compute_local_coarse_matrix(
+    LAPACKFullMatrix<Number> &local_coarse_matrix)
+  {
+    const unsigned int n_coarse_local = this->n_local_coarse_dofs;
+    local_coarse_matrix.reinit(n_coarse_local, n_coarse_local);
 
-  //   const auto interface_dofs_subdomain = this->interface_dof_indices_subdomain;
+    coarse_basis_functions.resize(n_coarse_local);
+    for (unsigned int i = 0; i < n_coarse_local; ++i)
+      coarse_basis_functions[i].reinit(temp_subdomain_dst);
 
-  //   SubdomainVectorType phi, rhs, S_per_phi;
-  //   phi.reinit(temp_subdomain_dst);
-  //   rhs.reinit(temp_subdomain_dst);
-  //   S_per_phi.reinit(temp_subdomain_dst);
+    SubdomainVectorType rhs, S_per_phi_j;
+    rhs.reinit(temp_subdomain_src);
+    S_per_phi_j.reinit(temp_subdomain_dst);
 
-  //   DeviceVector<Number> temp_subdomain_dst_view(temp_subdomain_dst.get_values(),
-  //                                                temp_subdomain_dst.size());
+    DeviceVector<Number> temp_interface_view(temp_interface.get_values(), interface_vector_size);
+
+    std::vector<SubdomainVectorType> lifted_constraints(n_coarse_local);
+
+    Vector<Number> e_k(n_coarse_local);
+
+    for (unsigned int k = 0; k < n_coarse_local; ++k)
+      {
+        e_k    = 0.;
+        e_k(k) = Number(1);
+
+        SubdomainVectorType &lift = lifted_constraints[k];
+
+        lift.reinit(temp_subdomain_src);
+
+        this->lift_coarse_to_subdomain(lift, e_k);
+      }
+
+    SubdomainProjectorWrapper projector(*this);
+
+    for (unsigned int j = 0; j < n_coarse_local; ++j)
+      {
+        SubdomainVectorType &phi_j = coarse_basis_functions[j];
+
+        phi_j = lifted_constraints[j];
+
+        this->subdomain_bddc_operator.vmult(rhs, phi_j);
+        rhs *= Number(-1);
+
+        projector.project(rhs);
+
+        // SolverControl                          solver_control(1000, 1e-12 * rhs.l2_norm());
+        // SolverProjectedCG<SubdomainVectorType> solver(solver_control);
+
+        // temp_subdomain_dst = 0;
+        // solver.solve_projected(this->subdomain_bddc_operator,
+        //                        temp_subdomain_dst,
+        //                        rhs,
+        //                        PreconditionIdentity(),
+        //                        projector);
+
+        this->vmult_fine_correction(temp_subdomain_dst, rhs);
+
+        phi_j.add(Number(1), temp_subdomain_dst);
+
+        this->subdomain_bddc_operator.vmult(S_per_phi_j, phi_j);
+
+        for (unsigned int k = 0; k < n_coarse_local; ++k)
+          local_coarse_matrix(k, j) = lifted_constraints[k] * S_per_phi_j;
+      }
+
+    Kokkos::fence();
+  }
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::compute_coarse_matrix()
+  {
+    const unsigned int n_coarse_global = this->n_global_coarse_dofs;
+    this->coarse_matrix.reinit(n_coarse_global, n_coarse_global);
+
+    LAPACKFullMatrix<Number> local_coarse_matrix;
+    this->compute_local_coarse_matrix(local_coarse_matrix);
+
+    std::vector<Number> local_global_contribution(n_coarse_global * n_coarse_global, Number(0));
+
+    const unsigned int n_coarse_local  = this->n_local_coarse_dofs;
+    const auto        &local_to_global = this->coarse_dofs_local_to_global_vector_host;
+
+    Kokkos::fence();
+
+    for (unsigned int i = 0; i < n_coarse_local; ++i)
+      {
+        const unsigned int global_idx_i = local_to_global[i];
+
+        for (unsigned int j = 0; j < n_coarse_local; ++j)
+          {
+            const unsigned int global_idx_j = local_to_global[j];
+
+            local_global_contribution[global_idx_i * n_coarse_global + global_idx_j] =
+              local_coarse_matrix(i, j);
+          }
+      }
+
+    Kokkos::fence();
+
+    std::vector<Number> globally_summed_matrix(n_coarse_global * n_coarse_global, Number(0));
+
+    Utilities::MPI::sum(local_global_contribution,
+                        this->subdomain_dof_handler->get_mpi_communicator(),
+                        globally_summed_matrix);
+
+    for (unsigned int i = 0; i < n_coarse_global; ++i)
+      for (unsigned int j = 0; j < n_coarse_global; ++j)
+        this->coarse_matrix(i, j) = globally_summed_matrix[i * n_coarse_global + j];
+
+#ifdef DEBUG
+    {
+      LAPACKFullMatrix<Number> check_matrix;
+      check_matrix = this->coarse_matrix;
+
+      check_matrix.compute_eigenvalues(false, false);
+
+      bool   is_spd     = true;
+      Number min_eigenv = std::numeric_limits<Number>::max();
+
+      for (unsigned int i = 0; i < n_coarse_global; ++i)
+        {
+          const Number eigv = check_matrix(i, i);
+          if (eigv < min_eigenv)
+            min_eigenv = eigv;
+
+          if (eigv <= 1e-10)
+            {
+              is_spd = false;
+            }
+        }
+
+      if (Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) ==
+          0)
+        {
+          std::cout << "============================================" << std::endl;
+          std::cout << "BDDC COARSE MATRIX CHARACTERISTICS:" << std::endl;
+          std::cout << "Minimum Eigenvalue: " << min_eigenv << std::endl;
+          std::cout << "Is Strictly Positive Definite? " << (is_spd ? "YES" : "NO") << std::endl;
+          std::cout << "============================================" << std::endl;
+
+          AssertThrow(is_spd, ExcMessage("BDDC Global Coarse Matrix is not positive definite!"));
+        }
+    }
+#endif
+
+    this->coarse_matrix.compute_lu_factorization();
+  }
 
 
-  //   DeviceVector<Number> temp_interface_view(temp_interface.get_values(), interface_vector_size);
 
-  //   std::vector<SubdomainVectorType> lifted_constraints(n_local_coarse);
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::setup_primal_constraint_views()
+  {
+    const auto &dof_info          = this->subdomain_dof_handler->get_dof_info();
+    const auto &local_constraints = dof_info.local_primal_constraints;
 
-  //   Vector<Number> e_k(n_local_coarse);
+    std::vector<unsigned int> primal_constraint_dofs_interface_local_v;
+    std::vector<unsigned int> primal_constraint_dofs_subdomain_v;
+    std::vector<unsigned int> constraint_dofs_offsets_v;
+    std::vector<unsigned int> corner_dofs_subdomain_v;
 
+    coarse_dofs_local_to_global_vector_host.clear();
 
-  //   for (unsigned int k = 0; k < n_local_coarse; ++k)
-  //     {
-  //       e_k    = 0.;
-  //       e_k(k) = Number(1);
+    std::vector<Number> coarse_weights_v;
 
-  //       this->lift_coarse_to_interface(temp_interface, e_k);
+    constraint_dofs_offsets_v.push_back(0);
+    for (const auto &constraint : local_constraints)
+      {
+        if (bddc_variant == BDDCVariant::corner && constraint.type != PrimalConstraintType::Vertex)
+          continue;
 
-  //       temp_subdomain_dst = 0;
-  //       Kokkos::parallel_for(
-  //         "scatter_interface_to_subdomain",
-  //         interface_dofs_subdomain.size(),
-  //         KOKKOS_LAMBDA(const int) {
-  //           temp_subdomain_dst_view(interface_dofs_subdomain(i)) = temp_interface_view(i);
-  //         });
-  //       Kokkos::fence();
+        if (bddc_variant == BDDCVariant::corner_edge &&
+            constraint.type == PrimalConstraintType::Face)
+          continue;
 
-  //       lifted_constraints[k] = temp_subdomain_dst;
-  //     }
+        if (constraint.type == PrimalConstraintType::Vertex)
+          {
+            AssertDimension(constraint.interface_partitioner_dofs_local.size(), 1);
+            AssertDimension(constraint.local_subdomain_dofs.size(), 1);
 
-  //   SubdomainProjectorWrapper projector(*this);
-  //   SolverControl             solver_control(1000, 1e-12 * temp_subdomain_src.l2_norm());
-  //   SolverProjectedCG<SubdomainVectorType> solver(solver_control);
+            corner_dofs_subdomain_v.push_back(constraint.local_subdomain_dofs[0]);
+          }
 
-  //   for(unsigned int j=0; j<n_local_coarse; ++j)
-  //   {
-  //     phi = lifted_constraints[j];
+        primal_constraint_dofs_interface_local_v.insert(
+          primal_constraint_dofs_interface_local_v.end(),
+          constraint.interface_partitioner_dofs_local.begin(),
+          constraint.interface_partitioner_dofs_local.end());
 
-  //     this->subdomain_op
-  //   }
-  // }
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::setup_coarse_matrix()
-  // {
-  //   const unsigned int n_global_coarse = this->n_global_coarse_dofs;
-  //   coarse_matrix.reinit(n_global_coarse, n_global_coarse);
-
-  //   LAPACKFullMatrix<Number> local_coarse_matrix;
-  //   this->compute_coarse_matrix(local_coarse_matrix);
+        primal_constraint_dofs_subdomain_v.insert(primal_constraint_dofs_subdomain_v.end(),
+                                                  constraint.local_subdomain_dofs.begin(),
+                                                  constraint.local_subdomain_dofs.end());
 
 
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> phi_j(
-  //     this->subdomain_dof_handler->get_interface_vector_partitioner()),
-  //     S_phi_j(this->subdomain_dof_handler->get_interface_vector_partitioner());
+        constraint_dofs_offsets_v.push_back(primal_constraint_dofs_interface_local_v.size());
 
-  //   Vector<Number> e_j(this->n_subdomains), coarse_column(this->n_subdomains);
+        coarse_dofs_local_to_global_vector_host.push_back(constraint.global_coarse_dof_index);
 
-  //   for (unsigned int j = 0; j < this->n_subdomains; ++j)
-  //     {
-  //       e_j = 0.;
+        Number weight = Number(1) / Number(constraint.interface_partitioner_dofs_local.size());
 
-  //       if (this->this_subdomain == this->coarse_problem_rank)
-  //         e_j[j] = 1.;
+        AssertThrow(weight > 0, ExcInternalError());
+        coarse_weights_v.push_back(weight);
+      }
 
-  //       this->coarse_to_global_interface(phi_j, e_j);
+    AssertThrow(primal_constraint_dofs_interface_local_v.size() > 0, ExcInternalError());
+    AssertThrow(primal_constraint_dofs_subdomain_v.size() > 0, ExcInternalError());
+    AssertThrow(constraint_dofs_offsets_v.size() > 0, ExcInternalError());
+    // AssertThrow(corner_dofs_subdomain_v.size() > 0, ExcInternalError());
+    AssertThrow(coarse_dofs_local_to_global_vector_host.size() > 0, ExcInternalError());
+    AssertThrow(coarse_weights_v.size() > 0, ExcInternalError());
 
-  //       this->interface_operator->vmult(S_per_coarse_basis_functions[j], phi_j);
 
-  //       this->global_interface_to_coarse(coarse_column, S_per_coarse_basis_functions[j]);
+    // Allocate and copy to Device Kokkos::Views
+    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_dofs_interface_local_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing,
+                         "primal_constraint_dofs_interface_local_host"),
+      primal_constraint_dofs_interface_local_v.size());
+    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_dofs_subdomain_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "primal_constraint_dofs_subdomain_host"),
+      primal_constraint_dofs_subdomain_v.size());
+    Kokkos::View<unsigned int *, Kokkos::HostSpace> primal_constraint_constraint_offsets_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "primal_constraint_constraint_offsets_host"),
+      constraint_dofs_offsets_v.size());
+    Kokkos::View<unsigned int *, Kokkos::HostSpace> coarse_dofs_local_to_global_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "coarse_dofs_local_to_global_host"),
+      coarse_dofs_local_to_global_vector_host.size());
 
-  //       if (this->this_subdomain == this->coarse_problem_rank)
-  //         for (unsigned int i = 0; i < this->n_subdomains; ++i)
-  //           coarse_matrix(i, j) = coarse_column[i];
-  //     }
+    Kokkos::View<unsigned int *, Kokkos::HostSpace> corner_dofs_subdomain_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "corner_dofs_subdomain_host"),
+      corner_dofs_subdomain_v.size());
 
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       coarse_matrix.compute_inverse_svd(1e-12);
+    Kokkos::View<Number *, Kokkos::HostSpace> coarse_weights_host(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "coarse_weights_host"),
+      coarse_weights_v.size());
 
-  //       // std::cout << "Singular values of the coarse matrix: " << std::endl;
-  //       // for (unsigned int i = 0; i < this->n_subdomains; ++i)
-  //       //   std::cout << coarse_matrix.singular_value(i) << " ";
-  //       // std::cout << std::endl;
-  //     }
-  // }
+    std::copy(primal_constraint_dofs_interface_local_v.begin(),
+              primal_constraint_dofs_interface_local_v.end(),
+              primal_constraint_dofs_interface_local_host.data());
+    std::copy(primal_constraint_dofs_subdomain_v.begin(),
+              primal_constraint_dofs_subdomain_v.end(),
+              primal_constraint_dofs_subdomain_host.data());
+    std::copy(constraint_dofs_offsets_v.begin(),
+              constraint_dofs_offsets_v.end(),
+              primal_constraint_constraint_offsets_host.data());
+    std::copy(coarse_dofs_local_to_global_vector_host.begin(),
+              coarse_dofs_local_to_global_vector_host.end(),
+              coarse_dofs_local_to_global_host.data());
+    std::copy(corner_dofs_subdomain_v.begin(),
+              corner_dofs_subdomain_v.end(),
+              corner_dofs_subdomain_host.data());
+    std::copy(coarse_weights_v.begin(), coarse_weights_v.end(), coarse_weights_host.data());
+
+    dealii::MemorySpace::Default::kokkos_space::execution_space exec_space;
+
+    this->primal_constraint_dofs_interface_local =
+      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_dofs_interface_local_host);
+    this->primal_constraint_dofs_subdomain =
+      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_dofs_subdomain_host);
+    this->primal_constraint_offsets =
+      Kokkos::create_mirror_view_and_copy(exec_space, primal_constraint_constraint_offsets_host);
+    this->coarse_dofs_local_to_global =
+      Kokkos::create_mirror_view_and_copy(exec_space, coarse_dofs_local_to_global_host);
+    this->corner_dofs_subdomain =
+      Kokkos::create_mirror_view_and_copy(exec_space, corner_dofs_subdomain_host);
+    this->coarse_weights = Kokkos::create_mirror_view_and_copy(exec_space, coarse_weights_host);
+
+    exec_space.fence();
+  }
+
 
   // template <int dim, typename Number>
   // void

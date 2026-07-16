@@ -54,6 +54,7 @@ struct LocalPrimalConstraint
     sharing_subdomains.clear();
     local_subdomain_dofs.clear();
     global_dof_indices.clear();
+    interface_partitioner_dofs_local.clear();
     global_coarse_dof_index = numbers::invalid_unsigned_int;
   }
 };
@@ -594,6 +595,7 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
             if (class_set.count(this->subdomain_id) > 0)
               {
                 LocalPrimalConstraint local_primal_constraint;
+                local_primal_constraint.clear();
                 local_primal_constraint.type               = primal_constraint_type;
                 local_primal_constraint.sharing_subdomains = class_set;
 
@@ -613,9 +615,15 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
                         local_primal_constraint.global_dof_indices.push_back(global_idx);
                         local_primal_constraint.local_subdomain_dofs.push_back(subdomain_idx);
-                        local_primal_constraint.interface_partitioner_dofs_local.push_back(
+
+                        const unsigned int local_interface_partitioner_index =
                           this->subdomain_inteface_to_interface_partitioner_local_map.at(
-                            subdomain_idx));
+                            subdomain_idx);
+                        Assert(this->interface_indices_partitioner_to_subdomain_numbering
+                                   [local_interface_partitioner_index] == subdomain_idx,
+                               ExcInternalError());
+                        local_primal_constraint.interface_partitioner_dofs_local.push_back(
+                          local_interface_partitioner_index);
                       }
                   }
 
