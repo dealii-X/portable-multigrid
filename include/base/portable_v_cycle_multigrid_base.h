@@ -25,26 +25,28 @@ namespace Portable
           const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
   };
 
-  template <typename VectorType, typename SmootherType>
-  class MGCoarseFromSmoother : public MGCoarseGridBase<VectorType>
-  {
-  public:
-    MGCoarseFromSmoother(const SmootherType &mg_smoother, const bool is_empty)
-      : smoother(mg_smoother)
-      , is_empty(is_empty)
-    {}
+  // template <typename VectorType, typename SmootherType>
+  // class MGCoarseFromSmoother : public MGCoarseGridBase<VectorType>
+  // {
+  // public:
+  //   MGCoarseFromSmoother(const SmootherType &mg_smoother, const bool is_empty)
+  //     : smoother(mg_smoother)
+  //     , is_empty(is_empty)
+  //   {}
 
-    virtual void
-    operator()(const unsigned int level, VectorType &dst, const VectorType &src) const override
-    {
-      if (is_empty)
-        return;
-      smoother[level].vmult(dst, src);
-    }
+  //   virtual void
+  //   operator()(const unsigned int level,
+  //              VectorType        &dst,
+  //              const VectorType  &src) const override
+  //   {
+  //     if (is_empty)
+  //       return;
+  //     smoother[level].vmult(dst, src);
+  //   }
 
-    const SmootherType &smoother;
-    const bool          is_empty;
-  };
+  //   const SmootherType &smoother;
+  //   const bool          is_empty;
+  // };
 
 } // namespace Portable
 
