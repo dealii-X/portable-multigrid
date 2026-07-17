@@ -306,6 +306,7 @@ namespace Portable
               do_color(color);
           }
 
+
         dst.compress(VectorOperation::add);
       }
   }
