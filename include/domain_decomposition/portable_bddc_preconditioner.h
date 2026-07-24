@@ -60,12 +60,30 @@ namespace Portable
     compute_coarse_matrix();
 
     void
+    vmult_fine_correction(SubdomainVectorType       &fine_solution,
+                          const SubdomainVectorType &fine_residual) const;
+
+    void
+    vmult_coarse_correction(SubdomainVectorType       &coarse_solution,
+                            const SubdomainVectorType &fine_residual) const;
+
+    void
     coarse_to_global_interface(InterfaceVectorType  &interface_vector,
                                const Vector<Number> &coarse_vector) const;
 
     void
     global_interface_to_coarse(Vector<Number>            &coarse_vector,
                                const InterfaceVectorType &interface_vector) const;
+
+                               void
+    gather_and_weight_global_interface(SubdomainVectorType       &dst,
+                                       const InterfaceVectorType &src) const;
+
+    void
+    weight_local_interface_and_scatter(InterfaceVectorType       &dst,
+                                       const SubdomainVectorType &src) const;
+
+
 
     void
     reset_timings() const;
@@ -99,24 +117,6 @@ namespace Portable
 
     void
     compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix);
-
-
-    void
-    vmult_fine_correction(SubdomainVectorType       &fine_solution,
-                          const SubdomainVectorType &fine_residual) const;
-
-    void
-    vmult_coarse_correction(SubdomainVectorType       &coarse_solution,
-                            const SubdomainVectorType &fine_residual) const;
-
-    void
-    gather_and_weight_global_interface(SubdomainVectorType       &dst,
-                                       const InterfaceVectorType &src) const;
-
-    void
-    weight_local_interface_and_scatter(InterfaceVectorType       &dst,
-                                       const SubdomainVectorType &src) const;
-
 
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> subdomain_operator;
@@ -312,7 +312,7 @@ namespace Portable
     SubdomainProjectorWrapper projector(*this);
 
     // SolverControl                          solver_control(1000, 1e-12 * fine_residual.l2_norm());
-    ReductionControl solver_control(100000, 1e-16,  1e-12);
+    ReductionControl solver_control(100000, 1e-16, 1e-12);
 
     SolverProjectedCG<SubdomainVectorType> solver(solver_control);
 

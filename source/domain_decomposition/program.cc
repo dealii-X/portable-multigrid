@@ -64,6 +64,9 @@ public:
   void
   run();
 
+  void
+  test_bddc();
+
 private:
   void
   create_subdomain_triangulations(unsigned int n_refinement_cycles);
@@ -107,8 +110,6 @@ private:
   void
   output_results(const unsigned int cycle) const;
 
-  void
-  test_bddc();
 
   MPI_Comm mpi_communicator;
 
@@ -1250,7 +1251,8 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
 
   // SolverControl solver_control(10000, 1e-12 * rhs_schur_device.l2_norm());
 
-  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
+  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+  // cg(solver_control);
 
   SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
@@ -1258,7 +1260,8 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
 
   cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
 
-  // cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, PreconditionIdentity());
+  // cg.solve(*interface_operator, solution_interface_device, rhs_schur_device,
+  // PreconditionIdentity());
 
   pcout << "                      Interface solver converged in " << solver_control.last_step()
         << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
@@ -1307,14 +1310,14 @@ LaplaceProblem<dim, fe_degree>::run()
       // matvec_ghost_timing();
 
       // // test_coarse_problem();
-      
+
       test_bddc();
 
       postprocess_subdomain_solution();
 
       output_results(cycle);
 
-      
+
       //   if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       //     {
       //       std::cout << std::endl << std::endl;
