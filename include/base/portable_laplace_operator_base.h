@@ -40,6 +40,10 @@ namespace Portable
     virtual void
     compute_diagonal() = 0;
 
+    virtual void
+    compute_rhs(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &rhs,
+                const Number value = 1.0) const = 0;
+
     virtual std::shared_ptr<
       DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
     get_matrix_diagonal_inverse() const = 0;
