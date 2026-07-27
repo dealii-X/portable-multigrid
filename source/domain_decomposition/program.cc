@@ -1278,7 +1278,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 6; ++cycle)
+  for (unsigned int cycle = 0; cycle < 8-dim; ++cycle)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
@@ -1402,13 +1402,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 3;
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 3;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
       // {
       //   constexpr int dim       = 2;
       //   constexpr int fe_degree = 4;
@@ -1418,34 +1418,34 @@ main(int argc, char *argv[])
       // }
 
 
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 1;
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 1;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 2;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 2;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 3;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 3;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 4;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
     }
   catch (std::exception &exc)
     {

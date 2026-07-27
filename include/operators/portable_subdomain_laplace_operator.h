@@ -1242,6 +1242,10 @@ namespace Portable
             physical_boundary_dof_indices_host(counter++) = line.index;
 
           AssertDimension(counter, constraints_physical->n_constraints());
+
+          Kokkos::deep_copy(exec_space,
+                            this->physical_boundary_dof_indices,
+                            physical_boundary_dof_indices_host);
         }
     }
 
@@ -1633,7 +1637,9 @@ namespace Portable
     Number *raw_diagonal_dirichlet = inverse_diagonal_dirichlet.get_values();
 
     Kokkos::parallel_for(
-      inverse_diagonal_dirichlet.locally_owned_size(), KOKKOS_LAMBDA(int i) {
+      "invert_dirichlet_diagonal",
+      inverse_diagonal_dirichlet.locally_owned_size(),
+      KOKKOS_LAMBDA(int i) {
         Assert(raw_diagonal_dirichlet[i] > 0.,
                ExcMessage("No diagonal entry in a positive definite operator "
                           "should be zero"));
@@ -1650,7 +1656,9 @@ namespace Portable
 
 
     Kokkos::parallel_for(
-      inverse_diagonal_neumann.locally_owned_size(), KOKKOS_LAMBDA(int i) {
+      "invert_neumann_diagonal",
+      inverse_diagonal_neumann.locally_owned_size(),
+      KOKKOS_LAMBDA(int i) {
         Assert(raw_diagonal_neumann[i] > 0.,
                ExcMessage("No diagonal entry in a positive definite operator "
                           "should be zero"));
