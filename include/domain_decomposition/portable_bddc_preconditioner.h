@@ -313,8 +313,8 @@ namespace Portable
 
     SubdomainProjectorWrapper projector(*this);
 
-    // SolverControl                          solver_control(1000, 1e-12 * fine_residual.l2_norm());
-    ReductionControl solver_control(100000, 1e-16, 1e-12);
+    SolverControl solver_control(1000, 1e-6 * fine_residual.l2_norm());
+    // ReductionControl solver_control(100, 1e-16, 1e-12);
 
     SolverProjectedCG<SubdomainVectorType> solver(solver_control);
 
@@ -860,7 +860,7 @@ namespace Portable
 
         phi_j = lifted_constraints[j];
 
-        this->subdomain_bddc_operator.vmult(rhs, phi_j);
+        this->subdomain_bddc_operator.vmult_plain(rhs, phi_j);
         rhs *= Number(-1);
 
         projector.project(rhs);
@@ -879,7 +879,7 @@ namespace Portable
 
         phi_j.add(Number(1), temp_subdomain_dst);
 
-        this->subdomain_bddc_operator.vmult(S_per_phi_j, phi_j);
+        this->subdomain_bddc_operator.vmult_plain(S_per_phi_j, phi_j);
 
         for (unsigned int k = 0; k < n_coarse_local; ++k)
           local_coarse_matrix(k, j) = lifted_constraints[k] * S_per_phi_j;

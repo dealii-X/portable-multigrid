@@ -86,6 +86,8 @@ namespace Portable
         AssertThrow(n_local_coarse_dofs > 0, ExcMessage("There's zero local constraints"));
 
         setup_primal_constraint_views();
+
+        dirichlet_operator.initialize_dof_vector(temp_subdomain_vector);
       }
     }
 
@@ -199,6 +201,33 @@ namespace Portable
     {
       inverse_diagonal_entries->reinit(
         dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+
+      // LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &inverse_diagonal_vector =
+      //   inverse_diagonal_entries->get_vector();
+
+      // DeviceVector<Number> inv_diag_view(inverse_diagonal_vector.get_values(),
+      //                                    inverse_diagonal_vector.size());
+
+      // const auto offsets                   = this->primal_constraint_offsets;
+      // const auto subdomain_constraint_dofs = this->primal_constraint_dofs_subdomain;
+      // const auto weights                   = this->coarse_weights;
+
+      // Kokkos::parallel_for(
+      //   "project_to_homogeneous_constraints_subdomain",
+      //   this->n_local_coarse_dofs,
+      //   KOKKOS_LAMBDA(const int coarse_local_idx) {
+      //     const unsigned int start = offsets(coarse_local_idx);
+      //     const unsigned int end   = offsets(coarse_local_idx + 1);
+
+      //     const unsigned int n_dofs_per_coarse_dof = end - start;
+
+      //     if (n_dofs_per_coarse_dof > 0)
+      //       {
+      //         for (unsigned int i = start; i < end; ++i)
+      //           inv_diag_view(subdomain_constraint_dofs(i)) = Number(1);
+      //       }
+      //   });
+      // Kokkos::fence();
     }
 
     std::shared_ptr<
@@ -275,6 +304,8 @@ namespace Portable
     ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
 
     BDDCVariant bddc_variant;
+
+    mutable SubdomainVectorType temp_subdomain_vector;
 
     unsigned int       n_global_coarse_dofs;
     unsigned int       n_local_coarse_dofs;

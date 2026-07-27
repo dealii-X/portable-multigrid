@@ -179,7 +179,7 @@ namespace Portable
 
         (coarse)(level, solution[level], defect[level]);
 
-        mg_matrices[level]->project(solution[maxlevel]);
+        mg_matrices[level]->project(solution[level]);
 
         if (impose_zero_mean)
           {
@@ -190,18 +190,24 @@ namespace Portable
         return;
       }
 
-    mg_matrices[level]->project(defect[level]);
+    // mg_matrices[level]->project(defect[level]);
 
     // Pre-smoothing
     mg_smoothers[level].vmult(solution[level], defect[level]);
+
+    // mg_matrices[level]->project(solution[level]);
 
     // Compute residual
     mg_matrices[level]->vmult(t[level], solution[level]);
     t[level].sadd(-1.0, 1.0, defect[level]);
 
+    // mg_matrices[level]->project(t[level]);
+
     // Restrict residual to the next coarser level
     defect[level - 1] = 0;
     mg_transfers[level]->restrict_and_add(defect[level - 1], t[level]);
+
+    // mg_matrices[level-1]->project(defect[level-1]);
 
     // Recursive call to v_cycle on the coarser level
     v_cycle(level - 1);
@@ -209,10 +215,12 @@ namespace Portable
     // Prolongate coarse correction and add to current solution
     mg_transfers[level]->prolongate_and_add(solution[level], solution[level - 1]);
 
+    // mg_matrices[level]->project(solution[level]);
+
     // Post-smoothing
     mg_smoothers[level].step(solution[level], defect[level]);
 
-    mg_matrices[level]->project(solution[level]);
+    // mg_matrices[level]->project(solution[level]);
   }
 
 

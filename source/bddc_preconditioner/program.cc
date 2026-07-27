@@ -713,7 +713,15 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
 
       subdomain_mg_smoothers_bddc[level].initialize(*level_subdomain_bddc_matrices[level],
                                                     smoother_data_bddc);
+
+      // LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src,dst;
+
+      // level_subdomain_bddc_matrices[level]->initialize_dof_vector(src);
+
+      // const auto eig_info = subdomain_mg_smoothers_bddc[level].estimate_eigenvalues(src);
+      // src = 1.0;
     }
+
 
   Kokkos::fence();
   setup_time += time.wall_time();
@@ -1221,57 +1229,81 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
   //                                                               *level_subdomain_matrices.back(),
   //                                                              Portable::BDDCVariant::corner);
 
-  this->bddc_preconditioner =
-    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-                                                                *level_subdomain_matrices.back());
+  // this->bddc_preconditioner =
+  //   std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
+  //                                                               *level_subdomain_matrices.back());
 
-  using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+  // using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
-  InterfaceVectorType dst, src;
+  // InterfaceVectorType dst, src;
 
-  dst.reinit(level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
-  src.reinit(dst);
+  // dst.reinit(level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
+  // src.reinit(dst);
 
-  // src = 1.0;
+  // // src = 1.0;
 
-  Portable::DeviceVector<double> src_view(src.get_values(), src.locally_owned_size());
+  // Portable::DeviceVector<double> src_view(src.get_values(), src.locally_owned_size());
 
-  Kokkos::parallel_for(src.locally_owned_size(), KOKKOS_LAMBDA(const int &i) { src_view(i) = i; });
+  // Kokkos::parallel_for(src.locally_owned_size(), KOKKOS_LAMBDA(const int &i) { src_view(i) = i;
+  // });
 
-  src.compress(VectorOperation::insert);
+  // src.compress(VectorOperation::insert);
 
-  // bddc_preconditioner->solve_subdomain_with_constraints(dst, src);
+  // // bddc_preconditioner->solve_subdomain_with_constraints(dst, src);
 
-  bddc_preconditioner->compute_coarse_matrix();
+  // bddc_preconditioner->compute_coarse_matrix();
 
-  Timer time;
-  Kokkos::fence();
-  // SolverControl solver_control(1000, 1e-9 * rhs_schur_device.l2_norm());
-  ReductionControl solver_control(1000, 1e-12, 1e-7);
+  // Timer time;
+  // Kokkos::fence();
+  // // SolverControl solver_control(1000, 1e-9 * rhs_schur_device.l2_norm());
+  // ReductionControl solver_control(1000, 1e-12, 1e-7);
 
-  // SolverControl solver_control(10000, 1e-12 * rhs_schur_device.l2_norm());
+  // // SolverControl solver_control(10000, 1e-12 * rhs_schur_device.l2_norm());
 
-  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(solver_control);
+  // // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double,
+  // MemorySpace::Default>>
+  // // cg(solver_control);
 
-  SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
+  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
-  solution_interface_device = 0.;
-
-  cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
+  // solution_interface_device = 0.;
 
   // cg.solve(*interface_operator, solution_interface_device, rhs_schur_device,
-  // PreconditionIdentity());
+  // *bddc_preconditioner);
 
-  pcout << "                      Interface solver converged in " << solver_control.last_step()
-        << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
-        << std::endl;
+  // // cg.solve(*interface_operator, solution_interface_device, rhs_schur_device,
+  // // PreconditionIdentity());
 
-  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(
-  //   solver_control);
+  // pcout << "                      Interface solver converged in " << solver_control.last_step()
+  //       << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
+  //       << std::endl;
 
-  solution_interface_device.update_ghost_values();
+  // // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+  // // cg(
+  // //   solver_control);
+
+  // solution_interface_device.update_ghost_values();
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dst, src;
+  this->level_subdomain_bddc_matrices.back()->initialize_dof_vector(src);
+  dst.reinit(src);
+
+  src = 1.;
+
+  SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
+  Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+    solver_cg(solver_control);
+  solver_cg.solve_projected(*level_subdomain_bddc_matrices.back(),
+                            dst,
+                            src,
+                            *subdomain_mg_preconditioner_bddc,
+                            *level_subdomain_bddc_matrices.back());
+  // solver_cg.solve(*level_subdomain_bddc_matrices.back(), dst, src, PreconditionIdentity());
+
+
+  std::cout << "On subdomain " << Utilities::MPI::this_mpi_process(mpi_communicator)
+            << " solver converged in " << solver_control.last_step() << "  iterations."
+            << std::endl;
 }
 
 template <int dim, int fe_degree>
@@ -1313,9 +1345,9 @@ LaplaceProblem<dim, fe_degree>::run()
 
       // test_bddc();
 
-      postprocess_subdomain_solution();
+      // postprocess_subdomain_solution();
 
-      output_results(cycle);
+      // output_results(cycle);
 
 
       // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
