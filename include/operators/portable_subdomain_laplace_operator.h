@@ -41,6 +41,9 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override;
 
     void
+    project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const override;
+
+    void
     vmult_plain(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override;
@@ -1727,6 +1730,16 @@ namespace Portable
   SubdomainLaplaceOperator<dim, fe_degree, Number>::get_subdomain_dof_handler() const
   {
     return *subdomain_dof_handler;
+  }
+
+  template <int dim, int fe_degree, typename Number>
+
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::project(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const
+  {
+    (void) vec;
+    return;
   }
 
 } // namespace Portable

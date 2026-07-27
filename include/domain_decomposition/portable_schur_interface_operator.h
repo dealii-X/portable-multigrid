@@ -75,7 +75,7 @@ namespace Portable
     get_interface_weights() const;
 
 
-    const std::pair<unsigned int, unsigned int>
+    unsigned int
     get_maximum_subdomain_mg_iterations() const;
 
     struct NeumannSubdomainOperator
@@ -136,7 +136,7 @@ namespace Portable
     DirichletSubdomainOperator subdomain_dirichlet_operator;
     NeumannSubdomainOperator   subdomain_neumann_operator;
 
-    mutable std::pair<unsigned int, unsigned int> max_subdomain_mg_iterations;
+    mutable unsigned int max_subdomain_mg_iterations;
   };
 
   template <int dim, typename Number>
@@ -164,8 +164,7 @@ namespace Portable
 
     compute_interface_weights();
 
-    max_subdomain_mg_iterations.first  = 0;
-    max_subdomain_mg_iterations.second = 0;
+    max_subdomain_mg_iterations = 0;
   }
 
   template <int dim, typename Number>
@@ -207,7 +206,7 @@ namespace Portable
   }
 
   template <int dim, typename Number>
-  const std::pair<unsigned int, unsigned int>
+  unsigned int
   SchurInterfaceOperator<dim, Number>::get_maximum_subdomain_mg_iterations() const
   {
     return max_subdomain_mg_iterations;
@@ -233,9 +232,8 @@ namespace Portable
     //           << " converged in " << solver_control.last_step()
     //           << " iterations " << std::endl;
 
-    max_subdomain_mg_iterations.first =
-      std::max(max_subdomain_mg_iterations.first,
-               static_cast<unsigned int>(solver_control.last_step()));
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
   }
 
   /**
@@ -310,10 +308,6 @@ namespace Portable
     //           << " iterations " << std::endl;
 
 
-    max_subdomain_mg_iterations.second =
-      std::max(max_subdomain_mg_iterations.second,
-               static_cast<unsigned int>(solver_control.last_step()));
-    // max_subdomain_mg_iterations.second = 1u;
 
     // apply weights and write dst interface values
     Kokkos::parallel_for(
@@ -493,8 +487,7 @@ namespace Portable
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<Number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size());
-    DeviceVector<Number> rhs_schur_view(rhs_schur.get_values(),
-                                        interface_dofs.size());
+    DeviceVector<Number> rhs_schur_view(rhs_schur.get_values(), interface_dofs.size());
     DeviceVector<Number> t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                                               temp_subdomain_vector_dst.size());
 
@@ -538,8 +531,7 @@ namespace Portable
     const auto interface_dofs = this->interface_dof_indices_subdomain;
 
     DeviceVector<Number> rhs_subdomain_view(rhs_subdomain.get_values(), rhs_subdomain.size()),
-      interface_solution_view(interface_solution.get_values(),
-                              interface_dofs.size()),
+      interface_solution_view(interface_solution.get_values(), interface_dofs.size()),
       subdomain_solution_view(subdomain_solution.get_values(), subdomain_solution.size());
 
     DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),

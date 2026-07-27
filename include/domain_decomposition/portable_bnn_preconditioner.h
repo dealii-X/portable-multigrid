@@ -74,7 +74,6 @@ namespace Portable
     void
     reset_timings() const;
 
-
     const std::array<double, 4> &
     get_timings() const;
 

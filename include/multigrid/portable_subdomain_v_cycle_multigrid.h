@@ -147,9 +147,13 @@ namespace Portable
   {
     defect[maxlevel] = src;
 
+    mg_matrices.back()->project(defect[maxlevel]);
+
     v_cycle(maxlevel);
 
     dst = solution[maxlevel];
+
+    mg_matrices.back()->project(solution[maxlevel]);
   }
 
   template <int dim,
@@ -171,7 +175,11 @@ namespace Portable
 
         // Accuracy on coarsest level should be comparable to overall level
         // accuracy (~1e-3)
+        mg_matrices[level]->project(defect[level]);
+
         (coarse)(level, solution[level], defect[level]);
+
+        mg_matrices[level]->project(solution[maxlevel]);
 
         if (impose_zero_mean)
           {
@@ -181,6 +189,8 @@ namespace Portable
 
         return;
       }
+
+    mg_matrices[level]->project(defect[level]);
 
     // Pre-smoothing
     mg_smoothers[level].vmult(solution[level], defect[level]);
@@ -201,6 +211,8 @@ namespace Portable
 
     // Post-smoothing
     mg_smoothers[level].step(solution[level], defect[level]);
+
+    mg_matrices[level]->project(solution[level]);
   }
 
 

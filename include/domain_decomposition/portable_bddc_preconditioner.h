@@ -7,19 +7,10 @@
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "operators/portable_subdomain_bddc_operator_wrapper.h"
 
-
-
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-
-  enum class BDDCVariant
-  {
-    corner,
-    corner_edge,
-    corner_edge_face
-  };
 
   template <int dim, typename Number>
   class BDDCPreconditioner
@@ -27,10 +18,12 @@ namespace Portable
   public:
     using InterfaceVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
     using SubdomainVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
+    using SubdomainPreconditioner = VCycleMultigridBase<dim, Number>;
 
 
     BDDCPreconditioner(const SchurInterfaceOperator<dim, Number>       &interface_operator,
                        const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
+                       const SubdomainPreconditioner                   &subdomain_mg_preconditione,
                        const BDDCVariant variant = BDDCVariant::corner_edge_face);
 
     void
@@ -75,7 +68,7 @@ namespace Portable
     global_interface_to_coarse(Vector<Number>            &coarse_vector,
                                const InterfaceVectorType &interface_vector) const;
 
-                               void
+    void
     gather_and_weight_global_interface(SubdomainVectorType       &dst,
                                        const InterfaceVectorType &src) const;
 
@@ -109,7 +102,8 @@ namespace Portable
       }
     };
 
-
+    unsigned int
+    get_maximum_subdomain_mg_iterations() const;
 
   private:
     void
@@ -121,6 +115,8 @@ namespace Portable
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> subdomain_operator;
     ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
+
+    const SubdomainPreconditioner &subdomain_mg_preconditioner;
 
     SubdomainBDDCOperatorWrapper<dim, Number> subdomain_bddc_operator;
 
@@ -183,16 +179,20 @@ namespace Portable
      * timings[3] = projection step
      */
     mutable std::array<double, 4> timings;
+
+    mutable unsigned int max_subdomain_mg_iterations;
   };
 
   template <int dim, typename Number>
   BDDCPreconditioner<dim, Number>::BDDCPreconditioner(
     const SchurInterfaceOperator<dim, Number>       &interface_operator,
     const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
+    const SubdomainPreconditioner                   &subdomain_mg_preconditioner,
     const BDDCVariant                                variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
+    , subdomain_mg_preconditioner(subdomain_mg_preconditioner)
     , subdomain_bddc_operator(subdomain_operator)
     , n_subdomain_dofs(subdomain_operator.get_subdomain_dof_handler().get_dof_handler().n_dofs())
     , interface_vector_size(subdomain_operator.get_interface_dof_indices_subdomain().size())
@@ -252,6 +252,8 @@ namespace Portable
     temp_subdomain_src.reinit(temp_subdomain_dst);
     temp_subdomain_coarse.reinit(temp_subdomain_dst);
     temp_subdomain_fine.reinit(temp_subdomain_dst);
+
+    max_subdomain_mg_iterations = 0;
   }
 
   template <int dim, typename Number>
@@ -319,10 +321,22 @@ namespace Portable
     solver.solve_projected(this->subdomain_bddc_operator,
                            fine_solution,
                            fine_residual,
-                           PreconditionIdentity(),
+                           subdomain_mg_preconditioner,
                            projector);
+
+    // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
+    //           << "  iterations." << std::endl;
+
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
   }
 
+  template <int dim, typename Number>
+  unsigned int
+  BDDCPreconditioner<dim, Number>::get_maximum_subdomain_mg_iterations() const
+  {
+    return max_subdomain_mg_iterations;
+  }
 
   template <int dim, typename Number>
   void

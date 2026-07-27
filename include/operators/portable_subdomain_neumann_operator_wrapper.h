@@ -175,6 +175,13 @@ namespace Portable
       return dirichlet_operator->get_subdomain_dof_handler();
     }
 
+    void
+    project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const override
+    {
+      (void)vec;
+      return;
+    }
+
 
   private:
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> dirichlet_operator;

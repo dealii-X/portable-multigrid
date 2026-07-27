@@ -186,6 +186,7 @@ namespace Portable
     AssertThrow(solver_state == SolverControl::success,
                 SolverControl::NoConvergence(it, residual_norm));
   }
+  
   template <typename VectorType>
   template <typename MatrixType, typename PreconditionerType>
   void

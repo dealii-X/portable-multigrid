@@ -208,6 +208,9 @@ public:
   const DoFHandler<dim> &
   get_dof_handler() const;
 
+  const DoFHandler<dim> &
+  get_distributed_dof_handler() const;
+
   const SubdomainDoFInfo<dim> &
   get_dof_info() const;
 
@@ -975,6 +978,14 @@ const DoFHandler<dim> &
 SubdomainDoFHandler<dim>::get_dof_handler() const
 {
   return subdomain_dof_handler;
+}
+
+
+template <int dim>
+const DoFHandler<dim> &
+SubdomainDoFHandler<dim>::get_distributed_dof_handler() const
+{
+  return *distributed_dof_handler;
 }
 
 template <int dim>
