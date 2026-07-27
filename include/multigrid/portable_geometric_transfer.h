@@ -787,9 +787,9 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    using TeamPolicy = Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+    // using TeamPolicy = Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
 
-    using Functor = h_mg_transfer::CellProlongationKernel<dim, fe_degree, number>;
+    // using Functor = h_mg_transfer::CellProlongationKernel<dim, fe_degree, number>;
 
     MemorySpace::Default::kokkos_space::execution_space exec;
 
@@ -802,22 +802,22 @@ namespace Portable
         if (scheme.n_coarse_cells == 0)
           continue;
 
-        h_mg_transfer::CellProlongationKernel<dim, fe_degree, number> prolongator;
+        // h_mg_transfer::CellProlongationKernel<dim, fe_degree, number> prolongator;
 
-        auto team_policy = TeamPolicy(exec, scheme.n_coarse_cells, Kokkos::AUTO);
+        // auto team_policy = TeamPolicy(exec, scheme.n_coarse_cells, Kokkos::AUTO);
 
-        h_mg_transfer::ApplyCellKernel<dim, fe_degree, number, Functor> apply_prolongation(
-          prolongator,
-          scheme.prolongation_matrix_shared_memory,
-          scheme.weights,
-          scheme.dof_indices_coarse,
-          scheme.dof_indices_fine,
-          src,
-          dst);
+        // h_mg_transfer::ApplyCellKernel<dim, fe_degree, number, Functor> apply_prolongation(
+        //   prolongator,
+        //   scheme.prolongation_matrix_shared_memory,
+        //   scheme.weights,
+        //   scheme.dof_indices_coarse,
+        //   scheme.dof_indices_fine,
+        //   src,
+        //   dst);
 
-        Kokkos::parallel_for("prolongate_and_add_h_transfer_scheme_" + std::to_string(scheme_index),
-                             team_policy,
-                             apply_prolongation);
+        // Kokkos::parallel_for("prolongate_and_add_h_transfer_scheme_" + std::to_string(scheme_index),
+        //                      team_policy,
+        //                      apply_prolongation);
 
         constexpr bool is_serial =
           std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
@@ -864,8 +864,8 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    using TeamPolicy = Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
-    using Functor    = h_mg_transfer::CellRestrictionKernel<dim, fe_degree, number>;
+    // using TeamPolicy = Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+    // using Functor    = h_mg_transfer::CellRestrictionKernel<dim, fe_degree, number>;
 
     MemorySpace::Default::kokkos_space::execution_space exec;
 
@@ -939,7 +939,6 @@ namespace Portable
         ++scheme_index;
       }
   }
-
 
   template <int dim, int fe_degree, typename number>
   void

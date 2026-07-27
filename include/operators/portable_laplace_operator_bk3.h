@@ -47,6 +47,10 @@ namespace Portable
     compute_diagonal() override;
 
     void
+    compute_rhs(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs,
+                const number value = 1.0) const override;
+
+    void
     setup_dof_indices_per_color();
 
     std::shared_ptr<
@@ -599,6 +603,131 @@ namespace Portable
   LaplaceOperatorBK3<dim, fe_degree, number>::get_vector_partitioner() const
   {
     return matrix_free.get_vector_partitioner();
+  }
+  
+  // Parallel Kokkos GPU kernel for compute_rhs on device memory
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperatorBK3<dim, fe_degree, number>::compute_rhs(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs,
+    const number value) const
+  {
+    rhs = 0.0;
+
+    const auto &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors = colored_graph.size();
+
+    DeviceVector<number> rhs_device(rhs.get_values(), rhs.locally_owned_size());
+
+    constexpr unsigned int n_1d         = fe_degree + 1;
+    constexpr unsigned int n_local_dofs = Utilities::pow(n_1d, dim);
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &mf_data      = matrix_free.get_data(color);
+            const auto &dof_indices  = dof_indices_per_color[color];
+            const auto &shape_values = mf_data.shape_values;
+            const auto &JxW          = mf_data.JxW;
+
+            if constexpr (dim == 3)
+              {
+                Kokkos::parallel_for(
+                  "Compute_RHS_3D_Color_" + std::to_string(color),
+                  Kokkos::RangePolicy<typename MemorySpace::Default::kokkos_space::execution_space>(
+                    0, n_cells),
+                  KOKKOS_LAMBDA(const int cell_id) {
+                    number local_rhs[n_local_dofs];
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      local_rhs[i] = 0.0;
+
+                    for (unsigned int qz = 0; qz < n_1d; ++qz)
+                      for (unsigned int qy = 0; qy < n_1d; ++qy)
+                        for (unsigned int qx = 0; qx < n_1d; ++qx)
+                          {
+                            const unsigned int q = qx + qy * n_1d + qz * n_1d * n_1d;
+                            const number JxW_val = JxW(q, cell_id);
+
+                            for (unsigned int iz = 0; iz < n_1d; ++iz)
+                              {
+                                const number phi_z = shape_values(iz * n_1d + qz);
+                                for (unsigned int iy = 0; iy < n_1d; ++iy)
+                                  {
+                                    const number phi_y = shape_values(iy * n_1d + qy);
+                                    for (unsigned int ix = 0; ix < n_1d; ++ix)
+                                      {
+                                        const number phi_x = shape_values(ix * n_1d + qx);
+                                        const unsigned int i = ix + iy * n_1d + iz * n_1d * n_1d;
+
+                                        local_rhs[i] += value * phi_x * phi_y * phi_z * JxW_val;
+                                      }
+                                  }
+                              }
+                          }
+
+                    // Scatter local element RHS to global device vector
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      {
+                        const unsigned int dof_idx = dof_indices(i, cell_id);
+                        if (dof_idx != numbers::invalid_unsigned_int)
+                          {
+                            Kokkos::atomic_add(&rhs_device(dof_idx), local_rhs[i]);
+                          }
+                      }
+                  });
+              }
+            else // dim == 2
+              {
+                Kokkos::parallel_for(
+                  "Compute_RHS_2D_Color_" + std::to_string(color),
+                  Kokkos::RangePolicy<typename MemorySpace::Default::kokkos_space::execution_space>(
+                    0, n_cells),
+                  KOKKOS_LAMBDA(const int cell_id) {
+                    number local_rhs[n_local_dofs];
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      local_rhs[i] = 0.0;
+
+                    for (unsigned int qy = 0; qy < n_1d; ++qy)
+                      for (unsigned int qx = 0; qx < n_1d; ++qx)
+                        {
+                          const unsigned int q = qx + qy * n_1d;
+                          const number JxW_val = JxW(q, cell_id);
+
+                          for (unsigned int iy = 0; iy < n_1d; ++iy)
+                            {
+                              const number phi_y = shape_values(iy * n_1d + qy);
+                              for (unsigned int ix = 0; ix < n_1d; ++ix)
+                                {
+                                  const number phi_x = shape_values(ix * n_1d + qx);
+                                  const unsigned int i = ix + iy * n_1d;
+
+                                  local_rhs[i] += value * phi_x * phi_y * JxW_val;
+                                }
+                            }
+                        }
+
+                    // Scatter local element RHS to global device vector
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      {
+                        const unsigned int dof_idx = dof_indices(i, cell_id);
+                        if (dof_idx != numbers::invalid_unsigned_int)
+                          {
+                            Kokkos::atomic_add(&rhs_device(dof_idx), local_rhs[i]);
+                          }
+                      }
+                  });
+              }
+
+            Kokkos::fence();
+          }
+      }
+
+    rhs.compress(VectorOperation::add);
+
+    matrix_free.set_constrained_values(0.0, rhs);
   }
 
 } // namespace Portable
