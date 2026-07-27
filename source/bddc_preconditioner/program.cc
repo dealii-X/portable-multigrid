@@ -884,18 +884,20 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 {
   Timer time;
   Kokkos::fence();
-  // SolverControl solver_control(1000, 1e-9 * rhs_schur_device.l2_norm());
+  SolverControl solver_control(1000, 1e-6 * rhs_schur_device.l2_norm());
   // ReductionControl solver_control(1000, 1e-14, 1e-7);
-  ReductionControl solver_control(100, 1e-16, 1e-9);
+  // ReductionControl solver_control(rhs_schur_device.size(), 1e-16, 1e-9);
 
-  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(
-  //   solver_control);
+  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
+    // solver_control);
 
   SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
   solution_interface_device = 0.;
-  cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
+  cg.solve(*interface_operator,
+                     solution_interface_device,
+                     rhs_schur_device,
+                     *bddc_preconditioner);
 
 
   // pcout << "           Interface solver converged in "
@@ -1290,6 +1292,22 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
 
   src = 1.;
 
+  // double norm_before = src.l2_norm();
+
+  level_subdomain_bddc_matrices.back()->project(src);
+
+  // double norm_after = src.l2_norm();
+
+  // level_subdomain_bddc_matrices.back()->project(src);
+
+  // double norm_after2 = src.l2_norm();
+
+  // std::cout << "On subdomain " << Utilities::MPI::this_mpi_process(mpi_communicator)
+  //           << " norm before = " << norm_before << "  , norm after = " << norm_after
+  //           << ", norm after2 = " << norm_after2 << std::endl;
+
+
+
   SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
   Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
     solver_cg(solver_control);
@@ -1301,6 +1319,21 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
   // solver_cg.solve(*level_subdomain_bddc_matrices.back(), dst, src, PreconditionIdentity());
 
 
+  // SolverControl solver_control(src.size(), 1e-6 * src.l2_norm());
+  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> solver_cg(
+  //   solver_control);
+  // solver_cg.solve(*level_subdomain_matrices.back(), dst, src,
+  // *subdomain_mg_preconditioner_dirichlet);
+
+  // SolverControl solver_control(src.size(), 1e-12 * src.l2_norm());
+  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+  //   solver_cg(solver_control);
+  // solver_cg.solve_projected(*level_subdomain_matrices.back(),
+  //                           dst,
+  //                           src,
+  //                           *subdomain_mg_preconditioner_dirichlet,
+  //                           *level_subdomain_matrices.back());
+
   std::cout << "On subdomain " << Utilities::MPI::this_mpi_process(mpi_communicator)
             << " solver converged in " << solver_control.last_step() << "  iterations."
             << std::endl;
@@ -1310,7 +1343,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 8 - dim; ++cycle)
+  for (unsigned int cycle = 0; cycle < 6 - dim; ++cycle)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
@@ -1345,9 +1378,9 @@ LaplaceProblem<dim, fe_degree>::run()
 
       // test_bddc();
 
-      // postprocess_subdomain_solution();
+      postprocess_subdomain_solution();
 
-      // output_results(cycle);
+      output_results(cycle);
 
 
       // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
@@ -1420,13 +1453,13 @@ main(int argc, char *argv[])
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 1;
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 1;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
       {
         constexpr int dim       = 2;
         constexpr int fe_degree = 2;
@@ -1434,50 +1467,50 @@ main(int argc, char *argv[])
         LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
         laplace_problem.run();
       }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 3;
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 3;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 4;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
 
 
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 1;
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 1;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 2;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 2;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 3;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 3;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 4;
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 4;
 
-      // LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      // laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
     }
   catch (std::exception &exc)
     {

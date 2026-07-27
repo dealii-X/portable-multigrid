@@ -78,6 +78,14 @@ namespace Portable
     unsigned int
     get_maximum_subdomain_mg_iterations() const;
 
+
+      void
+      project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const
+      {
+        (void)vec;
+        return;
+      }
+
     struct NeumannSubdomainOperator
     {
       NeumannSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, Number> &op)
@@ -106,6 +114,7 @@ namespace Portable
       {
         op.vmult(dst, src);
       }
+
 
       const SubdomainLaplaceOperatorBase<dim, Number> &op;
     };

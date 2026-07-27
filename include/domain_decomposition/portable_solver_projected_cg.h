@@ -101,8 +101,8 @@ namespace Portable
     typename VectorMemory<VectorType>::Pointer r_pointer(this->memory);
     typename VectorMemory<VectorType>::Pointer p_pointer(this->memory);
     typename VectorMemory<VectorType>::Pointer v_pointer(this->memory);
-    typename VectorMemory<VectorType>::Pointer z_pointer(this->memory);
-    typename VectorMemory<VectorType>::Pointer w_pointer(this->memory);
+    // typename VectorMemory<VectorType>::Pointer z_pointer(this->memory);
+    // typename VectorMemory<VectorType>::Pointer w_pointer(this->memory);
 
     VectorType &r = *r_pointer;
     VectorType &p = *p_pointer;
@@ -178,7 +178,7 @@ namespace Portable
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
         if (A.enable_printing())
-          std::cout << "residual_norm = " << residual_norm << std::endl;
+          std::cout << "it = " << it << ", residual_norm = " << residual_norm << std::endl;
 
         solver_state = this->iteration_status(it, residual_norm, x);
       }
@@ -186,7 +186,7 @@ namespace Portable
     AssertThrow(solver_state == SolverControl::success,
                 SolverControl::NoConvergence(it, residual_norm));
   }
-  
+
   template <typename VectorType>
   template <typename MatrixType, typename PreconditionerType>
   void
@@ -543,7 +543,7 @@ namespace Portable
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
         // if (A.enable_printing())
-        // std::cout << "residual_norm = " << residual_norm << std::endl;
+        // std::cout << "iteration = " << it << ", residual_norm = " << residual_norm << std::endl;
 
         solver_state = this->iteration_status(it, residual_norm, x);
       }

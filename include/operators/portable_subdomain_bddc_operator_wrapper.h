@@ -128,7 +128,36 @@ namespace Portable
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
     {
-      dirichlet_operator->vmult_plain(dst, src);
+      DeviceVector<Number> dst_view(dst.get_values(), dst.size());
+      DeviceVector<Number> src_view(src.get_values(), src.size());
+
+      temp_subdomain_vector = src;
+
+      // project(temp_subdomain_vector);
+
+      dirichlet_operator->vmult_plain(dst, temp_subdomain_vector);
+      // project(dst);
+
+      // const auto offsets                   = this->primal_constraint_offsets;
+      // const auto subdomain_constraint_dofs = this->primal_constraint_dofs_subdomain;
+      // const auto weights                   = this->coarse_weights;
+
+      // Kokkos::parallel_for(
+      //   "copy_constained_dofs",
+      //   this->n_local_coarse_dofs,
+      //   KOKKOS_LAMBDA(const int coarse_local_idx) {
+      //     const unsigned int start = offsets(coarse_local_idx);
+      //     const unsigned int end   = offsets(coarse_local_idx + 1);
+
+      //     const unsigned int n_dofs_per_coarse_dof = end - start;
+
+      //     if (n_dofs_per_coarse_dof > 0)
+      //       {
+      //         for (unsigned int i = start; i < end; ++i)
+      //           dst_view(subdomain_constraint_dofs(i)) = src_view(subdomain_constraint_dofs(i));
+      //       }
+      //   });
+      // Kokkos::fence();
     }
 
 
@@ -202,32 +231,32 @@ namespace Portable
       inverse_diagonal_entries->reinit(
         dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
 
-      // LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &inverse_diagonal_vector =
-      //   inverse_diagonal_entries->get_vector();
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &inverse_diagonal_vector =
+        inverse_diagonal_entries->get_vector();
 
-      // DeviceVector<Number> inv_diag_view(inverse_diagonal_vector.get_values(),
-      //                                    inverse_diagonal_vector.size());
+      DeviceVector<Number> inv_diag_view(inverse_diagonal_vector.get_values(),
+                                         inverse_diagonal_vector.size());
 
-      // const auto offsets                   = this->primal_constraint_offsets;
-      // const auto subdomain_constraint_dofs = this->primal_constraint_dofs_subdomain;
-      // const auto weights                   = this->coarse_weights;
+      const auto offsets                   = this->primal_constraint_offsets;
+      const auto subdomain_constraint_dofs = this->primal_constraint_dofs_subdomain;
+      const auto weights                   = this->coarse_weights;
 
-      // Kokkos::parallel_for(
-      //   "project_to_homogeneous_constraints_subdomain",
-      //   this->n_local_coarse_dofs,
-      //   KOKKOS_LAMBDA(const int coarse_local_idx) {
-      //     const unsigned int start = offsets(coarse_local_idx);
-      //     const unsigned int end   = offsets(coarse_local_idx + 1);
+      Kokkos::parallel_for(
+        "project_to_homogeneous_constraints_subdomain",
+        this->n_local_coarse_dofs,
+        KOKKOS_LAMBDA(const int coarse_local_idx) {
+          const unsigned int start = offsets(coarse_local_idx);
+          const unsigned int end   = offsets(coarse_local_idx + 1);
 
-      //     const unsigned int n_dofs_per_coarse_dof = end - start;
+          const unsigned int n_dofs_per_coarse_dof = end - start;
 
-      //     if (n_dofs_per_coarse_dof > 0)
-      //       {
-      //         for (unsigned int i = start; i < end; ++i)
-      //           inv_diag_view(subdomain_constraint_dofs(i)) = Number(1);
-      //       }
-      //   });
-      // Kokkos::fence();
+          if (n_dofs_per_coarse_dof > 0)
+            {
+              for (unsigned int i = start; i < end; ++i)
+                inv_diag_view(subdomain_constraint_dofs(i)) = Number(1);
+            }
+        });
+      Kokkos::fence();
     }
 
     std::shared_ptr<
