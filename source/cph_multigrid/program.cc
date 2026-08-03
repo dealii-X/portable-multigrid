@@ -228,6 +228,7 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
       if (level < coarse_triangulations.size())
         dof_h.distribute_dofs(*p_level_fes[0]);
+      else if (level < level_dof_handlers.max_level())
         dof_h.distribute_dofs(*p_level_fes[level + 1 - coarse_triangulations.size()]);
       else
         dof_h.distribute_dofs(fe);

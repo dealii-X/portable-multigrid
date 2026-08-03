@@ -188,14 +188,11 @@ namespace Portable
             Kokkos::fence();
           }
 
-        // dst.compress_start(0, VectorOperation::add);
-
         // When the mesh is coarse it is possible that some processors do
         // not own any cells
         if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
           do_color(2);
 
-        // dst.compress_finish(VectorOperation::add);
       }
     else
       {
@@ -210,12 +207,10 @@ namespace Portable
             if (colored_graph[color].size() > 0)
               do_color(color);
           }
-        // dst.compress(VectorOperation::insert);
       }
     Kokkos::fence();
 
     src.zero_out_ghost_values();
-    // dst.zero_out_ghost_values();
   }
 
   template <int dim, int fe_degree, typename number>
@@ -274,17 +269,12 @@ namespace Portable
           }
       };
 
-
     if (matrix_free_fine->use_overlap_communication_computation())
       {
-        // src.update_ghost_values_start(0);
-
         // In parallel, it's possible that some processors do not own any
         // cells.
         if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
           do_color(0);
-
-        // src.update_ghost_values_finish();
 
         // In serial this color does not exist because there are no ghost
         // cells
@@ -309,8 +299,6 @@ namespace Portable
       }
     else
       {
-        // src.update_ghost_values();
-
         // Execute the loop on the cells
         for (unsigned int color = 0; color < n_colors; ++color)
           {
@@ -318,11 +306,8 @@ namespace Portable
               do_color(color);
           }
 
-
         dst.compress(VectorOperation::add);
       }
-
-    // src.zero_out_ghost_values();
   }
 
   template <int dim, int fe_degree, typename number>
