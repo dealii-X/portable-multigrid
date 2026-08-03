@@ -59,7 +59,7 @@ namespace multigrid
   // We also select a mixed-precision approach as default. You can
   // independently change the number type for the outer iteration via
   // full_number and the number type for the multigrid v-cycle.
-  using vcycle_number = double;
+  using vcycle_number = float;
   using full_number   = double;
 
 

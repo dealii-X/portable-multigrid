@@ -728,19 +728,7 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    // Assert(dst.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
-    //        ExcMessage("Fine vector is not initialized correctly."));
-    // Assert(src.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
-    //        ExcMessage("Coarse vector is not initialized correctly."));
-
-
     this->prolongate_and_add_internal(dst, src);
-
-    // Assert(dst.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
-    //        ExcMessage("Fine vector is not handled correclty after prolongation."));
-
-    // Assert(src.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
-    //        ExcMessage("Coarse vector is not handled correclty after prolongation."));
   }
 
   template <int dim, int p_coarse, int p_fine, typename number>
@@ -749,19 +737,7 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    // Assert(dst.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
-    //        ExcMessage("Coarse vector is not initialized correctly."));
-
-    // Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
-    //        ExcMessage("Fine vector is not initialized correctly."));
-
     this->restrict_and_add_internal(dst, src);
-
-    // Assert(dst.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
-    //        ExcMessage("Coarse vector is not handled correclty after restrtiction."));
-
-    // Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
-    //        ExcMessage("Fine vector is not handled correclty after restrtiction."));
   }
 
 
@@ -774,8 +750,7 @@ namespace Portable
     MemorySpace::Default::kokkos_space::execution_space exec;
     using Functor = p_mg_transfer::CellProlongationKernel<dim, p_coarse, p_fine, number>;
 
-
-    DeviceVector<number> src_device(src.get_values(), src.size()),
+    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
       dst_device(dst.get_values(), dst.locally_owned_size());
 
     const auto &colored_graph = matrix_free_fine->get_colored_graph();
@@ -800,48 +775,6 @@ namespace Portable
 
         if (n_cells > 0)
           {
-            // using TeamPolicy = Kokkos::TeamPolicy<
-            //   MemorySpace::Default::kokkos_space::execution_space>;
-
-
-            // const bool use_coloring =
-            //   (n_colors > 1) &&
-            //   !matrix_free_fine->use_overlap_communication_computation();
-
-            // Functor cell_prolongator;
-
-            // auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
-
-            // p_mg_transfer::
-            //   ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
-            //     apply_kernel(cell_prolongator,
-            //                  this->prolongation_matrix_1d,
-            //                  this->weights_view_kokkos[color],
-            //                  this->dof_indices_coarse[color],
-            //                  this->plain_dof_indices_fine[color],
-            //                  use_coloring,
-            //                  src,
-            //                  dst);
-
-            // Kokkos::parallel_for(
-            //   "dealii::MatrixFree::prolongate_and_add_color " +
-            //     std::to_string(color),
-            //   team_policy,
-            //   apply_kernel);
-
-
-
-            // BK1::Parallel::KokkosProlongationKernel<dim, p_coarse + 1, p_fine + 1, number>(
-            //   this->prolongation_matrix_1d,
-            //   src_device,
-            //   dst_device,
-            //   this->dof_indices_coarse[color],
-            //   this->plain_dof_indices_fine[color],
-            //   this->weights_view_kokkos[color],
-            //   n_cells,
-            //   numBlocks,
-            //   threadsPerBlock);
-
             BK1::Parallel::KokkosProlongationBatchedKernel<dim, p_coarse + 1, p_fine + 1, number>(
               this->prolongation_matrix_1d,
               src_device,
@@ -918,7 +851,7 @@ namespace Portable
 
     const unsigned int n_colors = colored_graph.size();
 
-    DeviceVector<number> src_device(src.get_values(), src.size()),
+    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
       dst_device(dst.get_values(), dst.locally_owned_size());
 
     constexpr bool is_serial =
@@ -938,47 +871,6 @@ namespace Portable
 
         if (n_cells > 0)
           {
-            // const bool use_coloring =
-            //   (n_colors > 1) &&
-            //   !matrix_free_fine->use_overlap_communication_computation();
-
-            // using TeamPolicy = Kokkos::TeamPolicy<
-            //   MemorySpace::Default::kokkos_space::execution_space>;
-
-            // Functor cell_restrictor;
-
-            // auto team_policy = TeamPolicy(exec, n_cells, Kokkos::AUTO);
-
-            // p_mg_transfer::
-            //   ApplyCellKernel<dim, p_coarse, p_fine, number, Functor>
-            //     apply_kernel(cell_restrictor,
-            //                  this->prolongation_matrix_1d,
-            //                  this->weights_view_kokkos[color],
-            //                  this->dof_indices_coarse[color],
-            //                  this->plain_dof_indices_fine[color],
-            //                  use_coloring,
-            //                  src,
-            //                  dst);
-
-            // Kokkos::parallel_for(
-            //   "dealii::MatrixFree::prolongate_and_add_color " +
-            //     std::to_string(color),
-            //   team_policy,
-            //   apply_kernel);
-
-
-
-            // BK1::Parallel::KokkosRestrictionKernel<dim, p_coarse + 1, p_fine + 1, number>(
-            //   this->prolongation_matrix_1d,
-            //   src_device,
-            //   dst_device,
-            //   this->dof_indices_coarse[color],
-            //   this->plain_dof_indices_fine[color],
-            //   this->weights_view_kokkos[color],
-            //   n_cells,
-            //   numBlocks,
-            //   threadsPerBlock);
-
             BK1::Parallel::KokkosRestrictionBatchedKernel<dim, p_coarse + 1, p_fine + 1, number>(
               this->prolongation_matrix_1d,
               src_device,

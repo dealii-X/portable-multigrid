@@ -25,28 +25,6 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
 
-  template <typename VectorType, typename SmootherType>
-  class MGCoarseFromSmoother : public MGCoarseGridBase<VectorType>
-  {
-  public:
-    MGCoarseFromSmoother(const SmootherType &mg_smoother, const bool is_empty)
-      : smoother(mg_smoother)
-      , is_empty(is_empty)
-    {}
-
-    virtual void
-    operator()(const unsigned int level, VectorType &dst, const VectorType &src) const override
-    {
-      if (is_empty)
-        return;
-      smoother[level].vmult(dst, src);
-    }
-
-    const SmootherType &smoother;
-    const bool          is_empty;
-  };
-
-
   template <int dim, typename number, typename TransferType>
   class VCycleMultigrid : public VCycleMultigridBase<dim, number>
   {

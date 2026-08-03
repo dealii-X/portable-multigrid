@@ -516,10 +516,12 @@ LaplaceProblem<dim, fe_degree>::run()
       setup_matrix_free();
       assemble_rhs();
 
+      // test();
+
+
       solve();
       output_results(cycle);
 
-      test();
 
       pcout << std::endl;
     }

@@ -394,7 +394,7 @@ namespace BK3
                               s_rqs[e * nq * nq + q * nq + p] = Grs * qr + Gss * qs;
                             }
                         }
-                      else
+                      else if (dim == 3)
                         {
                           const int q = tid % (co_dimension_size) / nq;
                           const int p = tid % nq;
@@ -468,6 +468,7 @@ namespace BK3
                        tid += blockSize)
                     {
                       int e = tid / co_dimension_size;
+
                       if (dim == 2)
                         {
                           const int p = tid % nq;
@@ -616,7 +617,7 @@ namespace BK3
                   team_member.team_barrier();
                 }
 
-                // step-9 : direction 1
+                // step-9 : direction 0
                 {
                   constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
 
@@ -681,11 +682,10 @@ namespace BK3
 
                       if (cell_range_ids.size() > 0)
                         global_cell_index = cell_range_ids(global_cell_index);
+
                       if (dim == 2)
                         {
                           const int i = tid % nm;
-
-
 
                           for (int j = 0; j < nm; ++j)
                             {
@@ -711,7 +711,6 @@ namespace BK3
                         {
                           const int j = (tid % co_dimension_size) / nm;
                           const int i = tid % nm;
-
 
                           for (int k = 0; k < nm; ++k)
                             {

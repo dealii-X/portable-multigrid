@@ -36,8 +36,6 @@ namespace BK1
                              const unsigned int n_threads_per_block = numbers::invalid_unsigned_int)
 
     {
-      // AssertDimension(dim, 3);
-
       constexpr int nm_coarse_total = Utilities::pow(nm_coarse, dim);
       constexpr int nm_fine_total   = Utilities::pow(nm_fine, dim);
 
@@ -473,6 +471,9 @@ namespace BK1
       const unsigned int        n_threads_per_block = numbers::invalid_unsigned_int)
 
     {
+      if (n_cells == 0)
+        return;
+
       constexpr int nm_coarse_total = Utilities::pow(nm_coarse, dim);
       constexpr int nm_fine_total   = Utilities::pow(nm_fine, dim);
 
@@ -480,9 +481,12 @@ namespace BK1
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
-        std::max(1, static_cast<int>(shmemPerBlock / (2 * nm_fine_total) / sizeof(Number)));
+      int nelmtPerBatch = (shmemPerBlock / (2 * nm_fine_total * sizeof(Number)));
 
+      if (nelmtPerBatch == 0)
+        nelmtPerBatch = 1;
+      else if (nelmtPerBatch > nelmt)
+        nelmtPerBatch = nelmt;
 
       const int numBlocks = std::max(1,
                                      ((n_blocks == numbers::invalid_unsigned_int) ?
@@ -538,24 +542,53 @@ namespace BK1
 
                 // Gather coarse dof values
                 {
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_coarse_total;
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
                        tid += blockSize)
                     {
-                      const int batch_id = tid / nm_coarse_total;
-
-                      const int local_idx = tid % nm_coarse_total;
+                      const int batch_id = tid / co_dimension_size;
 
                       const unsigned int global_cell_index =
                         cell_batch_index * nelmtPerBatch + batch_id;
 
-                      // Fetch the global DoF index
-                      const unsigned int dof_index =
-                        dof_indices_coarse(local_idx, global_cell_index);
+                      if (dim == 2)
+                        {
+                          const int i = tid % nm_coarse;
 
-                      if (dof_index == numbers::invalid_unsigned_int)
-                        s_wsp0[tid] = 0;
-                      else
-                        s_wsp0[tid] = d_in[dof_index];
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              const int local_idx = j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, global_cell_index);
+
+                              if (dof_index == numbers::invalid_unsigned_int)
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = 0;
+                              else
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = d_in[dof_index];
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int j = (tid % co_dimension_size) / nm_coarse;
+                          const int i = tid % nm_coarse;
+
+                          for (int k = 0; k < nm_coarse; ++k)
+                            {
+                              const int local_idx = k * nm_coarse * nm_coarse + j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, global_cell_index);
+
+                              if (dof_index == numbers::invalid_unsigned_int)
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = 0;
+                              else
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = d_in[dof_index];
+                            }
+                        }
                     }
                   team_member.team_barrier();
                 }
@@ -573,7 +606,7 @@ namespace BK1
                         {
                           const int j = tid % nm_coarse;
 
-                          for (int_fast32_t i = 0; i < nm_coarse; ++i)
+                          for (int i = 0; i < nm_coarse; ++i)
                             {
                               reg[i] = s_wsp0[batch_id * nm_coarse * nm_coarse + j * nm_coarse + i];
                             }
@@ -675,12 +708,14 @@ namespace BK1
                 // direction 2
                 if (dim == 3)
                   {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_fine * nm_fine;
+                    constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
                          tid += blockSize)
                       {
-                        const int batch_id = tid / (nm_fine * nm_fine);
+                        const int batch_id = tid / co_dimension_size;
 
-                        const int q = (tid % (nm_fine * nm_fine)) / nm_fine;
+                        const int q = (tid % co_dimension_size) / nm_fine;
                         const int p = tid % nm_fine;
 
                         for (int k = 0; k < nm_coarse; ++k)
@@ -703,52 +738,63 @@ namespace BK1
                       }
                     team_member.team_barrier();
                   }
+
                 // Apply weights and scatter fine dof values
-                if (dim == 2)
-                  {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_fine_total;
-                         tid += blockSize)
-                      {
-                        const int batch_id  = tid / nm_fine_total;
-                        const int local_idx = tid % nm_fine_total;
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
 
-                        const unsigned int global_cell_index =
-                          cell_batch_index * nelmtPerBatch + batch_id;
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
 
-                        // Fetch the global DoF index
-                        const unsigned int dof_index =
-                          dof_indices_fine(local_idx, global_cell_index);
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
 
-                        Number value_out = weights(local_idx, global_cell_index) * s_wsp0[tid];
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
 
-                        // CRITICAL: Use atomic_add because elements share
-                        // nodes!
-                        Kokkos::atomic_add(&d_out[dof_index], value_out);
-                      }
-                  }
-                else if (dim == 3)
-                  {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_fine_total;
-                         tid += blockSize)
-                      {
-                        const int batch_id  = tid / nm_fine_total;
-                        const int local_idx = tid % nm_fine_total;
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              const int local_idx = q * nm_fine + p;
 
-                        const unsigned int global_cell_index =
-                          cell_batch_index * nelmtPerBatch + batch_id;
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, global_cell_index);
 
-                        // Fetch the global DoF index
-                        const unsigned int dof_index =
-                          dof_indices_fine(local_idx, global_cell_index);
+                              Number value_out = weights(local_idx, global_cell_index) *
+                                                 s_wsp0[batch_id * nm_fine_total + local_idx];
 
-                        Number value_out = weights(local_idx, global_cell_index) * s_wsp1[tid];
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              Kokkos::atomic_add(&d_out[dof_index], value_out);
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int q = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
 
-                        // CRITICAL: Use atomic_add because elements share
-                        // nodes!
-                        Kokkos::atomic_add(&d_out[dof_index], value_out);
-                      }
-                  }
-                team_member.team_barrier();
+                          for (int r = 0; r < nm_fine; ++r)
+                            {
+                              const int local_idx = r * nm_fine * nm_fine + q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, global_cell_index);
+
+                              Number value_out = weights(local_idx, global_cell_index) *
+                                                 s_wsp1[batch_id * nm_fine_total + local_idx];
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              Kokkos::atomic_add(&d_out[dof_index], value_out);
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
 
                 cell_batch_index += team_member.league_size();
               }
@@ -771,6 +817,9 @@ namespace BK1
                                    unsigned int n_threads_per_block = numbers::invalid_unsigned_int)
 
     {
+      if (n_cells == 0)
+        return;
+
       constexpr int nm_coarse_total = Utilities::pow(nm_coarse, dim);
       constexpr int nm_fine_total   = Utilities::pow(nm_fine, dim);
 
@@ -778,9 +827,12 @@ namespace BK1
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
-        std::max(1, static_cast<int>(shmemPerBlock / (2 * nm_fine_total) / sizeof(Number)));
+      int nelmtPerBatch = (shmemPerBlock / (2 * nm_fine_total * sizeof(Number)));
 
+      if (nelmtPerBatch == 0)
+        nelmtPerBatch = 1;
+      else if (nelmtPerBatch > nelmt)
+        nelmtPerBatch = nelmt;
 
       const int numBlocks = std::max(1,
                                      ((n_blocks == numbers::invalid_unsigned_int) ?
@@ -791,7 +843,6 @@ namespace BK1
                                            ((n_threads_per_block == numbers::invalid_unsigned_int) ?
                                               Utilities::pow(nm_fine, dim - 1) * nelmtPerBatch :
                                               static_cast<int>(n_threads_per_block)));
-
 
       {
         const unsigned int ssize = nm_coarse * nm_fine +              // kernel matrix
@@ -837,18 +888,49 @@ namespace BK1
 
                 // Gather fine dof values and apply weights
                 {
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_fine_total; tid += blockSize)
+                  constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
                     {
-                      const int batch_id  = tid / nm_fine_total;
-                      const int local_idx = tid % nm_fine_total;
+                      const int batch_id = tid / co_dimension_size;
 
                       const unsigned int global_cell_index =
                         cell_batch_index * nelmtPerBatch + batch_id;
 
-                      // Fetch the global DoF index
-                      const unsigned int dof_index = dof_indices_fine(local_idx, global_cell_index);
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
 
-                      s_wsp0[tid] = weights(local_idx, global_cell_index) * d_in[dof_index];
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              const int local_idx = q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, global_cell_index);
+
+                              s_wsp0[batch_id * nm_fine_total + local_idx] =
+                                weights(local_idx, global_cell_index) * d_in[dof_index];
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int q = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
+
+                          for (int r = 0; r < nm_fine; ++r)
+                            {
+                              const int local_idx = r * nm_fine * nm_fine + q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, global_cell_index);
+
+                              s_wsp1[batch_id * nm_fine_total + local_idx] =
+                                weights(local_idx, global_cell_index) * d_in[dof_index];
+                            }
+                        }
                     }
                   team_member.team_barrier();
                 }
@@ -856,16 +938,19 @@ namespace BK1
                 //  direction 2
                 if (dim == 3)
                   {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_fine * nm_fine;
+                    constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
                          tid += blockSize)
                       {
-                        const int batch_id = tid / (nm_fine * nm_fine);
-                        const int q        = (tid % (nm_fine * nm_fine)) / nm_fine;
-                        const int p        = tid % nm_fine;
+                        const int batch_id = tid / co_dimension_size;
+
+                        const int q = (tid % co_dimension_size) / nm_fine;
+                        const int p = tid % nm_fine;
 
                         for (int r = 0; r < nm_fine; ++r)
                           {
-                            reg[r] = s_wsp0[batch_id * nm_fine * nm_fine * nm_fine +
+                            reg[r] = s_wsp1[batch_id * nm_fine * nm_fine * nm_fine +
                                             r * nm_fine * nm_fine + q * nm_fine + p];
                           }
 
@@ -877,7 +962,7 @@ namespace BK1
                                 tmp += s_shape_values[k * nm_fine + r] * reg[r];
                               }
 
-                            s_wsp1[batch_id * nm_fine * nm_fine * nm_coarse +
+                            s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
                                    k * nm_fine * nm_fine + q * nm_fine + p] = tmp;
                           }
                       }
@@ -895,7 +980,7 @@ namespace BK1
 
                       if (dim == 2)
                         {
-                          const int p = tid % co_dimension_size;
+                          const int p = tid % nm_fine;
 
                           for (int q = 0; q < nm_fine; ++q)
                             {
@@ -915,12 +1000,12 @@ namespace BK1
                         }
                       else if (dim == 3)
                         {
-                          const int k = (tid % (nm_fine * nm_coarse)) / nm_fine;
+                          const int k = (tid % co_dimension_size) / nm_fine;
                           const int p = tid % nm_fine;
 
                           for (int q = 0; q < nm_fine; ++q)
                             {
-                              reg[q] = s_wsp1[batch_id * nm_fine * nm_fine * nm_coarse +
+                              reg[q] = s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
                                               k * nm_fine * nm_fine + q * nm_fine + p];
                             }
 
@@ -932,7 +1017,7 @@ namespace BK1
                                   tmp += s_shape_values[j * nm_fine + q] * reg[q];
                                 }
 
-                              s_wsp0[batch_id * nm_fine * nm_coarse * nm_coarse +
+                              s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
                                      k * nm_fine * nm_coarse + j * nm_fine + p] = tmp;
                             }
                         }
@@ -948,9 +1033,10 @@ namespace BK1
                        tid += blockSize)
                     {
                       const int batch_id = tid / co_dimension_size;
+
                       if (dim == 2)
                         {
-                          const int j = tid % co_dimension_size;
+                          const int j = tid % nm_coarse;
 
                           for (int p = 0; p < nm_fine; ++p)
                             {
@@ -975,7 +1061,7 @@ namespace BK1
 
                           for (int p = 0; p < nm_fine; ++p)
                             {
-                              reg[p] = s_wsp0[batch_id * nm_fine * nm_coarse * nm_coarse +
+                              reg[p] = s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
                                               k * nm_fine * nm_coarse + j * nm_fine + p];
                             }
 
@@ -987,7 +1073,7 @@ namespace BK1
                                   tmp += s_shape_values[i * nm_fine + p] * reg[p];
                                 }
 
-                              s_wsp1[batch_id * nm_coarse * nm_coarse * nm_coarse +
+                              s_wsp0[batch_id * nm_coarse * nm_coarse * nm_coarse +
                                      k * nm_coarse * nm_coarse + j * nm_coarse + i] = tmp;
                             }
                         }
@@ -996,51 +1082,59 @@ namespace BK1
                 }
 
                 // Scatter coarse dof values
-                if (dim == 2)
-                  {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_coarse_total;
-                         tid += blockSize)
-                      {
-                        const int batch_id = tid / nm_coarse_total;
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
 
-                        const int local_idx = tid % nm_coarse_total;
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
 
-                        const unsigned int global_cell_index =
-                          cell_batch_index * nelmtPerBatch + batch_id;
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
 
-                        // Fetch the global DoF index
-                        const unsigned int dof_index =
-                          dof_indices_coarse(local_idx, global_cell_index);
+                      if (dim == 2)
+                        {
+                          const int i = tid % nm_coarse;
 
-                        // CRITICAL: Use atomic_add because elements share
-                        // nodes!
-                        if (dof_index != numbers::invalid_unsigned_int)
-                          Kokkos::atomic_add(&d_out[dof_index], s_wsp0[tid]);
-                      }
-                  }
-                else if (dim == 3)
-                  {
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * nm_coarse_total;
-                         tid += blockSize)
-                      {
-                        const int batch_id = tid / nm_coarse_total;
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              const int local_idx = j * nm_coarse + i;
 
-                        const int local_idx = tid % nm_coarse_total;
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, global_cell_index);
 
-                        const unsigned int global_cell_index =
-                          cell_batch_index * nelmtPerBatch + batch_id;
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              if (dof_index != numbers::invalid_unsigned_int)
+                                Kokkos::atomic_add(&d_out[dof_index],
+                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int j = (tid % co_dimension_size) / nm_coarse;
+                          const int i = tid % nm_coarse;
 
-                        // Fetch the global DoF index
-                        const unsigned int dof_index =
-                          dof_indices_coarse(local_idx, global_cell_index);
+                          for (int k = 0; k < nm_coarse; ++k)
+                            {
+                              const int local_idx = k * nm_coarse * nm_coarse + j * nm_coarse + i;
 
-                        // CRITICAL: Use atomic_add because elements share
-                        // nodes!
-                        if (dof_index != numbers::invalid_unsigned_int)
-                          Kokkos::atomic_add(&d_out[dof_index], s_wsp1[tid]);
-                      }
-                  }
-                team_member.team_barrier();
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, global_cell_index);
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              if (dof_index != numbers::invalid_unsigned_int)
+                                Kokkos::atomic_add(&d_out[dof_index],
+                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
 
                 cell_batch_index += team_member.league_size();
               }

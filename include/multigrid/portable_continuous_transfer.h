@@ -159,7 +159,9 @@ namespace Portable
                                              dof_coarse != numbers::invalid_unsigned_int)
                                            dst_device[dof_fine] += src_device[dof_coarse];
                                        });
+                team_member.team_barrier();
               });
+            Kokkos::fence();
           }
       };
 
@@ -186,14 +188,11 @@ namespace Portable
             Kokkos::fence();
           }
 
-        // dst.compress_start(0, VectorOperation::add);
-
         // When the mesh is coarse it is possible that some processors do
         // not own any cells
         if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
           do_color(2);
 
-        // dst.compress_finish(VectorOperation::add);
       }
     else
       {
@@ -208,10 +207,10 @@ namespace Portable
             if (colored_graph[color].size() > 0)
               do_color(color);
           }
-        // dst.compress(VectorOperation::insert);
       }
+    Kokkos::fence();
+
     src.zero_out_ghost_values();
-    // dst.zero_out_ghost_values();
   }
 
   template <int dim, int fe_degree, typename number>
@@ -242,7 +241,6 @@ namespace Portable
 
             using MemberType = typename decltype(team_policy)::member_type;
 
-
             const auto dof_indices_coarse = this->dof_indices_coarse_cg[color];
             const auto dof_indices_fine   = this->dof_indices_fine_dg[color];
 
@@ -265,21 +263,18 @@ namespace Portable
                                            Kokkos::atomic_add(&dst_device[dof_coarse],
                                                               src_device[dof_fine]);
                                        });
+                team_member.team_barrier();
               });
+            Kokkos::fence();
           }
       };
 
-
     if (matrix_free_fine->use_overlap_communication_computation())
       {
-        // src.update_ghost_values_start(0);
-
         // In parallel, it's possible that some processors do not own any
         // cells.
         if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
           do_color(0);
-
-        // src.update_ghost_values_finish();
 
         // In serial this color does not exist because there are no ghost
         // cells
@@ -304,8 +299,6 @@ namespace Portable
       }
     else
       {
-        // src.update_ghost_values();
-
         // Execute the loop on the cells
         for (unsigned int color = 0; color < n_colors; ++color)
           {
@@ -315,7 +308,6 @@ namespace Portable
 
         dst.compress(VectorOperation::add);
       }
-    // src.zero_out_ghost_values();
   }
 
   template <int dim, int fe_degree, typename number>
@@ -331,7 +323,6 @@ namespace Portable
 
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
-
 
     setup_dof_indices();
   }
@@ -457,6 +448,7 @@ namespace Portable
                     {
                       const auto global_dof_coarse =
                         local_dof_indices_coarse[lex_numbering_coarse[i]];
+
                       const auto global_dof_fine = local_dof_indices_fine[lex_numbering_fine[i]];
 
                       const auto subdomain_local_dof_coarse =

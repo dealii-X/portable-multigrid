@@ -275,13 +275,15 @@ namespace Portable
         threads_per_block = 1u;
       }
 
+    // n_cells_per_batch = 1u;
+
     const unsigned int n_cells          = cell_local_info.size();
     const unsigned int n_inner_faces    = face_info_cpu[0].size();
     const unsigned int n_boundary_faces = face_info_cpu[1].size();
 
-
     if (n_cells > 0)
       {
+
         BK3::DG::compute_cell<dim, fe_degree + 1, n_q_points_1d, Number>(
           shape_data.shape_values,
           shape_data.shape_gradients_collocation,
@@ -296,9 +298,6 @@ namespace Portable
           n_cells_per_batch,
           n_blocks,
           threads_per_block);
-
-        Kokkos::fence();
-
 
         if (n_inner_faces > 0)
           BK3::DG::compute_inner_faces<dim, fe_degree + 1, n_q_points_1d, Number>(
@@ -328,8 +327,6 @@ namespace Portable
             n_blocks,
             threads_per_block);
 
-
-
         BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
           shape_data.shape_values,
           dst_device,
@@ -343,11 +340,13 @@ namespace Portable
           threads_per_block);
       }
 
+
     src.zero_out_ghost_values();
     dst.zero_out_ghost_values();
 
 
     matrix_free.copy_constrained_values(src, dst);
+
   }
 
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
@@ -420,6 +419,8 @@ namespace Portable
                 n_blocks,
                 threads_per_block);
 
+            Kokkos::fence();
+
             if (n_boundary_faces > 0)
               BK3::DG::compute_boundary_faces<dim, fe_degree + 1, n_q_points_1d, Number>(
                 shape_data.shape_gradients_collocation,
@@ -434,6 +435,7 @@ namespace Portable
                 n_blocks,
                 threads_per_block);
 
+            Kokkos::fence();
 
 
             BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
@@ -447,6 +449,8 @@ namespace Portable
               n_cells_per_batch,
               n_blocks,
               threads_per_block);
+
+            Kokkos::fence();
           }
       }
 
@@ -681,17 +685,21 @@ namespace Portable
 
       for (unsigned int i = 0; i < 2; ++i)
         {
-          Kokkos::View<unsigned int *[5],
-                       Kokkos::LayoutRight,
-                       Kokkos::HostSpace,
-                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-            faces_info_host(face_info_cpu[i].data()->data(), face_info_cpu[i].size());
+          const unsigned int n_faces = face_info_cpu[i].size();
 
           face_info[i] = Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc(name_handle[i], Kokkos::WithoutInitializing),
-            face_info_cpu[i].size());
+            Kokkos::view_alloc(name_handle[i], Kokkos::WithoutInitializing), n_faces);
 
-          Kokkos::deep_copy(face_info[i], faces_info_host);
+          if (n_faces > 0)
+            {
+              auto face_info_host = Kokkos::create_mirror_view(face_info[i]);
+
+              for (unsigned int f = 0; f < n_faces; ++f)
+                for (unsigned int k = 0; k < 5; ++k)
+                  face_info_host(f, k) = face_info_cpu[i][f][k];
+
+              Kokkos::deep_copy(face_info[i], face_info_host);
+            }
         }
 
       Kokkos::fence();
