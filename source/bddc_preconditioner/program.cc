@@ -203,6 +203,13 @@ private:
 
   ConvergenceTable bddc_setup_timing_table;
 
+  // Per-rank diagnostics, repopulated (cleared + refilled) each cycle and
+  // printed together once at the end of that cycle instead of inline,
+  // to avoid interleaving a 1-row-per-rank table into the middle of the
+  // per-phase timing log.
+  ConvergenceTable per_rank_dof_table;
+  ConvergenceTable per_rank_load_table;
+
   unsigned int n_cells_total;
 
   struct SubdomainLaplaceOperatorRunner
@@ -473,6 +480,37 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
   pcout << "                      Total number of DoFs: "
         << level_distributed_dof_handlers.back().n_dofs() << std::endl;
+
+  {
+    const auto &finest_subdomain_dof_handler = level_subdomain_dof_handlers.back();
+
+    const unsigned int n_subdomain_dofs = finest_subdomain_dof_handler.get_dof_handler().n_dofs();
+
+    const auto &interface_partitioner = finest_subdomain_dof_handler.get_interface_vector_partitioner();
+
+    const unsigned int n_interface_owned =
+      interface_partitioner ? interface_partitioner->locally_owned_size() : 0;
+    const unsigned int n_interface_ghost =
+      interface_partitioner ? interface_partitioner->n_ghost_indices() : 0;
+
+    const auto all_n_subdomain_dofs = Utilities::MPI::gather(mpi_communicator, n_subdomain_dofs, 0);
+    const auto all_n_interface_owned =
+      Utilities::MPI::gather(mpi_communicator, n_interface_owned, 0);
+    const auto all_n_interface_ghost =
+      Utilities::MPI::gather(mpi_communicator, n_interface_ghost, 0);
+
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+      {
+        per_rank_dof_table.clear();
+        for (unsigned int rank = 0; rank < all_n_subdomain_dofs.size(); ++rank)
+          {
+            per_rank_dof_table.add_value("rank", rank);
+            per_rank_dof_table.add_value("subdomain_dofs", all_n_subdomain_dofs[rank]);
+            per_rank_dof_table.add_value("interface_owned", all_n_interface_owned[rank]);
+            per_rank_dof_table.add_value("interface_ghost", all_n_interface_ghost[rank]);
+          }
+      }
+  }
 
   global_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
 
@@ -889,25 +927,44 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
 
     // Diagnostic: mpi_sum times a *blocking* collective, so its wall time on
     // this rank includes however long it sits waiting for the slowest rank
-    // to arrive. Gather each rank's own local coarse-dof count and local
-    // (pre-reduction) compute time to check whether that wait is actually
-    // load imbalance in how many primal constraints each subdomain owns,
-    // rather than the reduction itself being expensive.
+    // to arrive. Gather each rank's own local coarse-dof count (split by
+    // primal-constraint type: vertex/edge/face -- offsets[0..3] are the
+    // cumulative start-of-vertices/edges/faces/end-of-faces indices) and
+    // local (pre-reduction) compute time to check whether that wait is
+    // actually load imbalance in how many primal constraints each
+    // subdomain owns, rather than the reduction itself being expensive.
+    const auto &local_coarse_offsets =
+      level_subdomain_dof_handlers.back().get_dof_info().local_coarse_offsets;
+
+    const unsigned int local_n_vertices = local_coarse_offsets[1] - local_coarse_offsets[0];
+    const unsigned int local_n_edges    = local_coarse_offsets[2] - local_coarse_offsets[1];
+    const unsigned int local_n_faces    = local_coarse_offsets[3] - local_coarse_offsets[2];
+
     const unsigned int local_n_coarse_dofs = this->bddc_preconditioner->get_n_local_coarse_dofs();
     const double        local_compute_time =
       setup_timings[0] + setup_timings[1] + setup_timings[2] + setup_timings[3];
 
+    const auto all_n_vertices = Utilities::MPI::gather(mpi_communicator, local_n_vertices, 0);
+    const auto all_n_edges    = Utilities::MPI::gather(mpi_communicator, local_n_edges, 0);
+    const auto all_n_faces    = Utilities::MPI::gather(mpi_communicator, local_n_faces, 0);
     const auto all_n_coarse_dofs =
       Utilities::MPI::gather(mpi_communicator, local_n_coarse_dofs, 0);
     const auto all_compute_time = Utilities::MPI::gather(mpi_communicator, local_compute_time, 0);
 
     if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
       {
-        pcout << "                      Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
+        per_rank_load_table.clear();
         for (unsigned int rank = 0; rank < all_n_coarse_dofs.size(); ++rank)
-          pcout << "                        rank " << rank
-                << ": n_local_coarse_dofs = " << all_n_coarse_dofs[rank]
-                << ", local compute time = " << all_compute_time[rank] << "s" << std::endl;
+          {
+            per_rank_load_table.add_value("rank", rank);
+            per_rank_load_table.add_value("vertices", all_n_vertices[rank]);
+            per_rank_load_table.add_value("edges", all_n_edges[rank]);
+            per_rank_load_table.add_value("faces", all_n_faces[rank]);
+            per_rank_load_table.add_value("n_local_coarse_dofs", all_n_coarse_dofs[rank]);
+            per_rank_load_table.add_value("local_compute_time", all_compute_time[rank]);
+          }
+        per_rank_load_table.set_scientific("local_compute_time", true);
+        per_rank_load_table.set_precision("local_compute_time", 3);
       }
   }
 }
@@ -1462,6 +1519,14 @@ LaplaceProblem<dim, fe_degree>::run()
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {
+          std::cout << std::endl << "Per-subdomain DoF distribution:" << std::endl;
+          per_rank_dof_table.write_text(std::cout);
+          std::cout << std::endl;
+
+          std::cout << "Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
+          per_rank_load_table.write_text(std::cout);
+          std::cout << std::endl;
+
           for (const char *column : {"lift",
                                      "vmult_plain",
                                      "fine_correction",

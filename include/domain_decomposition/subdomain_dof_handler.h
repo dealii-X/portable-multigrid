@@ -12,6 +12,8 @@
 
 #include <deal.II/lac/la_parallel_vector.h>
 
+#include <functional>
+
 #include "domain_decomposition/subdomain_triangulation.h"
 
 
@@ -332,24 +334,31 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
   const unsigned int n_ranks = Utilities::MPI::n_mpi_processes(this->get_mpi_communicator());
   const unsigned int my_rank = Utilities::MPI::this_mpi_process(this->get_mpi_communicator());
 
+  // spread ownership evenly across a dof's sharers
+  // by hashing the dof's own global index. Every rank computes this
+  // independently from the same all-gathered interface sets, so it still
+  // needs no extra communication to agree on who owns what.
+  const auto compute_owner_rank = [&all_sets, n_ranks](const types::global_dof_index global_index)
+    {
+      std::vector<unsigned int> sharers;
+      for (unsigned int r = 0; r < n_ranks; ++r)
+        if (all_sets[r].is_element(global_index))
+          sharers.push_back(r);
+
+      Assert(!sharers.empty(), ExcInternalError());
+
+      const unsigned int owner_slot = static_cast<unsigned int>(
+        std::hash<types::global_dof_index>{}(global_index) % sharers.size());
+
+      return sharers[owner_slot];
+    };
+
   IndexSet locally_owned_interface_indices_global_numbering(
     this->distributed_dof_handler->n_dofs());
 
   for (const auto mesh_id : local_interface_indices)
     {
-      std::vector<unsigned int> sharers;
-      for (unsigned int r = 0; r < n_ranks; ++r)
-        {
-          if (all_sets[r].is_element(mesh_id))
-            {
-              sharers.push_back(r);
-            }
-        }
-      std::sort(sharers.begin(), sharers.end());
-
-      unsigned int master_rank = sharers[0];
-
-      if (my_rank == master_rank)
+      if (my_rank == compute_owner_rank(mesh_id))
         {
           locally_owned_interface_indices_global_numbering.add_index(mesh_id);
         }
@@ -382,16 +391,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
     {
       for (const auto global_index : all_sets[r])
         {
-          unsigned int master_rank = n_ranks + 1;
-          for (unsigned int s = 0; s < n_ranks; ++s)
-            {
-              if (all_sets[s].is_element(global_index))
-                {
-                  master_rank = s;
-                  break;
-                }
-            }
-          if (master_rank == r)
+          if (compute_owner_rank(global_index) == r)
             {
               global_numbering_to_interface_partitoner[global_index] = rank_counter_ptr[r];
 
