@@ -13,6 +13,7 @@
 #include <deal.II/lac/la_parallel_vector.h>
 
 #include <functional>
+#include <unordered_map>
 
 #include "domain_decomposition/subdomain_triangulation.h"
 
@@ -334,23 +335,38 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
   const unsigned int n_ranks = Utilities::MPI::n_mpi_processes(this->get_mpi_communicator());
   const unsigned int my_rank = Utilities::MPI::this_mpi_process(this->get_mpi_communicator());
 
-  // spread ownership evenly across a dof's sharers
-  // by hashing the dof's own global index. Every rank computes this
-  // independently from the same all-gathered interface sets, so it still
-  // needs no extra communication to agree on who owns what.
-  const auto compute_owner_rank = [&all_sets, n_ranks](const types::global_dof_index global_index)
+  // spread ownership evenly across a dof's sharers by hashing the dof's own
+  // global index. Every rank computes this independently from the same
+  // all-gathered interface sets, so it still needs no extra communication to
+  // agree on who owns what.
+  //
+  // Sharers are grouped in a single pass over all_sets (O(total shared-dof
+  // copies)) rather than, for each lookup, rescanning all n_ranks IndexSets
+  // with is_element() (O(n_ranks) per lookup, and this owner is looked up
+  // once per (rank, shared dof) occurrence below -- an O(n_ranks) factor
+  // that dominated Subdomain DoFs setup time at 64+ ranks). The outer loop
+  // over r runs in ascending rank order, so each dof's sharers vector still
+  // comes out sorted the same way the old is_element scan produced it --
+  // same hash % size, same owner, pure performance fix.
+  std::unordered_map<types::global_dof_index, std::vector<unsigned int>> sharers_of;
+  for (unsigned int r = 0; r < n_ranks; ++r)
+    for (const auto global_index : all_sets[r])
+      sharers_of[global_index].push_back(r);
+
+  std::unordered_map<types::global_dof_index, unsigned int> owner_of;
+  owner_of.reserve(sharers_of.size());
+  for (const auto &[global_index, sharers] : sharers_of)
     {
-      std::vector<unsigned int> sharers;
-      for (unsigned int r = 0; r < n_ranks; ++r)
-        if (all_sets[r].is_element(global_index))
-          sharers.push_back(r);
-
-      Assert(!sharers.empty(), ExcInternalError());
-
       const unsigned int owner_slot = static_cast<unsigned int>(
         std::hash<types::global_dof_index>{}(global_index) % sharers.size());
+      owner_of[global_index] = sharers[owner_slot];
+    }
 
-      return sharers[owner_slot];
+  const auto compute_owner_rank = [&owner_of](const types::global_dof_index global_index)
+    {
+      const auto it = owner_of.find(global_index);
+      Assert(it != owner_of.end(), ExcInternalError());
+      return it->second;
     };
 
   IndexSet locally_owned_interface_indices_global_numbering(

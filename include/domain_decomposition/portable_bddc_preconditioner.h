@@ -7,7 +7,6 @@
 
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
-#include "domain_decomposition/portable_solver_projected_cg.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "operators/portable_subdomain_bddc_operator_wrapper.h"
 
@@ -32,10 +31,6 @@ namespace Portable
 
     void
     vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
-
-    void
-    solve_subdomain_with_constraints(InterfaceVectorType       &dst,
-                                     const InterfaceVectorType &src) const;
 
     void
     project_to_homogeneous_constraints_interface(InterfaceVectorType &interface_vector) const;
@@ -356,8 +351,6 @@ namespace Portable
     dst = 0;
     src.update_ghost_values();
 
-    const SubdomainProjectorWrapper projector(*this);
-
     Kokkos::fence();
     Timer time;
     gather_and_weight_global_interface(temp_subdomain_src, src);
@@ -368,6 +361,16 @@ namespace Portable
     vmult_coarse_correction(temp_subdomain_coarse, temp_subdomain_src);
     Kokkos::fence();
     timings[1] += time.wall_time();
+
+    // vmult_coarse_correction() above needs the raw (unprojected) residual --
+    // it takes inner products against the coarse basis functions, not Ahat/
+    // Chat's sandwiched action -- so this project() has to happen here,
+    // after the coarse correction and before the fine one, rather than
+    // earlier. Projecting temp_subdomain_src in place lets
+    // vmult_fine_correction() take its RHS by const reference directly
+    // (no internal copy) since the "RHS must already be in V" precondition
+    // is now satisfied by the caller.
+    this->subdomain_bddc_operator.project(temp_subdomain_src);
 
     time.restart();
     vmult_fine_correction(temp_subdomain_fine, temp_subdomain_src);
@@ -406,12 +409,20 @@ namespace Portable
     // are both symmetric and map into V = range(Pi) by construction (Pi is baked into
     // vmult() itself, and the BDDC-level smoother's elementary correction is sandwiched
     // as Pi*(omega*D^{-1})*Pi), so plain CG works directly -- only the RHS needs to be
-    // projected into V up front.
-    SubdomainVectorType rhs = fine_residual;
-    this->subdomain_bddc_operator.project(rhs);
-
+    // in V up front.
+    //
+    // Precondition: fine_residual must already satisfy Pi*fine_residual == fine_residual
+    // on entry -- this function does NOT project it. SolverCG::solve() takes its RHS by
+    // const reference and never writes to it internally, so as long as the caller has
+    // already projected the vector it's about to pass in (both callers do: vmult()
+    // projects temp_subdomain_src in place right before calling this, and
+    // compute_local_coarse_matrix() projects its local rhs before calling this), the
+    // fine_residual reference can be handed straight to solve() with no extra copy.
     SolverCG<SubdomainVectorType> solver(solver_control);
-    solver.solve(this->subdomain_bddc_operator, fine_solution, rhs, subdomain_mg_preconditioner);
+    solver.solve(this->subdomain_bddc_operator,
+                fine_solution,
+                fine_residual,
+                subdomain_mg_preconditioner);
 
     // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
     //           << "  iterations." << std::endl;
@@ -564,75 +575,6 @@ namespace Portable
       });
     Kokkos::fence();
   }
-
-  template <int dim, typename Number>
-  void
-  BDDCPreconditioner<dim, Number>::solve_subdomain_with_constraints(
-    InterfaceVectorType       &dst,
-    const InterfaceVectorType &src) const
-  {
-    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("Interface vector is not initialized correctly."));
-    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("Interface vector is not initialized correctly."));
-
-    dst = 0;
-
-    src.update_ghost_values();
-
-    const auto interface_dofs_subdomain = interface_dof_indices_subdomain;
-
-    temp_subdomain_src = 0;
-    temp_subdomain_dst = 0;
-
-    const DeviceVector<Number> src_interface_view(src.get_values(),
-                                                  interface_dofs_subdomain.size());
-    DeviceVector<Number>       src_subdomain_view(temp_subdomain_src.get_values(),
-                                                  temp_subdomain_src.size());
-
-    // read interface values into the subdomain vector
-    Kokkos::parallel_for(
-      "read_src_interface", interface_dofs_subdomain.size(), KOKKOS_LAMBDA(const int i) {
-        src_subdomain_view(interface_dofs_subdomain(i)) = src_interface_view(i);
-      });
-    Kokkos::fence();
-
-    SubdomainProjectorWrapper projector(*this);
-
-    projector.project(temp_subdomain_src);
-
-    SolverControl solver_control(1000, 1e-9 * temp_subdomain_src.l2_norm());
-
-    SolverProjectedCG<SubdomainVectorType> solver(solver_control);
-
-    solver.solve_projected(subdomain_bddc_operator,
-                           temp_subdomain_dst,
-                           temp_subdomain_src,
-                           PreconditionIdentity(),
-                           projector);
-
-    projector.project(temp_subdomain_dst);
-
-    DeviceVector<Number> dst_interface_view(dst.get_values(), interface_dofs_subdomain.size());
-    DeviceVector<Number> dst_subdomain_view(temp_subdomain_dst.get_values(),
-                                            temp_subdomain_dst.size());
-
-
-    Kokkos::parallel_for(
-      "distribute_interface_dofs", interface_dofs_subdomain.size(), KOKKOS_LAMBDA(const int i) {
-        dst_interface_view(i) = dst_subdomain_view(interface_dofs_subdomain(i));
-      });
-    Kokkos::fence();
-
-    dst.compress(VectorOperation::add);
-    src.zero_out_ghost_values();
-
-    std::cout << std::endl
-              << "Projected solver on subdomain " << this->subdomain_dof_handler->get_subdomain_id()
-              << " converged in " << solver_control.last_step() << std::endl;
-  }
-
-
 
   template <int dim, typename Number>
   void
@@ -1193,314 +1135,6 @@ namespace Portable
 
     exec_space.fence();
   }
-
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::vmult_enhanced(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &z,
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &s_tilde,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &r) const
-  // {
-  //   Assert(z.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //            interface vector partitioner."));
-  //   Assert(r.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //           interface vector partitioner."));
-
-
-  //   // local NN preconditioner
-  //   this->vmult(z, r);
-
-  //   this->vmult_interface(s_tilde, z);
-
-  //   temp_interface = r;
-  //   temp_interface -= s_tilde;
-
-  //   Kokkos::fence();
-  //   Timer time;
-
-  //   this->balance_and_vmult(z0, S_z0, temp_interface);
-
-  //   Kokkos::fence();
-  //   timings[2] += time.wall_time();
-
-  //   s_tilde += S_z0;
-  //   z += z0;
-  // }
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::vmult(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  // {
-  //   Assert(
-  //     dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's interface vector
-  //       partitioner."));
-  //   Assert(
-  //     src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's interface vector
-  //       partitioner."));
-
-  //   Kokkos::fence();
-  //   Timer time;
-  //   this->interface_operator->neumann_solve_subdomain(dst, src);
-
-  //   Kokkos::fence();
-  //   timings[1] += time.wall_time();
-  // }
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::vmult_interface(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  // {
-  //   Assert(
-  //     dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's interface vector
-  //       partitioner."));
-  //   Assert(
-  //     src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //     ExcMessage(
-  //       "This function expects a vector initialized by SubdomainDoFHandler's interface vector
-  //       partitioner."));
-
-  //   Kokkos::fence();
-  //   Timer time;
-  //   this->interface_operator->vmult(dst, src);
-
-  //   Kokkos::fence();
-  //   timings[0] += time.wall_time();
-  // }
-
-  /**
-   * Schwarz projection step Id-(R_0^T*S_0^{-1}*R_0)*S :
-   *    1. Apply interface operator S (maps values into flux)
-   *    2. balance (i.e, apply R_0^T*S_0^{-1}*R_0) to retrive mean value
-   *    3. Id-(R_0^T*S_0^{-1}*R_0)*S - gives compatible vector for subdomain
-   * Neumann solve Result: retrieved values in the kernel space (i.e., mean
-   * values) (Id - R_0^T*S_0^{-1}*R_0) -- returns balanced vector, i.e.
-   * compatible for the subdomain Neumann solve
-   */
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::project(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  // {
-  //   Assert(dst.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //            interface vector partitioner."));
-  //   Assert(src.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //           interface vector partitioner."));
-
-  //   temp_interface = 0.;
-
-  //   Kokkos::fence();
-  //   Timer time;
-  //   // dst = S*tmp
-  //   this->interface_operator->vmult(temp_interface, src);
-
-  //   Kokkos::fence();
-  //   const double time_dirichlet = time.wall_time();
-  //   timings[0] += time_dirichlet;
-
-  //   time.restart();
-  //   // tmp = R0^T*S_0^{-1}*R0*dst
-  //   this->balance(dst, temp_interface);
-
-  //   Kokkos::fence();
-  //   timings[2] += time.wall_time();
-
-  //   dst.sadd(-1., src);
-
-  //   Kokkos::fence();
-  //   timings[3] += time.wall_time() + time_dirichlet;
-  // }
-
-  /**
-   * Balancing step R_0^T*S_0^{-1}*R_0:
-   *    1. project from global interface to coarse space
-   *    2. solve coarse problem
-   *    3. project back to the global interface
-   * Result: retrieved values in the kernel space (i.e., mean values)
-   * (Id - R_0^T*S_0^{-1}*R_0) -- returns balanced vector, i.e. compatible for
-   * the subdomain Neumann solve
-   */
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::balance(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  // {
-  //   Assert(dst.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //            interface vector partitioner."));
-  //   Assert(src.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //           interface vector partitioner."));
-
-  //   this->temp_coarse_rhs = 0.;
-
-  //   // project from global interface to coarse space
-  //   this->global_interface_to_coarse(this->temp_coarse_rhs, src);
-
-  //   // solve coarse problem
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       this->temp_coarse_solution = 0.;
-
-  //       this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-  //     }
-
-  //   // project back to the global interface space
-  //   this->coarse_to_global_interface(dst, this->temp_coarse_solution);
-  // }
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::balance_and_vmult(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &S_per_dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  // {
-  //   Assert(dst.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //            interface vector partitioner."));
-  //   Assert(src.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //           interface vector partitioner."));
-
-  //   this->temp_coarse_rhs = 0.;
-
-  //   // project from global interface to coarse space
-  //   this->global_interface_to_coarse(this->temp_coarse_rhs, src);
-
-  //   // solve coarse problem
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       this->temp_coarse_solution = 0.;
-
-  //       this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-  //     }
-
-  //   // project back to the global interface space
-  //   this->coarse_to_global_interface_and_S_update(dst, S_per_dst, this->temp_coarse_solution);
-  // }
-
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::balance_dummy(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-  //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-  //   const bool                                                              computation_on,
-  //   const bool                                                              communication_on)
-  //   const
-  // {
-  //   Assert(dst.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //            interface vector partitioner."));
-  //   Assert(src.get_partitioner() ==
-  //   this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's
-  //           interface vector partitioner."));
-
-  //   this->temp_coarse_rhs = 0.;
-
-  //   // project from global interface to coarse space
-  //   if (communication_on)
-  //     this->global_interface_to_coarse(this->temp_coarse_rhs, src);
-
-  //   if (computation_on)
-  //     {
-  //       // solve coarse problem
-  //       if (this->this_subdomain == this->coarse_problem_rank)
-  //         {
-  //           this->temp_coarse_solution = 0.;
-
-  //           this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-  //         }
-  //     }
-
-  //   // project back to the global interface space
-  //   if (communication_on)
-  //     this->coarse_to_global_interface(dst, this->temp_coarse_solution);
-  // }
-
-
-  // template <int dim, typename Number>
-  // void
-  // BDDCPreconditioner<dim, Number>::coarse_to_global_interface_and_S_update(
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &interface_vector,
-  //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &S_per_interface_vector,
-  //   const Vector<Number>                                             &coarse_vector) const
-  // {
-  //   Assert(interface_vector.get_partitioner() ==
-  //            this->subdomain_dof_handler->get_interface_vector_partitioner(),
-  //          ExcMessage("Interface vector is not initialized correctly."));
-
-  //   DeviceVector<Number> interface_vector_view(interface_vector.get_values(),
-  //                                              interface_vector.size());
-
-
-  //   DeviceVector<Number> weights_view(interface_weights.get_values(), interface_weights.size());
-
-  //   // copy coarse Vector to std::vector for MPi::scatter
-  //   if (this->this_subdomain == this->coarse_problem_rank)
-  //     {
-  //       for (unsigned int i = 0; i < coarse_vector.size(); ++i)
-  //         this->temp_coarse_gather[i] = coarse_vector[i];
-  //     }
-
-  //   // retrieve subdomain coarse value (i.e., mean value)
-  //   // const Number subdomain_coarse_value = Utilities::MPI::scatter(
-  //   //   this->subdomain_dof_handler->get_mpi_communicator(),
-  //   //   this->temp_coarse_gather,
-  //   //   this->coarse_problem_rank);
-
-  //   temp_coarse_broadcast =
-  //     Utilities::MPI::broadcast(this->subdomain_dof_handler->get_mpi_communicator(),
-  //                               this->temp_coarse_gather,
-  //                               this->coarse_problem_rank);
-
-  //   const Number subdomain_coarse_value = temp_coarse_broadcast[this_subdomain];
-
-  //   // propagate coarse value to the interface by applying weights
-  //   interface_vector = 0.;
-  //   Kokkos::parallel_for(
-  //     "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
-  //     interface_dof_indices_subdomain.size(),
-  //     KOKKOS_LAMBDA(const unsigned int i) {
-  //       interface_vector_view(i) = subdomain_coarse_value * weights_view(i);
-  //     });
-
-  //   // condense
-  //   interface_vector.compress(VectorOperation::add);
-
-  //   S_per_interface_vector = 0;
-  //   for (unsigned int i = 0; i < n_subdomains; ++i)
-  //     S_per_interface_vector.add(temp_coarse_broadcast[i], S_per_coarse_basis_functions[i]);
-
-  //   S_per_interface_vector.compress(VectorOperation::add);
-  // }
 
 
 } // namespace Portable
