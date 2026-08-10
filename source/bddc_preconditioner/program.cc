@@ -875,6 +875,8 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
 
     bddc_setup_timing_table.add_value("cells", n_cells_total);
     bddc_setup_timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+    bddc_setup_timing_table.add_value("n_global_coarse_dofs",
+                                      this->bddc_preconditioner->get_n_global_coarse_dofs());
     bddc_setup_timing_table.add_value("n_local_coarse_dofs",
                                       this->bddc_preconditioner->get_n_local_coarse_dofs());
     bddc_setup_timing_table.add_value("lift", setup_timings[0]);
@@ -884,6 +886,29 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
     bddc_setup_timing_table.add_value("mpi_sum", setup_timings[4]);
     bddc_setup_timing_table.add_value("lu_factorization", setup_timings[5]);
     bddc_setup_timing_table.add_value("total", total);
+
+    // Diagnostic: mpi_sum times a *blocking* collective, so its wall time on
+    // this rank includes however long it sits waiting for the slowest rank
+    // to arrive. Gather each rank's own local coarse-dof count and local
+    // (pre-reduction) compute time to check whether that wait is actually
+    // load imbalance in how many primal constraints each subdomain owns,
+    // rather than the reduction itself being expensive.
+    const unsigned int local_n_coarse_dofs = this->bddc_preconditioner->get_n_local_coarse_dofs();
+    const double        local_compute_time =
+      setup_timings[0] + setup_timings[1] + setup_timings[2] + setup_timings[3];
+
+    const auto all_n_coarse_dofs =
+      Utilities::MPI::gather(mpi_communicator, local_n_coarse_dofs, 0);
+    const auto all_compute_time = Utilities::MPI::gather(mpi_communicator, local_compute_time, 0);
+
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+      {
+        pcout << "                      Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
+        for (unsigned int rank = 0; rank < all_n_coarse_dofs.size(); ++rank)
+          pcout << "                        rank " << rank
+                << ": n_local_coarse_dofs = " << all_n_coarse_dofs[rank]
+                << ", local compute time = " << all_compute_time[rank] << "s" << std::endl;
+      }
   }
 }
 template <int dim, int fe_degree>

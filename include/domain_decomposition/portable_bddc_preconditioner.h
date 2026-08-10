@@ -98,6 +98,9 @@ namespace Portable
     unsigned int
     get_n_local_coarse_dofs() const;
 
+    unsigned int
+    get_n_global_coarse_dofs() const;
+
 
     struct SubdomainProjectorWrapper
     {
@@ -321,6 +324,13 @@ namespace Portable
   BDDCPreconditioner<dim, Number>::get_n_local_coarse_dofs() const
   {
     return n_local_coarse_dofs;
+  }
+
+  template <int dim, typename Number>
+  unsigned int
+  BDDCPreconditioner<dim, Number>::get_n_global_coarse_dofs() const
+  {
+    return n_global_coarse_dofs;
   }
 
   template <int dim, typename Number>
