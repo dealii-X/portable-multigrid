@@ -1068,6 +1068,26 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   pcout << "Subdomain Dirichlet MG iteration / BDDC MG iterations: " << max_mg_iterations_dirichlet
         << "   /    " << max_mg_iterations_bddc << std::endl;
 
+  // Per-rank breakdown: the MPI-max above only tells us the worst subdomain,
+  // not whether iteration counts grew uniformly or a few outlier subdomains
+  // are dragging the max up. Append to per_rank_load_table (already holds
+  // one row per rank from setup_bddc_preconditioner(), populated earlier
+  // this cycle) rather than opening a new table, since it already lines up
+  // rank <-> coarse-dof-count <-> setup-time.
+  const auto all_mg_iterations_dirichlet = Utilities::MPI::gather(
+    mpi_communicator, interface_operator->get_maximum_subdomain_mg_iterations(), 0);
+  const auto all_mg_iterations_bddc = Utilities::MPI::gather(
+    mpi_communicator, bddc_preconditioner->get_maximum_subdomain_mg_iterations(), 0);
+
+  if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+    {
+      for (unsigned int rank = 0; rank < all_mg_iterations_dirichlet.size(); ++rank)
+        {
+          per_rank_load_table.add_value("dirichlet_mg_its", all_mg_iterations_dirichlet[rank]);
+          per_rank_load_table.add_value("bddc_mg_its", all_mg_iterations_bddc[rank]);
+        }
+    }
+
   const auto iterations = std::max(solver_control.last_step(), 1u);
 
   // timings[0] = gather_and_weight_global_interface + weight_local_interface_and_scatter
