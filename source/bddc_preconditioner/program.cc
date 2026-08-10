@@ -46,6 +46,9 @@
 #include "domain_decomposition/subdomain_triangulation.h"
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_transfer.h"
+#include "multigrid/portable_projected_chebyshev_smoother.h"
+#include "multigrid/portable_projected_diagonal_preconditioner.h"
+#include "multigrid/portable_projected_jacobi_smoother.h"
 #include "multigrid/portable_subdomain_v_cycle_multigrid.h"
 #include "operators/portable_subdomain_bddc_operator_wrapper.h"
 #include "operators/portable_subdomain_laplace_operator.h"
@@ -138,6 +141,12 @@ private:
 
   using SmootherType = PreconditionChebyshev<LevelMatrixType, VectorTypeMG>;
 
+  using BddcPreconditionerType =
+    Portable::ProjectedDiagonalPreconditioner<LevelMatrixType, VectorTypeMG>;
+
+  using BddcSmootherType =
+    Portable::ProjectedChebyshevSmoother<LevelMatrixType, BddcPreconditionerType, VectorTypeMG>;
+
   using TransferType = Portable::MGTransferBase<dim, double>;
 
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_matrices;
@@ -156,7 +165,7 @@ private:
 
   MGLevelObject<SmootherType> subdomain_mg_smoothers_neumann;
 
-  MGLevelObject<SmootherType> subdomain_mg_smoothers_bddc;
+  MGLevelObject<BddcSmootherType> subdomain_mg_smoothers_bddc;
 
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_dirichlet;
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_neumann;
@@ -191,6 +200,8 @@ private:
   ConvergenceTable timing_table_per_iteration;
 
   ConvergenceTable ghost_timing_table;
+
+  ConvergenceTable bddc_setup_timing_table;
 
   unsigned int n_cells_total;
 
@@ -659,9 +670,11 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
        level <= level_subdomain_matrices.max_level();
        ++level)
     {
-      typename SmootherType::AdditionalData smoother_data_dirichlet;
-      typename SmootherType::AdditionalData smoother_data_neumann;
-      typename SmootherType::AdditionalData smoother_data_bddc;
+      typename SmootherType::AdditionalData     smoother_data_dirichlet;
+      typename SmootherType::AdditionalData     smoother_data_neumann;
+      typename BddcSmootherType::AdditionalData smoother_data_bddc;
+
+      unsigned int bddc_eig_cg_n_iterations;
 
       if (level > 0)
         {
@@ -673,9 +686,13 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
           smoother_data_neumann.degree              = n_pre_smooth;
           smoother_data_neumann.eig_cg_n_iterations = 10;
 
-          smoother_data_bddc.smoothing_range     = 15.;
-          smoother_data_bddc.degree              = n_pre_smooth;
-          smoother_data_bddc.eig_cg_n_iterations = 10;
+          // Deliberately not the true condition number: smoothing_range
+          // 5-20 is the usual MG heuristic to focus the smoother on
+          // high-frequency modes only and leave the low frequencies to the
+          // coarse-grid correction.
+          smoother_data_bddc.smoothing_range = 15.;
+          smoother_data_bddc.degree          = n_pre_smooth;
+          bddc_eig_cg_n_iterations           = 10;
         }
       else
         {
@@ -687,9 +704,14 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
           smoother_data_neumann.degree              = numbers::invalid_unsigned_int;
           smoother_data_neumann.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
 
-          smoother_data_bddc.smoothing_range     = 1e-3;
-          smoother_data_bddc.degree              = numbers::invalid_unsigned_int;
-          smoother_data_bddc.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
+          // ProjectedChebyshevSmoother always uses a fixed degree (no
+          // degree = invalid_unsigned_int auto-selection); a large fixed
+          // degree covers this. smoothing_range is set below from the
+          // genuine min/max eigenvalue bounds instead of a guess, since an
+          // "exact" solve wants the true spectral range, not just the
+          // high-frequency end.
+          smoother_data_bddc.degree = 100;
+          bddc_eig_cg_n_iterations  = level_subdomain_bddc_matrices[0]->m();
         }
 
       level_subdomain_matrices[level]->compute_diagonal();
@@ -702,8 +724,38 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
       smoother_data_neumann.preconditioner =
         level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann();
 
-      smoother_data_bddc.preconditioner =
-        level_subdomain_bddc_matrices[level]->get_matrix_diagonal_inverse();
+      smoother_data_bddc.preconditioner = std::make_shared<BddcPreconditionerType>(
+        *level_subdomain_bddc_matrices[level],
+        level_subdomain_bddc_matrices[level]->get_matrix_diagonal_inverse());
+
+      // ProjectedChebyshevSmoother takes max_eigenvalue (and, at the
+      // coarsest level, smoothing_range) directly rather than estimating
+      // them internally. dealii::PreconditionChebyshev's default Lanczos
+      // estimator runs an actual CG solve seeded with a generic,
+      // non-V-projected vector, which hits an exact-zero denominator and
+      // returns NaN since A-hat = Pi*A*Pi is singular outside V = range(Pi).
+      // estimate_eigenvalue_bounds() runs the same kind of
+      // SolverCG::connect_eigenvalues_slot()-based Lanczos estimate
+      // dealii::PreconditionChebyshev uses (with the same safety_factor),
+      // but seeded with a probe vector genuinely projected into V first, so
+      // the CG solve stays well-posed.
+      {
+        VectorTypeMG eigenvector;
+        level_subdomain_bddc_matrices[level]->initialize_dof_vector(eigenvector);
+        dealii::internal::set_initial_guess(eigenvector);
+
+        const auto bounds =
+          Portable::estimate_eigenvalue_bounds(*level_subdomain_bddc_matrices[level],
+                                               *smoother_data_bddc.preconditioner,
+                                               eigenvector,
+                                               bddc_eig_cg_n_iterations);
+
+        smoother_data_bddc.max_eigenvalue = bounds.max_eigenvalue;
+
+        if (level == 0)
+          smoother_data_bddc.smoothing_range =
+            (bounds.min_eigenvalue > 0.) ? (bounds.max_eigenvalue / bounds.min_eigenvalue) : 1.;
+      }
 
       subdomain_mg_smoothers_dirichlet[level].initialize(*level_subdomain_matrices[level],
                                                          smoother_data_dirichlet);
@@ -753,7 +805,8 @@ LaplaceProblem<dim, fe_degree>::setup_mg_preconditioners()
     impose_zero_mean);
 
   subdomain_mg_preconditioner_bddc = std::make_unique<
-    Portable::SubdomainVCycleMultigrid<dim, double, LevelMatrixType, TransferType, SmootherType>>(
+    Portable::
+      SubdomainVCycleMultigrid<dim, double, LevelMatrixType, TransferType, BddcSmootherType>>(
     level_subdomain_bddc_matrices, subdomain_mg_transfers_bddc, subdomain_mg_smoothers_bddc, false);
 
   Kokkos::fence();
@@ -813,6 +866,25 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
   setup_time += time.wall_time();
   time_details << "                      Coarse matrix for BDDC computed            (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
+
+  {
+    const std::array<double, 6> &setup_timings = this->bddc_preconditioner->get_setup_timings();
+
+    const double total = setup_timings[0] + setup_timings[1] + setup_timings[2] + setup_timings[3] +
+                         setup_timings[4] + setup_timings[5];
+
+    bddc_setup_timing_table.add_value("cells", n_cells_total);
+    bddc_setup_timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+    bddc_setup_timing_table.add_value("n_local_coarse_dofs",
+                                      this->bddc_preconditioner->get_n_local_coarse_dofs());
+    bddc_setup_timing_table.add_value("lift", setup_timings[0]);
+    bddc_setup_timing_table.add_value("vmult_plain", setup_timings[1]);
+    bddc_setup_timing_table.add_value("fine_correction", setup_timings[2]);
+    bddc_setup_timing_table.add_value("inner_products", setup_timings[3]);
+    bddc_setup_timing_table.add_value("mpi_sum", setup_timings[4]);
+    bddc_setup_timing_table.add_value("lu_factorization", setup_timings[5]);
+    bddc_setup_timing_table.add_value("total", total);
+  }
 }
 template <int dim, int fe_degree>
 void
@@ -885,46 +957,18 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   Timer time;
   Kokkos::fence();
   SolverControl solver_control(1000, 1e-6 * rhs_schur_device.l2_norm());
-  // ReductionControl solver_control(1000, 1e-14, 1e-7);
-  // ReductionControl solver_control(rhs_schur_device.size(), 1e-16, 1e-9);
-
-  // Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
-    // solver_control);
 
   SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
 
+  bddc_preconditioner->reset_timings();
+
   solution_interface_device = 0.;
-  cg.solve(*interface_operator,
-                     solution_interface_device,
-                     rhs_schur_device,
-                     *bddc_preconditioner);
-
-
-  // pcout << "           Interface solver converged in "
-  //       << solver_control.last_step() << " iterations.    (CPU/wall) "
-  //       << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
-
-  // solution_interface_device = 0.;
-
-  // cg.solve_enhanced(*interface_operator,
-  //                   solution_interface_device,
-  //                   rhs_schur_device,
-  //                   *bddc_preconditioner);
-
-
-  // SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
-  // cg(
-  //   solver_control);
-
-  // cg.solve(*interface_operator,
-  //          solution_interface_device,
-  //          rhs_schur_device,
-  //          PreconditionIdentity());
+  cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
 
   solution_interface_device.update_ghost_values();
 
-  // Kokkos::fence();
-  // const double time_solve = time.wall_time();
+  Kokkos::fence();
+  const double time_solve = time.wall_time();
 
   pcout << "                      Interface solver converged in " << solver_control.last_step()
         << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
@@ -941,26 +985,33 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
   pcout << "Subdomain Dirichlet MG iteration / BDDC MG iterations: " << max_mg_iterations_dirichlet
         << "   /    " << max_mg_iterations_bddc << std::endl;
-  // const auto iterations = std::max(solver_control.last_step(), 1u);
 
-  // const std::array<double, 4> timings = bddc_preconditioner->get_timings();
+  const auto iterations = std::max(solver_control.last_step(), 1u);
 
-  // timing_table.add_value("cells", n_cells_total);
-  // timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
-  // timing_table.add_value("Dirichlet", timings[0]);
-  // timing_table.add_value("Neumann", timings[1]);
-  // timing_table.add_value("Coarse", timings[2]);
-  // timing_table.add_value("Project", timings[3]);
-  // timing_table.add_value("CG_time", time_solve);
-  // timing_table.add_value("Iters", solver_control.last_step());
+  // timings[0] = gather_and_weight_global_interface + weight_local_interface_and_scatter
+  // timings[1] = vmult_coarse_correction
+  // timings[2] = vmult_fine_correction
+  // timings[3] = total vmult() wall time
+  const std::array<double, 4> &timings = bddc_preconditioner->get_timings();
 
-  // timing_table_per_iteration.add_value("Dir_per_iter", timings[0] / iterations);
-  // timing_table_per_iteration.add_value("Neu_per_iter", timings[1] / iterations);
-  // timing_table_per_iteration.add_value("Crs_per_iter", timings[2] / iterations);
-  // timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
-  // timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
-  // timing_table_per_iteration.add_value("dir_mg_its", max_mg_iterations_dir);
-  // timing_table_per_iteration.add_value("neu_mg_its", max_mg_iterations_neu);
+  timing_table.add_value("cells", n_cells_total);
+  timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+  timing_table.add_value("gather_scatter", timings[0]);
+  timing_table.add_value("coarse_correction", timings[1]);
+  timing_table.add_value("fine_correction", timings[2]);
+  timing_table.add_value("total_vmult", timings[3]);
+  timing_table.add_value("CG_time", time_solve);
+  timing_table.add_value("Iters", solver_control.last_step());
+
+  timing_table_per_iteration.add_value("cells", n_cells_total);
+  timing_table_per_iteration.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+  timing_table_per_iteration.add_value("gather_scatter_per_iter", timings[0] / iterations);
+  timing_table_per_iteration.add_value("coarse_per_iter", timings[1] / iterations);
+  timing_table_per_iteration.add_value("fine_per_iter", timings[2] / iterations);
+  timing_table_per_iteration.add_value("vmult_per_iter", timings[3] / iterations);
+  timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
+  timing_table_per_iteration.add_value("dirichlet_mg_its", max_mg_iterations_dirichlet);
+  timing_table_per_iteration.add_value("bddc_mg_its", max_mg_iterations_bddc);
 }
 
 
@@ -1382,63 +1433,52 @@ LaplaceProblem<dim, fe_degree>::run()
 
       output_results(cycle);
 
+      pcout << std::endl << std::endl;
 
-      // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-      //   {
-      //     std::cout << std::endl << std::endl;
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        {
+          for (const char *column : {"lift",
+                                     "vmult_plain",
+                                     "fine_correction",
+                                     "inner_products",
+                                     "mpi_sum",
+                                     "lu_factorization",
+                                     "total"})
+            {
+              bddc_setup_timing_table.set_scientific(column, true);
+              bddc_setup_timing_table.set_precision(column, 3);
+            }
 
-      //     timing_table.set_scientific("Dirichlet", true);
-      //     timing_table.set_precision("Dirichlet", 3);
-      //     timing_table.set_scientific("Neumann", true);
-      //     timing_table.set_precision("Neumann", 3);
-      //     timing_table.set_scientific("Coarse", true);
-      //     timing_table.set_precision("Coarse", 3);
-      //     timing_table.set_scientific("Project", true);
-      //     timing_table.set_precision("Project", 3);
-      //     timing_table.set_scientific("CG_time", true);
-      //     timing_table.set_precision("CG_time", 3);
+          std::cout << std::endl << "BDDC coarse-matrix setup timings (seconds):" << std::endl;
+          bddc_setup_timing_table.write_text(std::cout);
+          std::cout << std::endl;
 
-      //     timing_table_per_iteration.set_scientific("Dir_per_iter", true);
-      //     timing_table_per_iteration.set_precision("Dir_per_iter", 3);
-      //     timing_table_per_iteration.set_scientific("Neu_per_iter", true);
-      //     timing_table_per_iteration.set_precision("Neu_per_iter", 3);
-      //     timing_table_per_iteration.set_scientific("Crs_per_iter", true);
-      //     timing_table_per_iteration.set_precision("Crs_per_iter", 3);
-      //     timing_table_per_iteration.set_scientific("Prj_per_iter", true);
-      //     timing_table_per_iteration.set_precision("Prj_per_iter", 3);
-      //     timing_table_per_iteration.set_scientific("CG_per_iter", true);
-      //     timing_table_per_iteration.set_precision("CG_per_iter", 3);
+          for (const char *column :
+               {"gather_scatter", "coarse_correction", "fine_correction", "total_vmult", "CG_time"})
+            {
+              timing_table.set_scientific(column, true);
+              timing_table.set_precision(column, 3);
+            }
 
-      //     timing_table.write_text(std::cout);
+          std::cout << std::endl << "BDDC interface-solve timings (seconds):" << std::endl;
+          timing_table.write_text(std::cout);
+          std::cout << std::endl;
 
-      //     std::cout << std::endl << std::endl;
+          for (const char *column : {"gather_scatter_per_iter",
+                                     "coarse_per_iter",
+                                     "fine_per_iter",
+                                     "vmult_per_iter",
+                                     "CG_per_iter"})
+            {
+              timing_table_per_iteration.set_scientific(column, true);
+              timing_table_per_iteration.set_precision(column, 3);
+            }
 
-      //     timing_table_per_iteration.write_text(std::cout);
-
-      //     std::cout << std::endl << std::endl;
-
-
-      //     ghost_timing_table.set_scientific("subdomain_total", true);
-      //     ghost_timing_table.set_precision("subdomain_total", 4);
-      //     ghost_timing_table.set_scientific("subdomain_compute", true);
-      //     ghost_timing_table.set_precision("subdomain_compute", 4);
-      //     ghost_timing_table.set_scientific("subdomain_communicate", true);
-      //     ghost_timing_table.set_precision("subdomain_communicate", 4);
-
-
-      //     ghost_timing_table.set_scientific("coarse_total", true);
-      //     ghost_timing_table.set_precision("coarse_total", 4);
-      //     ghost_timing_table.set_scientific("coarse_compute", true);
-      //     ghost_timing_table.set_precision("coarse_compute", 4);
-      //     ghost_timing_table.set_scientific("coarse_communicate", true);
-      //     ghost_timing_table.set_precision("coarse_communicate", 4);
-
-      //     ghost_timing_table.write_text(std::cout);
-
-      //     std::cout << std::endl << std::endl;
-      //   }
-
-      // pcout << std::endl << std::endl;
+          std::cout << std::endl
+                    << "BDDC interface-solve timings per CG iteration (seconds):" << std::endl;
+          timing_table_per_iteration.write_text(std::cout);
+          std::cout << std::endl;
+        }
     }
 }
 
@@ -1453,27 +1493,27 @@ main(int argc, char *argv[])
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 1;
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 1;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 2;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 2;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 3;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 3;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
       {
         constexpr int dim       = 2;
         constexpr int fe_degree = 4;
@@ -1483,27 +1523,27 @@ main(int argc, char *argv[])
       }
 
 
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 1;
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 1;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 2;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 2;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 3;
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 3;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
       {
         constexpr int dim       = 3;
         constexpr int fe_degree = 4;

@@ -1,6 +1,10 @@
 #ifndef portable_bddc_preconditioner_h
 #define portable_bddc_preconditioner_h
 
+#include <deal.II/base/timer.h>
+
+#include <deal.II/lac/solver_cg.h>
+
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
 #include "domain_decomposition/portable_solver_projected_cg.h"
@@ -84,6 +88,15 @@ namespace Portable
 
     const std::array<double, 4> &
     get_timings() const;
+
+    void
+    reset_setup_timings() const;
+
+    const std::array<double, 6> &
+    get_setup_timings() const;
+
+    unsigned int
+    get_n_local_coarse_dofs() const;
 
 
     struct SubdomainProjectorWrapper
@@ -173,12 +186,33 @@ namespace Portable
     mutable std::vector<Number> temp_global_coarse_std;
 
     /**
-     * timings[0] = Dirichler solve
-     * timings[1] = Neumann solve
-     * timings[2] = coarse solve
-     * timings[3] = projection step
+     * Per-vmult() solve-phase timings, reset externally (reset_timings())
+     * and accumulated across repeated vmult() calls -- e.g. over the whole
+     * outer interface CG solve -- so get_timings() reports totals for
+     * whatever span the caller bracketed with reset_timings().
+     *
+     * timings[0] = gather_and_weight_global_interface + weight_local_interface_and_scatter
+     * timings[1] = vmult_coarse_correction (global coarse problem solve)
+     * timings[2] = vmult_fine_correction (local constrained CG solve)
+     * timings[3] = total vmult() wall time
      */
     mutable std::array<double, 4> timings;
+
+    /**
+     * One-shot setup-phase timings for compute_coarse_matrix() /
+     * compute_local_coarse_matrix(), reset internally at the start of each
+     * compute_coarse_matrix() call (it runs once per preconditioner setup,
+     * not per iteration, so there is no meaningful "per outer solve" span
+     * to accumulate over the way there is for timings[] above).
+     *
+     * setup_timings[0] = lift_coarse_to_subdomain (building lifted constraint vectors)
+     * setup_timings[1] = vmult_plain calls (rhs assembly + S*phi_j)
+     * setup_timings[2] = vmult_fine_correction (one CG solve per local primal constraint)
+     * setup_timings[3] = local coarse matrix inner products
+     * setup_timings[4] = MPI sum (global reduction of local coarse matrix contributions)
+     * setup_timings[5] = LU factorization of the global coarse matrix
+     */
+    mutable std::array<double, 6> setup_timings;
 
     mutable unsigned int max_subdomain_mg_iterations;
   };
@@ -254,6 +288,9 @@ namespace Portable
     temp_subdomain_fine.reinit(temp_subdomain_dst);
 
     max_subdomain_mg_iterations = 0;
+
+    reset_timings();
+    reset_setup_timings();
   }
 
   template <int dim, typename Number>
@@ -262,6 +299,28 @@ namespace Portable
   {
     for (unsigned int i = 0; i < timings.size(); ++i)
       timings[i] = 0.;
+  }
+
+  template <int dim, typename Number>
+  void
+  BDDCPreconditioner<dim, Number>::reset_setup_timings() const
+  {
+    for (unsigned int i = 0; i < setup_timings.size(); ++i)
+      setup_timings[i] = 0.;
+  }
+
+  template <int dim, typename Number>
+  const std::array<double, 6> &
+  BDDCPreconditioner<dim, Number>::get_setup_timings() const
+  {
+    return setup_timings;
+  }
+
+  template <int dim, typename Number>
+  unsigned int
+  BDDCPreconditioner<dim, Number>::get_n_local_coarse_dofs() const
+  {
+    return n_local_coarse_dofs;
   }
 
   template <int dim, typename Number>
@@ -281,23 +340,42 @@ namespace Portable
     Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("Interface vector is not initialized correctly."));
 
+    Kokkos::fence();
+    Timer total_time;
+
     dst = 0;
     src.update_ghost_values();
 
     const SubdomainProjectorWrapper projector(*this);
 
+    Kokkos::fence();
+    Timer time;
     gather_and_weight_global_interface(temp_subdomain_src, src);
+    Kokkos::fence();
+    timings[0] += time.wall_time();
 
+    time.restart();
     vmult_coarse_correction(temp_subdomain_coarse, temp_subdomain_src);
+    Kokkos::fence();
+    timings[1] += time.wall_time();
 
+    time.restart();
     vmult_fine_correction(temp_subdomain_fine, temp_subdomain_src);
+    Kokkos::fence();
+    timings[2] += time.wall_time();
 
     temp_subdomain_coarse += temp_subdomain_fine;
 
+    time.restart();
     weight_local_interface_and_scatter(dst, temp_subdomain_coarse);
+    Kokkos::fence();
+    timings[0] += time.wall_time();
 
     dst.compress(VectorOperation::add);
     src.zero_out_ghost_values();
+
+    Kokkos::fence();
+    timings[3] += total_time.wall_time();
   }
 
   template <int dim, typename Number>
@@ -311,26 +389,19 @@ namespace Portable
 
     fine_solution = 0;
 
-    SubdomainProjectorWrapper projector(*this);
-
     SolverControl solver_control(fine_residual.size(), 1e-12 * fine_residual.l2_norm());
     // ReductionControl solver_control(100, 1e-16, 1e-12);
 
-    // SolverProjectedCG<SubdomainVectorType> solver(solver_control);
+    // subdomain_bddc_operator.vmult() == Pi*A*Pi and subdomain_mg_preconditioner.vmult()
+    // are both symmetric and map into V = range(Pi) by construction (Pi is baked into
+    // vmult() itself, and the BDDC-level smoother's elementary correction is sandwiched
+    // as Pi*(omega*D^{-1})*Pi), so plain CG works directly -- only the RHS needs to be
+    // projected into V up front.
+    SubdomainVectorType rhs = fine_residual;
+    this->subdomain_bddc_operator.project(rhs);
 
-    // solver.solve_projected(this->subdomain_bddc_operator,
-    //                        fine_solution,
-    //                        fine_residual,
-    //                        subdomain_mg_preconditioner,
-    //                        subdomain_bddc_operator);
-
-    SolverProjectedCG<SubdomainVectorType> solver(solver_control);
-
-    solver.solve_projected(this->subdomain_bddc_operator,
-                           fine_solution,
-                           fine_residual,
-                           PreconditionIdentity(),
-                           projector);
+    SolverCG<SubdomainVectorType> solver(solver_control);
+    solver.solve(this->subdomain_bddc_operator, fine_solution, rhs, subdomain_mg_preconditioner);
 
     // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
     //           << "  iterations." << std::endl;
@@ -848,6 +919,9 @@ namespace Portable
 
     Vector<Number> e_k(n_coarse_local);
 
+    Kokkos::fence();
+    Timer time;
+
     for (unsigned int k = 0; k < n_coarse_local; ++k)
       {
         e_k    = 0.;
@@ -860,6 +934,9 @@ namespace Portable
         this->lift_coarse_to_subdomain(lift, e_k);
       }
 
+    Kokkos::fence();
+    setup_timings[0] += time.wall_time();
+
     SubdomainProjectorWrapper projector(*this);
 
     for (unsigned int j = 0; j < n_coarse_local; ++j)
@@ -868,40 +945,43 @@ namespace Portable
 
         phi_j = lifted_constraints[j];
 
+        time.restart();
         this->subdomain_bddc_operator.vmult_plain(rhs, phi_j);
+        Kokkos::fence();
+        setup_timings[1] += time.wall_time();
+
         rhs *= Number(-1);
 
         projector.project(rhs);
 
-        // SolverControl                          solver_control(1000, 1e-12 * rhs.l2_norm());
-        // SolverProjectedCG<SubdomainVectorType> solver(solver_control);
+        temp_subdomain_dst = 0;
 
-        // temp_subdomain_dst = 0;
-        // solver.solve_projected(this->subdomain_bddc_operator,
-        //                        temp_subdomain_dst,
-        //                        rhs,
-        //                        PreconditionIdentity(),
-        //                        projector);
-
+        time.restart();
         this->vmult_fine_correction(temp_subdomain_dst, rhs);
+        Kokkos::fence();
+        setup_timings[2] += time.wall_time();
 
         phi_j.add(Number(1), temp_subdomain_dst);
 
+        time.restart();
         this->subdomain_bddc_operator.vmult_plain(S_per_phi_j, phi_j);
+        Kokkos::fence();
+        setup_timings[1] += time.wall_time();
 
-        // this->subdomain_operator->vmult(S_per_phi_j, phi_j);
-
+        time.restart();
         for (unsigned int k = 0; k < n_coarse_local; ++k)
           local_coarse_matrix(k, j) = lifted_constraints[k] * S_per_phi_j;
+        Kokkos::fence();
+        setup_timings[3] += time.wall_time();
       }
-
-    Kokkos::fence();
   }
 
   template <int dim, typename Number>
   void
   BDDCPreconditioner<dim, Number>::compute_coarse_matrix()
   {
+    reset_setup_timings();
+
     const unsigned int n_coarse_global = this->n_global_coarse_dofs;
     this->coarse_matrix.reinit(n_coarse_global, n_coarse_global);
 
@@ -932,9 +1012,11 @@ namespace Portable
 
     std::vector<Number> globally_summed_matrix(n_coarse_global * n_coarse_global, Number(0));
 
+    Timer mpi_sum_time;
     Utilities::MPI::sum(local_global_contribution,
                         this->subdomain_dof_handler->get_mpi_communicator(),
                         globally_summed_matrix);
+    setup_timings[4] += mpi_sum_time.wall_time();
 
     for (unsigned int i = 0; i < n_coarse_global; ++i)
       for (unsigned int j = 0; j < n_coarse_global; ++j)
@@ -976,7 +1058,9 @@ namespace Portable
     }
 #endif
 
+    Timer lu_time;
     this->coarse_matrix.compute_lu_factorization();
+    setup_timings[5] += lu_time.wall_time();
   }
 
 
