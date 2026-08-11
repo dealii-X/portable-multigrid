@@ -432,6 +432,8 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
   for (unsigned int level = 0; level <= level_subdomain_dof_handlers.max_level(); ++level)
     {
+      Timer level_timer;
+
       DoFHandler<dim> &dof_h = level_distributed_dof_handlers[level];
 
       dof_h.reinit(*level_triangulations[std::min(level, n_h_levels - 1)]);
@@ -441,11 +443,17 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
       else
         dof_h.distribute_dofs(*p_level_fes[level + 1 - n_h_levels]);
 
+      const double t_global_distribute_dofs = level_timer.wall_time();
+      level_timer.restart();
+
       SubdomainDoFHandler<dim> &subdomain_dof_h = level_subdomain_dof_handlers[level];
 
       subdomain_dof_h.reinit(level_subdomain_triangulations[std::min(level, n_h_levels - 1)],
                              dof_h);
       subdomain_dof_h.distribute_subdomain_dofs();
+
+      const double t_distribute_subdomain_dofs = level_timer.wall_time();
+      level_timer.restart();
 
       {
         AffineConstraints<double> &constraints = level_subdomain_constraints[level];
@@ -472,6 +480,14 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
                                                  constraints_physical);
         constraints_physical.close();
       }
+
+      const double t_constraints = level_timer.wall_time();
+
+      if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+        std::cout << "                      [setup_dofs] level=" << level
+                 << " global_distribute_dofs=" << t_global_distribute_dofs
+                 << "s distribute_subdomain_dofs=" << t_distribute_subdomain_dofs
+                 << "s constraints=" << t_constraints << 's' << std::endl;
     }
 
   locally_owned_dofs = level_distributed_dof_handlers.back().locally_owned_dofs();
