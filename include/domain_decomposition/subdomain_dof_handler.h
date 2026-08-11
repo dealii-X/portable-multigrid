@@ -505,16 +505,28 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
   std::vector<std::set<unsigned int>> subdomains_per_dof(n_global_interface_dofs);
 
-  for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
-    {
-      const auto global_idx = all_interface_dofs.nth_index_in_set(i);
+  // Same fix as distribute_subdomain_dofs()'s owner-hashing above: build the
+  // global_idx -> i map once (O(n_global_interface_dofs)), then do a single
+  // O(total shared-dof copies) pass over all_interface_dof_sets, instead of,
+  // for every one of the n_global_interface_dofs dofs, rescanning all
+  // n_subdomains IndexSets with is_element() -- an O(n_global_interface_dofs
+  // * n_subdomains) cost that dominated Subdomain DoFs setup time at scale
+  // (measured at ~65-73% of distribute_subdomain_dofs() at every level, up
+  // to 5.1s alone at 2.1M dofs/subdomain on 64 ranks).
+  {
+    std::unordered_map<types::global_dof_index, unsigned int> global_idx_to_i;
+    global_idx_to_i.reserve(n_global_interface_dofs);
+    for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+      global_idx_to_i[all_interface_dofs.nth_index_in_set(i)] = i;
 
-      for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+    for (unsigned int p = 0; p < this->n_subdomains(); ++p)
+      for (const auto global_idx : all_interface_dof_sets[p])
         {
-          if (all_interface_dof_sets[p].is_element(global_idx))
-            subdomains_per_dof[i].insert(p);
+          const auto it = global_idx_to_i.find(global_idx);
+          Assert(it != global_idx_to_i.end(), ExcInternalError());
+          subdomains_per_dof[it->second].insert(p);
         }
-    }
+  }
 
   // extract proper subsets: sort and keep unique only
   std::vector<std::set<unsigned int>> equivalent_dof_classes = subdomains_per_dof;
