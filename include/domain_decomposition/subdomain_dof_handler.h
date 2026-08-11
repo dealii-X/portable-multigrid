@@ -63,25 +63,6 @@ struct LocalPrimalConstraint
   }
 };
 
-struct GlobalPrimalConstraint
-{
-  // Primal constraint type
-  PrimalConstraintType type;
-
-  // The subdomains that share this specific entity.
-  std::set<unsigned int> sharing_subdomains;
-
-  // The global DoF indices (from the distributed_dof_handler) for these DoFs.
-  std::vector<types::global_dof_index> global_dof_indices;
-
-  /**
-   * The unique global index assigned to this constraint in the global coarse space S_C.
-   */
-  unsigned int global_coarse_dof_index;
-};
-
-
-
 template <int dim>
 struct SubdomainDoFInfo
 {
@@ -117,11 +98,6 @@ struct SubdomainDoFInfo
   IndexSet subdomain_interface_dofs;
 
   /**
-   * Subdomain interface vertex (corner) DoFs in the local subdomain numbering.
-   */
-  IndexSet subdomain_corner_dofs;
-
-  /**
    * Subdomain interface DoFs in the global domain numbering.
    */
   std::vector<types::global_dof_index> interface_local_to_global_map;
@@ -135,12 +111,6 @@ struct SubdomainDoFInfo
    * Id's of the cells that contain faces on the interface.
    */
   std::vector<unsigned int> interface_cell_ids;
-
-  /**
-   * Global interface primal constraints.
-   */
-
-  std::vector<GlobalPrimalConstraint> global_primal_constraints;
 
   /**
    * Local offsets within my_coarse_dof_indices:
@@ -165,12 +135,6 @@ struct SubdomainDoFInfo
    */
   std::array<unsigned int, 4> local_coarse_offsets;
 
-  /**
-   * The subset of global coarse DoF indices that this specific subdomain participates in.
-   * Sorted internally by Vertex indices, then Edge indices, then Face indices.
-   */
-  std::vector<unsigned int> subdomain_coarse_dof_indices;
-
 
   void
   clear()
@@ -184,9 +148,6 @@ struct SubdomainDoFInfo
     interface_cell_ids.clear();
     subdomain_interior_dofs.clear();
     local_primal_constraints.clear();
-    global_primal_constraints.clear();
-    subdomain_coarse_dof_indices.clear();
-    subdomain_corner_dofs.clear();
     global_coarse_offsets.fill(numbers::invalid_unsigned_int);
     local_coarse_offsets.fill(numbers::invalid_unsigned_int);
   }
@@ -528,28 +489,68 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
         }
   }
 
-  // extract proper subsets: sort and keep unique only
-  std::vector<std::set<unsigned int>> equivalent_dof_classes = subdomains_per_dof;
-  std::sort(equivalent_dof_classes.begin(), equivalent_dof_classes.end());
-  auto last = std::unique(equivalent_dof_classes.begin(), equivalent_dof_classes.end());
-  equivalent_dof_classes.erase(last, equivalent_dof_classes.end());
-
-  std::vector<std::vector<unsigned int>> dofs_per_equivalence_class(equivalent_dof_classes.size());
-
-  for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+  // Assign each distinct "which subdomains share this dof" set an
+  // equivalence-class index via first-seen order while scanning dofs in
+  // ascending global-dof-index order (all_interface_dofs.nth_index_in_set()
+  // order). all_interface_dofs and subdomains_per_dof are both identical on
+  // every rank (built from the same all-gathered data), so this iteration
+  // order -- and hence the resulting class_idx assignment -- is identical
+  // on every rank too, without needing any communication to agree on it.
+  // That's the same cross-rank-consistency property the lexicographic
+  // sort+unique+lower_bound approach this replaces relied on, but without
+  // that approach's full copy of subdomains_per_dof, its O(n_global_interface_dofs
+  // log n_global_interface_dofs) sort (each comparison itself O(sharing-set
+  // size), so up to O(n_subdomains) per comparison), or its
+  // O(n_global_interface_dofs log n_classes) binary search per dof.
+  struct SharingSetHash
+  {
+    std::size_t
+    operator()(const std::set<unsigned int> &s) const
     {
-      auto it = std::lower_bound(equivalent_dof_classes.begin(),
-                                 equivalent_dof_classes.end(),
-                                 subdomains_per_dof[i]);
-
-      unsigned int class_idx = std::distance(equivalent_dof_classes.begin(), it);
-
-      dofs_per_equivalence_class[class_idx].push_back(all_interface_dofs.nth_index_in_set(i));
+      std::size_t seed = s.size();
+      for (const unsigned int x : s)
+        seed ^= std::hash<unsigned int>{}(x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+      return seed;
     }
+  };
 
-  std::vector<GlobalPrimalConstraint> global_corner_blocks;
-  std::vector<GlobalPrimalConstraint> global_edge_blocks;
-  std::vector<GlobalPrimalConstraint> global_face_blocks;
+  std::vector<std::set<unsigned int>>    equivalent_dof_classes;
+  std::vector<std::vector<unsigned int>> dofs_per_equivalence_class;
+
+  {
+    std::unordered_map<std::set<unsigned int>, unsigned int, SharingSetHash> class_of_set;
+    class_of_set.reserve(n_global_interface_dofs);
+
+    for (unsigned int i = 0; i < n_global_interface_dofs; ++i)
+      {
+        const auto &sharing_set = subdomains_per_dof[i];
+
+        const auto [it, inserted] =
+          class_of_set.try_emplace(sharing_set, equivalent_dof_classes.size());
+
+        if (inserted)
+          {
+            equivalent_dof_classes.push_back(sharing_set);
+            dofs_per_equivalence_class.emplace_back();
+          }
+
+        dofs_per_equivalence_class[it->second].push_back(all_interface_dofs.nth_index_in_set(i));
+      }
+  }
+
+  // Every rank classifies *all* n_global_interface_dofs equivalence classes
+  // identically (that's how the numbering stays consistent without extra
+  // communication), but only the count and class_idx of each type are
+  // actually needed downstream (global_coarse_offsets, and renumbering
+  // local_*_blocks' global_coarse_dof_index via class_idx_to_global_sequential
+  // below) -- nothing ever reads back the per-class dof lists or sharing-
+  // subdomain sets once computed. Storing just class_idx here (instead of a
+  // full struct copying dofs_in_class/class_set per class) avoids that
+  // redundant-per-rank allocation for classes this subdomain doesn't even
+  // participate in.
+  std::vector<unsigned int> global_corner_class_idxs;
+  std::vector<unsigned int> global_edge_class_idxs;
+  std::vector<unsigned int> global_face_class_idxs;
 
   std::vector<LocalPrimalConstraint> local_corner_blocks;
   std::vector<LocalPrimalConstraint> local_edge_blocks;
@@ -625,27 +626,17 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
         if (is_valid_constraint)
           {
-            GlobalPrimalConstraint global_primal_constraint;
-            global_primal_constraint.type               = primal_constraint_type;
-            global_primal_constraint.sharing_subdomains = class_set;
-
-            // assign temporarily, will be reassigned right after this loop
-            global_primal_constraint.global_coarse_dof_index = class_idx;
-
-            for (const auto global_idx : dofs_in_class)
-              global_primal_constraint.global_dof_indices.push_back(global_idx);
-
-            if (global_primal_constraint.type == PrimalConstraintType::Vertex)
+            if (primal_constraint_type == PrimalConstraintType::Vertex)
               {
-                global_corner_blocks.push_back(global_primal_constraint);
+                global_corner_class_idxs.push_back(class_idx);
               }
-            else if (global_primal_constraint.type == PrimalConstraintType::Edge)
+            else if (primal_constraint_type == PrimalConstraintType::Edge)
               {
-                global_edge_blocks.push_back(global_primal_constraint);
+                global_edge_class_idxs.push_back(class_idx);
               }
-            else if (global_primal_constraint.type == PrimalConstraintType::Face)
+            else if (primal_constraint_type == PrimalConstraintType::Face)
               {
-                global_face_blocks.push_back(global_primal_constraint);
+                global_face_class_idxs.push_back(class_idx);
               }
 
             // if this subdomain partecipates in this class
@@ -720,80 +711,37 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
   // compute global coarse dofs offsets
   {
     subdomain_dof_info.global_coarse_offsets[0] = 0;
-    subdomain_dof_info.global_coarse_offsets[1] = global_corner_blocks.size();
+    subdomain_dof_info.global_coarse_offsets[1] = global_corner_class_idxs.size();
     subdomain_dof_info.global_coarse_offsets[2] =
-      global_corner_blocks.size() + global_edge_blocks.size();
-    subdomain_dof_info.global_coarse_offsets[3] =
-      global_corner_blocks.size() + global_edge_blocks.size() + global_face_blocks.size();
+      global_corner_class_idxs.size() + global_edge_class_idxs.size();
+    subdomain_dof_info.global_coarse_offsets[3] = global_corner_class_idxs.size() +
+                                                  global_edge_class_idxs.size() +
+                                                  global_face_class_idxs.size();
   }
 
   // Create a mapping from original geometric class_idx to the new, sequential global coarse index
   std::map<unsigned int, unsigned int> class_idx_to_global_sequential;
 
-
   // enumerate global coarse dofs
   {
     // 1. vertices (corners)
-    for (unsigned int i = 0; i < global_corner_blocks.size(); ++i)
-      {
-        const unsigned int old_idx = global_corner_blocks[i].global_coarse_dof_index;
-
-        const unsigned int new_idx = subdomain_dof_info.global_coarse_offsets[0] + i;
-
-        global_corner_blocks[i].global_coarse_dof_index = new_idx;
-
-        class_idx_to_global_sequential[old_idx] = new_idx;
-      }
+    for (unsigned int i = 0; i < global_corner_class_idxs.size(); ++i)
+      class_idx_to_global_sequential[global_corner_class_idxs[i]] =
+        subdomain_dof_info.global_coarse_offsets[0] + i;
 
     // 2. edges
-    for (unsigned int i = 0; i < global_edge_blocks.size(); ++i)
-      {
-        const unsigned int old_idx = global_edge_blocks[i].global_coarse_dof_index;
-
-        const unsigned int new_idx = subdomain_dof_info.global_coarse_offsets[1] + i;
-
-        global_edge_blocks[i].global_coarse_dof_index = new_idx;
-
-        class_idx_to_global_sequential[old_idx] = new_idx;
-      }
+    for (unsigned int i = 0; i < global_edge_class_idxs.size(); ++i)
+      class_idx_to_global_sequential[global_edge_class_idxs[i]] =
+        subdomain_dof_info.global_coarse_offsets[1] + i;
 
     // 3. faces
-    for (unsigned int i = 0; i < global_face_blocks.size(); ++i)
-      {
-        const unsigned int old_idx = global_face_blocks[i].global_coarse_dof_index;
-
-        const unsigned int new_idx = subdomain_dof_info.global_coarse_offsets[2] + i;
-
-        global_face_blocks[i].global_coarse_dof_index = new_idx;
-
-        class_idx_to_global_sequential[old_idx] = new_idx;
-      }
+    for (unsigned int i = 0; i < global_face_class_idxs.size(); ++i)
+      class_idx_to_global_sequential[global_face_class_idxs[i]] =
+        subdomain_dof_info.global_coarse_offsets[2] + i;
   }
-
-  // store global coarse dofs in the new numbering
-  {
-    subdomain_dof_info.global_primal_constraints.clear();
-
-    subdomain_dof_info.global_primal_constraints.insert(
-      subdomain_dof_info.global_primal_constraints.end(),
-      global_corner_blocks.begin(),
-      global_corner_blocks.end());
-
-    subdomain_dof_info.global_primal_constraints.insert(
-      subdomain_dof_info.global_primal_constraints.end(),
-      global_edge_blocks.begin(),
-      global_edge_blocks.end());
-    subdomain_dof_info.global_primal_constraints.insert(
-      subdomain_dof_info.global_primal_constraints.end(),
-      global_face_blocks.begin(),
-      global_face_blocks.end());
-  }
-
 
   // Map the local subdomain coarse dof to the new global numbering
   {
-    subdomain_dof_info.subdomain_corner_dofs.set_size(subdomain_dof_handler.n_dofs());
-
     for (unsigned int i = 0; i < local_corner_blocks.size(); ++i)
       {
         const unsigned int old_idx                     = local_corner_class_idxs[i];
@@ -801,11 +749,7 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
         AssertDimension(local_corner_blocks[i].local_subdomain_dofs.size(), 1);
         AssertDimension(local_corner_blocks[i].interface_partitioner_dofs_local.size(), 1);
-
-        subdomain_dof_info.subdomain_corner_dofs.add_index(
-          local_corner_blocks[i].local_subdomain_dofs[0]);
       }
-    subdomain_dof_info.subdomain_corner_dofs.compress();
 
     for (unsigned int i = 0; i < local_edge_blocks.size(); ++i)
       {
@@ -844,20 +788,6 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
       subdomain_dof_info.local_primal_constraints.end(),
       local_face_blocks.begin(),
       local_face_blocks.end());
-  }
-
-  // fill local (subdomain) coarse dof indices
-  {
-    subdomain_dof_info.subdomain_coarse_dof_indices.clear();
-
-    for (const auto &block : local_corner_blocks)
-      subdomain_dof_info.subdomain_coarse_dof_indices.push_back(block.global_coarse_dof_index);
-
-    for (const auto &block : local_edge_blocks)
-      subdomain_dof_info.subdomain_coarse_dof_indices.push_back(block.global_coarse_dof_index);
-
-    for (const auto &block : local_face_blocks)
-      subdomain_dof_info.subdomain_coarse_dof_indices.push_back(block.global_coarse_dof_index);
   }
 }
 
