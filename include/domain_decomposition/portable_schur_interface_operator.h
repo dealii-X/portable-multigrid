@@ -90,12 +90,12 @@ namespace Portable
     get_maximum_subdomain_mg_iterations() const;
 
 
-      void
-      project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const
-      {
-        (void)vec;
-        return;
-      }
+    void
+    project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const
+    {
+      (void)vec;
+      return;
+    }
 
     struct NeumannSubdomainOperator
     {
@@ -205,18 +205,16 @@ namespace Portable
     // silently corrupted the ghost contributions compress() below sums --
     // same final solution norm either way (CG still converges), but nearly
     // 2x the iteration count from the resulting worse-scaled preconditioner.
-    {
-      const unsigned int n_locally_relevant =
-        this->subdomain_dof_handler->n_locally_relevant_interface_indices();
-      Number *weights_ptr = interface_weights.get_values();
+    const unsigned int n_locally_relevant =
+      this->subdomain_dof_handler->n_locally_relevant_interface_indices();
+    DeviceVector<Number> weights_view(interface_weights.get_values(), n_locally_relevant);
 
-      Kokkos::parallel_for(
-        "interface_weights_fill",
-        Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
-          0, n_locally_relevant),
-        KOKKOS_LAMBDA(const unsigned int i) { weights_ptr[i] = Number(1.0); });
-      Kokkos::fence();
-    }
+    Kokkos::parallel_for(
+      "interface_weights_fill",
+      Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(0,
+                                                                               n_locally_relevant),
+      KOKKOS_LAMBDA(const unsigned int i) { weights_view(i) = Number(1.0); });
+    Kokkos::fence();
 
     // Sums each interface dof's per-rank 1.0 contributions into its owning
     // rank's entry. Entirely device-side: compress()/update_ghost_values()
@@ -228,12 +226,11 @@ namespace Portable
     this->interface_weights.compress(VectorOperation::add);
 
     const unsigned int n_locally_owned = interface_weights.locally_owned_size();
-    Number            *weights_ptr     = interface_weights.get_values();
 
     Kokkos::parallel_for(
       "interface_weights_reciprocal",
       Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(0, n_locally_owned),
-      KOKKOS_LAMBDA(const unsigned int i) { weights_ptr[i] = Number(1.0) / weights_ptr[i]; });
+      KOKKOS_LAMBDA(const unsigned int i) { weights_view(i) = Number(1.0) / weights_view(i); });
     Kokkos::fence();
 
     this->interface_weights.update_ghost_values();
