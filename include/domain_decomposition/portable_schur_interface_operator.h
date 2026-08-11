@@ -57,6 +57,9 @@ namespace Portable
     enable_printing() const;
 
     void
+    compute_interface_weights();
+
+    void
     dirichlet_solve_subdomain(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
@@ -131,9 +134,6 @@ namespace Portable
     };
 
   private:
-    void
-    compute_interface_weights();
-
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> subdomain_operator;
 
     ObserverPointer<const SubdomainDoFHandler<dim>> subdomain_dof_handler;
@@ -425,7 +425,6 @@ namespace Portable
       "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
         const auto idx          = interface_dofs(i);
         Number     output_value = t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
-        // Kokkos::atomic_add(&dst_view(i), output_value);
         dst_view(i) += output_value;
       });
 
@@ -498,7 +497,6 @@ namespace Portable
           "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
             const auto idx          = interface_dofs(i);
             Number     output_value = t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
-            // Kokkos::atomic_add(&dst_view(i), output_value);
             dst_view(i) += output_value;
           });
       }
@@ -545,7 +543,6 @@ namespace Portable
         const auto idx_subdomain = interface_dofs(i);
         Number     output_value =
           rhs_subdomain_view(idx_subdomain) - t_subdomain_dst_view(idx_subdomain);
-        // Kokkos::atomic_add(&rhs_schur_view(i), output_value);
         rhs_schur_view(i) += output_value;
       });
 

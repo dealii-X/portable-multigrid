@@ -96,7 +96,7 @@ namespace Portable
                  const PreconditionerType &preconditioner,
                  const unsigned int        n_rhs);
 
-  private:
+  
     using DeviceArray = Kokkos::View<number *, MemorySpace::Default::kokkos_space>;
 
     // result(k) = sum_i a[k*stride+i] * b[k*stride+i], one reduction per

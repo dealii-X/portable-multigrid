@@ -4,7 +4,6 @@
 #include <deal.II/base/enable_observer_pointer.h>
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/observer_pointer.h>
-#include <deal.II/base/timer.h>
 #include <deal.II/base/utilities.h>
 
 #include <deal.II/dofs/dof_handler.h>
@@ -268,25 +267,15 @@ template <int dim>
 void
 SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
 {
-  Timer phase_timer;
-  double t_distribute_dofs = 0, t_fill_dof_info = 0, t_all_gather = 0, t_owner_hashing = 0,
-        t_partitioner_build = 0, t_categorize = 0;
-
   this->subdomain_dof_handler.distribute_dofs(this->distributed_dof_handler->get_fe());
-  t_distribute_dofs = phase_timer.wall_time();
-  phase_timer.restart();
 
   this->fill_dof_info();
-  t_fill_dof_info = phase_timer.wall_time();
-  phase_timer.restart();
 
   const IndexSet &local_interface_indices = subdomain_dof_info.subdomain_interface_dofs_global;
   IndexSet       &all_interface_dofs      = subdomain_dof_info.all_interface_dofs_global;
 
   std::vector<IndexSet> all_sets =
     Utilities::MPI::all_gather(this->get_mpi_communicator(), local_interface_indices);
-  t_all_gather = phase_timer.wall_time();
-  phase_timer.restart();
 
   all_interface_dofs.clear();
   all_interface_dofs.set_size(this->distributed_dof_handler->n_dofs());
@@ -355,9 +344,6 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
   IndexSet ghost_interface_indices_global_numbering(local_interface_indices);
   ghost_interface_indices_global_numbering.subtract_set(
     locally_owned_interface_indices_global_numbering);
-
-  t_owner_hashing = phase_timer.wall_time();
-  phase_timer.restart();
 
   const unsigned int n_locally_owned =
     locally_owned_interface_indices_global_numbering.n_elements();
@@ -440,19 +426,7 @@ SubdomainDoFHandler<dim>::distribute_subdomain_dofs()
       subdomain_inteface_to_interface_partitioner_local_map[subdomain_index] = i;
     }
 
-  t_partitioner_build = phase_timer.wall_time();
-  phase_timer.restart();
-
   this->categorize_interface_dofs(all_sets);
-  t_categorize = phase_timer.wall_time();
-
-  if (Utilities::MPI::this_mpi_process(this->get_mpi_communicator()) == 0)
-    std::cout << "                        [distribute_subdomain_dofs] n_dofs="
-             << subdomain_dof_handler.n_dofs()
-             << " distribute_dofs=" << t_distribute_dofs << "s fill_dof_info=" << t_fill_dof_info
-             << "s all_gather=" << t_all_gather << "s owner_hashing=" << t_owner_hashing
-             << "s partitioner_build=" << t_partitioner_build << "s categorize=" << t_categorize
-             << 's' << std::endl;
 }
 
 
@@ -619,78 +593,78 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 #endif
 
         {
-            if (primal_constraint_type == PrimalConstraintType::Vertex)
-              {
-                global_corner_class_idxs.push_back(class_idx);
-              }
-            else if (primal_constraint_type == PrimalConstraintType::Edge)
-              {
-                global_edge_class_idxs.push_back(class_idx);
-              }
-            else if (primal_constraint_type == PrimalConstraintType::Face)
-              {
-                global_face_class_idxs.push_back(class_idx);
-              }
+          if (primal_constraint_type == PrimalConstraintType::Vertex)
+            {
+              global_corner_class_idxs.push_back(class_idx);
+            }
+          else if (primal_constraint_type == PrimalConstraintType::Edge)
+            {
+              global_edge_class_idxs.push_back(class_idx);
+            }
+          else if (primal_constraint_type == PrimalConstraintType::Face)
+            {
+              global_face_class_idxs.push_back(class_idx);
+            }
 
-            // if this subdomain partecipates in this class
-            if (class_set.count(this->subdomain_id) > 0)
-              {
-                LocalPrimalConstraint local_primal_constraint;
-                local_primal_constraint.clear();
-                local_primal_constraint.type               = primal_constraint_type;
-                local_primal_constraint.sharing_subdomains = class_set;
+          // if this subdomain partecipates in this class
+          if (class_set.count(this->subdomain_id) > 0)
+            {
+              LocalPrimalConstraint local_primal_constraint;
+              local_primal_constraint.clear();
+              local_primal_constraint.type               = primal_constraint_type;
+              local_primal_constraint.sharing_subdomains = class_set;
 
-                // assign temporarily, will be reassigned right after this loop
-                local_primal_constraint.global_coarse_dof_index = class_idx;
+              // assign temporarily, will be reassigned right after this loop
+              local_primal_constraint.global_coarse_dof_index = class_idx;
 
-                if (local_primal_constraint.type == PrimalConstraintType::Vertex)
-                  AssertDimension(dofs_in_class.size(), 1);
+              if (local_primal_constraint.type == PrimalConstraintType::Vertex)
+                AssertDimension(dofs_in_class.size(), 1);
 
-                for (const auto global_idx : dofs_in_class)
-                  {
-                    // Only add DoFs that actually belong to our subdomain's interface
-                    if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
-                      {
-                        const unsigned int subdomain_idx =
-                          subdomain_dof_info.global_to_subdomain_interface_map.at(global_idx);
+              for (const auto global_idx : dofs_in_class)
+                {
+                  // Only add DoFs that actually belong to our subdomain's interface
+                  if (subdomain_dof_info.subdomain_interface_dofs_global.is_element(global_idx))
+                    {
+                      const unsigned int subdomain_idx =
+                        subdomain_dof_info.global_to_subdomain_interface_map.at(global_idx);
 
-                        local_primal_constraint.global_dof_indices.push_back(global_idx);
-                        local_primal_constraint.local_subdomain_dofs.push_back(subdomain_idx);
+                      local_primal_constraint.global_dof_indices.push_back(global_idx);
+                      local_primal_constraint.local_subdomain_dofs.push_back(subdomain_idx);
 
-                        const unsigned int local_interface_partitioner_index =
-                          this->subdomain_inteface_to_interface_partitioner_local_map.at(
-                            subdomain_idx);
-                        Assert(this->interface_indices_partitioner_to_subdomain_numbering
-                                   [local_interface_partitioner_index] == subdomain_idx,
-                               ExcInternalError());
-                        local_primal_constraint.interface_partitioner_dofs_local.push_back(
-                          local_interface_partitioner_index);
-                      }
-                  }
+                      const unsigned int local_interface_partitioner_index =
+                        this->subdomain_inteface_to_interface_partitioner_local_map.at(
+                          subdomain_idx);
+                      Assert(this->interface_indices_partitioner_to_subdomain_numbering
+                                 [local_interface_partitioner_index] == subdomain_idx,
+                             ExcInternalError());
+                      local_primal_constraint.interface_partitioner_dofs_local.push_back(
+                        local_interface_partitioner_index);
+                    }
+                }
 
-                if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
-                    local_primal_constraint.local_subdomain_dofs.size() > 0)
-                  {
-                    local_corner_blocks.push_back(local_primal_constraint);
-                    local_corner_class_idxs.push_back(class_idx);
-                  }
-                else if (local_primal_constraint.type == PrimalConstraintType::Edge &&
-                         local_primal_constraint.local_subdomain_dofs.size() > 0)
-                  {
-                    local_edge_blocks.push_back(local_primal_constraint);
-                    local_edge_class_idxs.push_back(class_idx);
-                  }
-                else if (local_primal_constraint.type == PrimalConstraintType::Face &&
-                         local_primal_constraint.local_subdomain_dofs.size() > 0)
-                  {
-                    local_face_blocks.push_back(local_primal_constraint);
-                    local_face_class_idxs.push_back(class_idx);
-                  }
-                // if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
-                //     local_primal_constraint.local_subdomain_dofs.size() > 0)
-                //   AssertDimension(local_corner_blocks.back().local_subdomain_dofs, 1);
-              }
-          }
+              if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
+                  local_primal_constraint.local_subdomain_dofs.size() > 0)
+                {
+                  local_corner_blocks.push_back(local_primal_constraint);
+                  local_corner_class_idxs.push_back(class_idx);
+                }
+              else if (local_primal_constraint.type == PrimalConstraintType::Edge &&
+                       local_primal_constraint.local_subdomain_dofs.size() > 0)
+                {
+                  local_edge_blocks.push_back(local_primal_constraint);
+                  local_edge_class_idxs.push_back(class_idx);
+                }
+              else if (local_primal_constraint.type == PrimalConstraintType::Face &&
+                       local_primal_constraint.local_subdomain_dofs.size() > 0)
+                {
+                  local_face_blocks.push_back(local_primal_constraint);
+                  local_face_class_idxs.push_back(class_idx);
+                }
+              // if (local_primal_constraint.type == PrimalConstraintType::Vertex &&
+              //     local_primal_constraint.local_subdomain_dofs.size() > 0)
+              //   AssertDimension(local_corner_blocks.back().local_subdomain_dofs, 1);
+            }
+        }
       }
 
 #ifdef DEBUG

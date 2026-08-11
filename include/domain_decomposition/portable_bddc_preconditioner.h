@@ -75,6 +75,9 @@ namespace Portable
     compute_coarse_matrix();
 
     void
+    compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix);
+
+    void
     vmult_fine_correction(SubdomainVectorType       &fine_solution,
                           const SubdomainVectorType &fine_residual) const;
 
@@ -144,8 +147,7 @@ namespace Portable
     void
     setup_primal_constraint_views();
 
-    void
-    compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix);
+
 
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
     ObserverPointer<const SubdomainLaplaceOperatorBase<dim, Number>> subdomain_operator;
@@ -517,7 +519,6 @@ namespace Portable
             sum += fine_residual_view(subdomain_idx) * basis_function_view(subdomain_idx);
           },
           local_inner_product);
-        Kokkos::fence();
 
         temp_coarse_local(j) = local_inner_product;
       }
@@ -534,8 +535,6 @@ namespace Portable
     Utilities::MPI::sum(temp_global_coarse_std,
                         this->subdomain_dof_handler->get_mpi_communicator(),
                         temp_global_coarse_std);
-
-    temp_coarse_global = 0;
 
     for (unsigned int i = 0; i < n_coarse_global; ++i)
       temp_coarse_global(i) = temp_global_coarse_std[i];
@@ -1026,8 +1025,8 @@ namespace Portable
     Kokkos::fence();
     setup_timings[2] += time.wall_time();
 
-    std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
-              << solver_control.last_step() << " iterations." << std::endl;
+    // std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
+    //           << solver_control.last_step() << " iterations." << std::endl;
 
     max_subdomain_mg_iterations =
       std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
