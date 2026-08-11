@@ -35,6 +35,27 @@ namespace Portable
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
+    /**
+     * Block vmult_plain(): applies vmult_plain() independently to each of
+     * n_rhs blocks of dst/src, which must be sized n_rhs * (this
+     * operator's dof count) and laid out as n_rhs blocks of that size
+     * each -- the same convention bk3_kokkos_kernel_block.h's
+     * KokkosKernelBlock()/SolverBlockCG use.
+     */
+    virtual void
+    vmult_plain_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const unsigned int                                                     n_rhs) const = 0;
+
+    /**
+     * Block project(): applies project() independently to each of n_rhs
+     * blocks of vec, same layout convention as vmult_plain_block().
+     */
+    virtual void
+    project_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
+                  const unsigned int n_rhs) const = 0;
+
     virtual void
     vmult_bk3(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,

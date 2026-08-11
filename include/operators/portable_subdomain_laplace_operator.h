@@ -13,6 +13,7 @@
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 #include "kernels/bk3_kokkos_kernel.h"
+#include "kernels/bk3_kokkos_kernel_block.h"
 #include "kernels/portable_local_laplace_operator.h"
 #include "operators/portable_laplace_operator_quad.h"
 
@@ -47,6 +48,16 @@ namespace Portable
     vmult_plain(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override;
+
+    void
+    vmult_plain_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const unsigned int                                                     n_rhs) const override;
+
+    void
+    project_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
+                  const unsigned int n_rhs) const override;
 
     void
     vmult_bk3(
@@ -505,6 +516,93 @@ namespace Portable
           const auto idx  = boundary_dofs(i);
           dst_device(idx) = src_device(idx);
         });
+  }
+
+  template <int dim, int fe_degree, typename Number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::vmult_plain_block(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+    const unsigned int                                                     n_rhs) const
+  {
+    AssertDimension(dst.size(), src.size());
+    AssertDimension(dst.size() % n_rhs, 0u);
+    const unsigned int dof_stride = dst.size() / n_rhs;
+
+    DeviceVector<Number> src_device(src.get_values(), src.size()),
+      dst_device(dst.get_values(), dst.size());
+
+    dst = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            Kokkos::fence();
+
+            constexpr bool is_serial =
+              std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+            unsigned int numBlocks       = numbers::invalid_unsigned_int;
+            unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+
+            if (is_serial)
+              {
+                numBlocks       = 1u;
+                threadsPerBlock = 1u;
+              }
+
+            BK3Block::Parallel::KokkosKernelBlock<dim, fe_degree + 1, fe_degree + 1, Number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              plain_dof_indices_per_color[color],
+              n_cells,
+              n_rhs,
+              dof_stride,
+              numBlocks,
+              threadsPerBlock);
+
+            Kokkos::fence();
+          }
+      }
+
+    // copy physical constrained values, tiled across all n_rhs blocks (the
+    // boundary dof set is the same physical mesh, so it doesn't vary with
+    // the RHS index -- same principle as project_block() reusing
+    // primal_constraint_offsets etc. across blocks).
+    const auto boundary_dofs = this->physical_boundary_dof_indices;
+
+    if (boundary_dofs.size() > 0)
+      Kokkos::parallel_for(
+        "work",
+        static_cast<std::size_t>(n_rhs) * boundary_dofs.size(),
+        KOKKOS_LAMBDA(const std::size_t idx) {
+          const unsigned int k       = idx / boundary_dofs.size();
+          const unsigned int i       = idx % boundary_dofs.size();
+          const unsigned int flat_idx = k * dof_stride + boundary_dofs(i);
+          dst_device(flat_idx)       = src_device(flat_idx);
+        });
+  }
+
+  template <int dim, int fe_degree, typename Number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::project_block(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
+    const unsigned int                                                n_rhs) const
+  {
+    (void) vec;
+    (void) n_rhs;
+    return;
   }
 
 

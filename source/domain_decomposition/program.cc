@@ -161,7 +161,7 @@ private:
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, double>> bnn_preconditioner;
 
-  std::unique_ptr<Portable::BDDCPreconditioner<dim, double>> bddc_preconditioner;
+  std::unique_ptr<Portable::BDDCPreconditioner<dim, double, SmootherType>> bddc_preconditioner;
 
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_solution_host,
@@ -1222,8 +1222,13 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
   //                                                              Portable::BDDCVariant::corner);
 
   this->bddc_preconditioner =
-    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-                                                                *level_subdomain_matrices.back());
+    std::make_unique<Portable::BDDCPreconditioner<dim, double, SmootherType>>(
+      *interface_operator,
+      *level_subdomain_matrices.back(),
+      *subdomain_mg_preconditioner_dirichlet,
+      level_subdomain_matrices,
+      subdomain_mg_transfers_dirichlet,
+      subdomain_mg_smoothers_dirichlet);
 
   using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 

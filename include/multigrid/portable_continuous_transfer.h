@@ -32,6 +32,30 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
     void
+    prolongate_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int n_rhs) const override
+    {
+      (void)dst;
+      (void)src;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
+    restrict_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int n_rhs) const override
+    {
+      (void)dst;
+      (void)src;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,
            const AffineConstraints<number> &constraints_coarse,

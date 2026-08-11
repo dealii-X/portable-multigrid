@@ -1,13 +1,19 @@
 #ifndef portable_bddc_preconditioner_h
 #define portable_bddc_preconditioner_h
 
+#include <deal.II/base/mg_level_object.h>
 #include <deal.II/base/timer.h>
 
 #include <deal.II/lac/solver_cg.h>
 
+#include "base/portable_mg_transfer_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
+#include "domain_decomposition/portable_solver_block_cg.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
+#include "multigrid/portable_block_vcycle_adapters.h"
+#include "multigrid/portable_projected_chebyshev_smoother.h"
+#include "multigrid/portable_subdomain_v_cycle_multigrid.h"
 #include "operators/portable_subdomain_bddc_operator_wrapper.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -15,7 +21,19 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
 
-  template <int dim, typename Number>
+  /**
+   * BddcSmootherType is the type of subdomain_mg_smoothers_bddc's element
+   * in program.cc -- ProjectedChebyshevSmoother<LevelMatrixType,
+   * BddcPreconditionerType, VectorTypeMG> in production -- needed here
+   * (rather than only through the type-erased VCycleMultigridBase
+   * subdomain_mg_preconditioner already stored below) so that
+   * compute_local_coarse_matrix() can read each level's AdditionalData
+   * (degree/max_eigenvalue/smoothing_range) back out via
+   * get_additional_data() and build a *second*, block-shaped V-cycle for
+   * the coarse problem -- VCycleMultigridBase's vmult()-only interface
+   * has no way to expose the individual levels a block V-cycle needs.
+   */
+  template <int dim, typename Number, typename BddcSmootherType>
   class BDDCPreconditioner
   {
   public:
@@ -24,10 +42,15 @@ namespace Portable
     using SubdomainPreconditioner = VCycleMultigridBase<dim, Number>;
 
 
-    BDDCPreconditioner(const SchurInterfaceOperator<dim, Number>       &interface_operator,
-                       const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
-                       const SubdomainPreconditioner                   &subdomain_mg_preconditione,
-                       const BDDCVariant variant = BDDCVariant::corner_edge_face);
+    BDDCPreconditioner(
+      const SchurInterfaceOperator<dim, Number>       &interface_operator,
+      const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
+      const SubdomainPreconditioner                   &subdomain_mg_preconditione,
+      const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
+        &level_bddc_matrices,
+      const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
+      const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
+      const BDDCVariant variant = BDDCVariant::corner_edge_face);
 
     void
     vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
@@ -100,9 +123,9 @@ namespace Portable
     struct SubdomainProjectorWrapper
     {
     public:
-      const BDDCPreconditioner<dim, Number> &parent;
+      const BDDCPreconditioner<dim, Number, BddcSmootherType> &parent;
 
-      SubdomainProjectorWrapper(const BDDCPreconditioner<dim, Number> &parent_preconditioner)
+      SubdomainProjectorWrapper(const BDDCPreconditioner<dim, Number, BddcSmootherType> &parent_preconditioner)
         : parent(parent_preconditioner)
       {}
 
@@ -128,6 +151,16 @@ namespace Portable
     ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
 
     const SubdomainPreconditioner &subdomain_mg_preconditioner;
+
+    // Per-level BDDC matrices/transfers/smoothers, needed (alongside
+    // subdomain_mg_preconditioner above) to build a second, block-shaped
+    // V-cycle for compute_local_coarse_matrix() -- see the class-level
+    // comment on BddcSmootherType for why the type-erased
+    // subdomain_mg_preconditioner alone isn't enough.
+    const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
+                                                                        &level_bddc_matrices;
+    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers;
+    const MGLevelObject<BddcSmootherType>                              &level_bddc_smoothers;
 
     SubdomainBDDCOperatorWrapper<dim, Number> subdomain_bddc_operator;
 
@@ -215,16 +248,23 @@ namespace Portable
     mutable unsigned int max_subdomain_mg_iterations;
   };
 
-  template <int dim, typename Number>
-  BDDCPreconditioner<dim, Number>::BDDCPreconditioner(
+  template <int dim, typename Number, typename BddcSmootherType>
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::BDDCPreconditioner(
     const SchurInterfaceOperator<dim, Number>       &interface_operator,
     const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
     const SubdomainPreconditioner                   &subdomain_mg_preconditioner,
-    const BDDCVariant                                variant)
+    const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
+                                                                        &level_bddc_matrices,
+    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
+    const MGLevelObject<BddcSmootherType>                              &level_bddc_smoothers,
+    const BDDCVariant                                                   variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
     , subdomain_mg_preconditioner(subdomain_mg_preconditioner)
+    , level_bddc_matrices(level_bddc_matrices)
+    , level_bddc_transfers(level_bddc_transfers)
+    , level_bddc_smoothers(level_bddc_smoothers)
     , subdomain_bddc_operator(subdomain_operator)
     , n_subdomain_dofs(subdomain_operator.get_subdomain_dof_handler().get_dof_handler().n_dofs())
     , interface_vector_size(subdomain_operator.get_interface_dof_indices_subdomain().size())
@@ -291,53 +331,53 @@ namespace Portable
     reset_setup_timings();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::reset_timings() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::reset_timings() const
   {
     for (unsigned int i = 0; i < timings.size(); ++i)
       timings[i] = 0.;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::reset_setup_timings() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::reset_setup_timings() const
   {
     for (unsigned int i = 0; i < setup_timings.size(); ++i)
       setup_timings[i] = 0.;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   const std::array<double, 6> &
-  BDDCPreconditioner<dim, Number>::get_setup_timings() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_setup_timings() const
   {
     return setup_timings;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   unsigned int
-  BDDCPreconditioner<dim, Number>::get_n_local_coarse_dofs() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_n_local_coarse_dofs() const
   {
     return n_local_coarse_dofs;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   unsigned int
-  BDDCPreconditioner<dim, Number>::get_n_global_coarse_dofs() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_n_global_coarse_dofs() const
   {
     return n_global_coarse_dofs;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   const std::array<double, 4> &
-  BDDCPreconditioner<dim, Number>::get_timings() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_timings() const
   {
     return timings;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::vmult(InterfaceVectorType       &dst,
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult(InterfaceVectorType       &dst,
                                          const InterfaceVectorType &src) const
   {
     Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -391,9 +431,9 @@ namespace Portable
     timings[3] += total_time.wall_time();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::vmult_fine_correction(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult_fine_correction(
     SubdomainVectorType       &fine_solution,
     const SubdomainVectorType &fine_residual) const
   {
@@ -431,16 +471,16 @@ namespace Portable
       std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   unsigned int
-  BDDCPreconditioner<dim, Number>::get_maximum_subdomain_mg_iterations() const
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_maximum_subdomain_mg_iterations() const
   {
     return max_subdomain_mg_iterations;
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::vmult_coarse_correction(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult_coarse_correction(
     SubdomainVectorType       &coarse_solution,
     const SubdomainVectorType &fine_residual) const
   {
@@ -520,9 +560,9 @@ namespace Portable
       }
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::gather_and_weight_global_interface(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::gather_and_weight_global_interface(
     SubdomainVectorType       &dst,
     const InterfaceVectorType &src) const
   {
@@ -548,9 +588,9 @@ namespace Portable
   }
 
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::weight_local_interface_and_scatter(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::weight_local_interface_and_scatter(
     InterfaceVectorType       &dst,
     const SubdomainVectorType &src) const
   {
@@ -576,9 +616,9 @@ namespace Portable
     Kokkos::fence();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::project_to_homogeneous_constraints_interface(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::project_to_homogeneous_constraints_interface(
     InterfaceVectorType &interface_vector) const
   {
     auto interface_vector_view = interface_vector.get_values();
@@ -611,9 +651,9 @@ namespace Portable
   }
 
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::
     project_to_homogeneous_constraints_interface_and_scatter_to_subdomain(
       SubdomainVectorType       &subdomain_vector,
       const InterfaceVectorType &interface_vector) const
@@ -652,9 +692,9 @@ namespace Portable
   }
 
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::project_to_homogeneous_constraints_subdomain(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::project_to_homogeneous_constraints_subdomain(
     SubdomainVectorType &subdomain_vector) const
   {
     DeviceVector<Number> subdomain_vector_view(subdomain_vector.get_values(),
@@ -687,9 +727,9 @@ namespace Portable
     Kokkos::fence();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::global_interface_to_coarse(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::global_interface_to_coarse(
     Vector<Number>            &coarse_vector,
     const InterfaceVectorType &interface_vector) const
   {
@@ -749,9 +789,9 @@ namespace Portable
     interface_vector.zero_out_ghost_values();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::coarse_to_global_interface(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::coarse_to_global_interface(
     InterfaceVectorType  &interface_vector,
     const Vector<Number> &coarse_vector) const
   {
@@ -803,9 +843,9 @@ namespace Portable
     interface_vector.compress(VectorOperation::insert);
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::lift_coarse_to_subdomain(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::lift_coarse_to_subdomain(
     SubdomainVectorType  &subdomain_vector,
     const Vector<Number> &coarse_vector) const
   {
@@ -849,9 +889,9 @@ namespace Portable
     Kokkos::fence();
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::compute_local_coarse_matrix(
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::compute_local_coarse_matrix(
     LAPACKFullMatrix<Number> &local_coarse_matrix)
   {
     const unsigned int n_coarse_local = this->n_local_coarse_dofs;
@@ -861,8 +901,7 @@ namespace Portable
     for (unsigned int i = 0; i < n_coarse_local; ++i)
       coarse_basis_functions[i].reinit(temp_subdomain_dst);
 
-    SubdomainVectorType rhs, S_per_phi_j;
-    rhs.reinit(temp_subdomain_src);
+    SubdomainVectorType S_per_phi_j;
     S_per_phi_j.reinit(temp_subdomain_dst);
 
     DeviceVector<Number> temp_interface_view(temp_interface.get_values(), interface_vector_size);
@@ -889,31 +928,165 @@ namespace Portable
     Kokkos::fence();
     setup_timings[0] += time.wall_time();
 
-    SubdomainProjectorWrapper projector(*this);
+    // Pack the n_coarse_local lifted constraint vectors into one block
+    // vector (n_coarse_local blocks of n_subdomain_dofs each -- the same
+    // layout vmult_plain_block()/project_block()/SolverBlockCG use
+    // throughout). phi_j starts out equal to lifted_constraints[j] before
+    // any fine correction is added (see the old per-j loop this replaces),
+    // so this block vector is both the "phi_j at block-solve time" input
+    // to vmult_plain_block() below *and*, unpacked back out further down,
+    // becomes coarse_basis_functions' initial value.
+    SubdomainVectorType lifted_block;
+    lifted_block.reinit(static_cast<typename SubdomainVectorType::size_type>(n_coarse_local) *
+                        n_subdomain_dofs);
 
+    for (unsigned int k = 0; k < n_coarse_local; ++k)
+      {
+        DeviceVector<Number> src_view(lifted_constraints[k].get_values(), n_subdomain_dofs);
+        DeviceVector<Number> dst_view(lifted_block.get_values() + k * n_subdomain_dofs,
+                                      n_subdomain_dofs);
+        Kokkos::deep_copy(dst_view, src_view);
+      }
+    Kokkos::fence();
+
+    SubdomainVectorType rhs_block;
+    rhs_block.reinit(lifted_block, true);
+
+    time.restart();
+    this->subdomain_bddc_operator.vmult_plain_block(rhs_block, lifted_block, n_coarse_local);
+    Kokkos::fence();
+    setup_timings[1] += time.wall_time();
+
+    rhs_block *= Number(-1);
+
+    this->subdomain_bddc_operator.project_block(rhs_block, n_coarse_local);
+
+    // Build a block-shaped V-cycle over the same per-level BDDC matrices/
+    // transfers/smoothers the scalar subdomain_mg_preconditioner above was
+    // built from (see the class-level comment on BddcSmootherType), via
+    // the adapter classes in portable_block_vcycle_adapters.h. Eigenvalue
+    // bounds are read back from each level's already-initialized scalar
+    // smoother rather than re-estimated: they depend only on the
+    // operator/preconditioner pair, not on how many RHS columns are
+    // solved at once.
+    using BlockOperatorType = BlockBDDCOperatorAdapter<dim, Number>;
+    using BlockTransferType = BlockTransferAdapter<dim, Number>;
+    using BlockPreconditionerType =
+      BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
+    using BlockSmootherType =
+      ProjectedChebyshevSmoother<BlockOperatorType, BlockPreconditionerType, SubdomainVectorType>;
+
+    const unsigned int minlevel = level_bddc_matrices.min_level();
+    const unsigned int maxlevel = level_bddc_matrices.max_level();
+
+    MGLevelObject<std::unique_ptr<BlockOperatorType>> block_matrices(minlevel, maxlevel);
+    MGLevelObject<std::unique_ptr<BlockTransferType>> block_transfers(minlevel, maxlevel);
+    MGLevelObject<BlockSmootherType>                  block_smoothers(minlevel, maxlevel);
+
+    for (unsigned int level = minlevel; level <= maxlevel; ++level)
+      {
+        const auto &concrete_matrix =
+          static_cast<const SubdomainBDDCOperatorWrapper<dim, Number> &>(*level_bddc_matrices[level]);
+
+        block_matrices[level] =
+          std::make_unique<BlockOperatorType>(concrete_matrix, n_coarse_local);
+
+        if (level > minlevel)
+          block_transfers[level] =
+            std::make_unique<BlockTransferType>(*level_bddc_transfers[level], n_coarse_local);
+
+        typename BlockSmootherType::AdditionalData smoother_data;
+        const auto &scalar_data          = level_bddc_smoothers[level].get_additional_data();
+        smoother_data.degree             = scalar_data.degree;
+        smoother_data.max_eigenvalue     = scalar_data.max_eigenvalue;
+        smoother_data.smoothing_range    = scalar_data.smoothing_range;
+        smoother_data.preconditioner     = std::make_shared<BlockPreconditionerType>(
+          *block_matrices[level], level_bddc_matrices[level]->get_matrix_diagonal_inverse(), n_coarse_local);
+
+        block_smoothers[level].initialize(*block_matrices[level], smoother_data);
+      }
+
+    SubdomainVCycleMultigrid<dim, Number, BlockOperatorType, BlockTransferType, BlockSmootherType>
+      block_mg_preconditioner(block_matrices, block_transfers, block_smoothers);
+
+    SubdomainVectorType correction_block;
+    correction_block.reinit(rhs_block);
+
+    SolverControl solver_control(rhs_block.size(), 1e-12 * rhs_block.l2_norm());
+    SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
+
+    time.restart();
+    block_solver.solve_block(*block_matrices[maxlevel],
+                             correction_block,
+                             rhs_block,
+                             block_mg_preconditioner,
+                             n_coarse_local);
+    Kokkos::fence();
+    setup_timings[2] += time.wall_time();
+
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+
+    // phi_j = lifted_constraints[j] + correction_j, unpacked straight into
+    // coarse_basis_functions (matches the old loop's
+    // `phi_j = lifted_constraints[j]; ...; phi_j.add(1., temp_subdomain_dst);`).
     for (unsigned int j = 0; j < n_coarse_local; ++j)
       {
         SubdomainVectorType &phi_j = coarse_basis_functions[j];
 
-        phi_j = lifted_constraints[j];
+        DeviceVector<Number> lifted_view(lifted_block.get_values() + j * n_subdomain_dofs,
+                                         n_subdomain_dofs);
+        DeviceVector<Number> correction_view(correction_block.get_values() + j * n_subdomain_dofs,
+                                             n_subdomain_dofs);
+        DeviceVector<Number> phi_view(phi_j.get_values(), n_subdomain_dofs);
 
-        time.restart();
-        this->subdomain_bddc_operator.vmult_plain(rhs, phi_j);
-        Kokkos::fence();
-        setup_timings[1] += time.wall_time();
+        Kokkos::parallel_for(
+          "unpack_phi_j",
+          n_subdomain_dofs,
+          KOKKOS_LAMBDA(const int i) { phi_view(i) = lifted_view(i) + correction_view(i); });
+      }
+    Kokkos::fence();
 
-        rhs *= Number(-1);
+    // Verification: recompute phi_j via the old sequential
+    // vmult_fine_correction() loop the block path above replaces, and diff
+    // against the block result. Kept permanently (not a one-shot check to
+    // delete once confirmed) as a running correctness guard on the block
+    // coarse-solve path, since compute_local_coarse_matrix() only runs
+    // once per preconditioner setup -- the extra n_coarse_local sequential
+    // solves cost comparatively little next to that.
+    {
+      std::vector<SubdomainVectorType> phi_ref(n_coarse_local);
+      SubdomainVectorType               rhs_ref, correction_ref;
+      rhs_ref.reinit(temp_subdomain_src);
+      correction_ref.reinit(temp_subdomain_dst);
 
-        projector.project(rhs);
+      Number max_phi_diff = 0;
 
-        temp_subdomain_dst = 0;
+      for (unsigned int j = 0; j < n_coarse_local; ++j)
+        {
+          phi_ref[j] = lifted_constraints[j];
 
-        time.restart();
-        this->vmult_fine_correction(temp_subdomain_dst, rhs);
-        Kokkos::fence();
-        setup_timings[2] += time.wall_time();
+          this->subdomain_bddc_operator.vmult_plain(rhs_ref, phi_ref[j]);
+          rhs_ref *= Number(-1);
+          this->subdomain_bddc_operator.project(rhs_ref);
 
-        phi_j.add(Number(1), temp_subdomain_dst);
+          correction_ref = 0;
+          this->vmult_fine_correction(correction_ref, rhs_ref);
+
+          phi_ref[j].add(Number(1), correction_ref);
+
+          SubdomainVectorType diff = phi_ref[j];
+          diff -= coarse_basis_functions[j];
+          max_phi_diff = std::max(max_phi_diff, diff.linfty_norm());
+        }
+
+      std::cout << "[block coarse-matrix verification] subdomain " << this_subdomain
+               << ": max |phi_block - phi_sequential| = " << max_phi_diff << std::endl;
+    }
+
+    for (unsigned int j = 0; j < n_coarse_local; ++j)
+      {
+        SubdomainVectorType &phi_j = coarse_basis_functions[j];
 
         time.restart();
         this->subdomain_bddc_operator.vmult_plain(S_per_phi_j, phi_j);
@@ -928,9 +1101,9 @@ namespace Portable
       }
   }
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::compute_coarse_matrix()
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::compute_coarse_matrix()
   {
     reset_setup_timings();
 
@@ -1017,9 +1190,9 @@ namespace Portable
 
 
 
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename BddcSmootherType>
   void
-  BDDCPreconditioner<dim, Number>::setup_primal_constraint_views()
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::setup_primal_constraint_views()
   {
     const auto &dof_info          = this->subdomain_dof_handler->get_dof_info();
     const auto &local_constraints = dof_info.local_primal_constraints;

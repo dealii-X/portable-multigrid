@@ -173,6 +173,103 @@ namespace Portable
       void
       restrict_and_add(VectorType &dst, const VectorType &src) const override;
 
+      /**
+       * Block prolongate_and_add()/restrict_and_add(): unlike
+       * PolynomialTransfer's block methods (which call a genuinely
+       * block-shaped Kokkos kernel in one launch), these loop over the
+       * n_rhs blocks and call the plain, already-correct
+       * prolongate_and_add()/restrict_and_add() once per block via a
+       * pair of reusable scratch vectors. The plain versions above
+       * already handle a nontrivial amount of machinery this class
+       * exists for -- the embedded-partitioner ghost exchange
+       * (SimpleVectorDataExchange), the in-place-vs-buffered vec_coarse/
+       * vec_fine optimization -- that a from-scratch block-shaped
+       * version would have to duplicate for a hand-rolled block vector
+       * layout with no natural Partitioner of its own. Reusing the
+       * scalar path n_rhs times sacrifices the "one kernel launch for
+       * every RHS" throughput PolynomialTransfer's block methods get,
+       * but h-multigrid levels (where this class is used, see
+       * program.cc's PolynomialTransferRunner vs. the h-level branch
+       * using GeometricTransfer) sit at the coarse end of the
+       * hierarchy where that cost matters much less than getting the
+       * ghost exchange right.
+       */
+      void
+      prolongate_and_add_block(VectorType &dst, const VectorType &src,
+                               const unsigned int n_rhs) const override
+      {
+        AssertDimension(dst.size() % n_rhs, 0u);
+        AssertDimension(src.size() % n_rhs, 0u);
+        const unsigned int dof_stride_fine   = dst.size() / n_rhs;
+        const unsigned int dof_stride_coarse = src.size() / n_rhs;
+
+        VectorType src_slice, dst_slice;
+        src_slice.reinit(this->partitioner_coarse);
+        dst_slice.reinit(this->partitioner_fine);
+
+        for (unsigned int k = 0; k < n_rhs; ++k)
+          {
+            const number *src_block = src.get_values() + k * dof_stride_coarse;
+            number       *dst_block = dst.get_values() + k * dof_stride_fine;
+            number       *src_slice_ptr = src_slice.get_values();
+            number       *dst_slice_ptr = dst_slice.get_values();
+
+            Kokkos::parallel_for(
+              Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
+                0, dof_stride_coarse),
+              KOKKOS_LAMBDA(const unsigned int i) { src_slice_ptr[i] = src_block[i]; });
+            Kokkos::fence();
+
+            dst_slice = 0.;
+
+            this->prolongate_and_add(dst_slice, src_slice);
+
+            Kokkos::parallel_for(
+              Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
+                0, dof_stride_fine),
+              KOKKOS_LAMBDA(const unsigned int i) { dst_block[i] += dst_slice_ptr[i]; });
+            Kokkos::fence();
+          }
+      }
+
+      void
+      restrict_and_add_block(VectorType &dst, const VectorType &src,
+                             const unsigned int n_rhs) const override
+      {
+        AssertDimension(dst.size() % n_rhs, 0u);
+        AssertDimension(src.size() % n_rhs, 0u);
+        const unsigned int dof_stride_coarse = dst.size() / n_rhs;
+        const unsigned int dof_stride_fine   = src.size() / n_rhs;
+
+        VectorType src_slice, dst_slice;
+        src_slice.reinit(this->partitioner_fine);
+        dst_slice.reinit(this->partitioner_coarse);
+
+        for (unsigned int k = 0; k < n_rhs; ++k)
+          {
+            const number *src_block = src.get_values() + k * dof_stride_fine;
+            number       *dst_block = dst.get_values() + k * dof_stride_coarse;
+            number       *src_slice_ptr = src_slice.get_values();
+            number       *dst_slice_ptr = dst_slice.get_values();
+
+            Kokkos::parallel_for(
+              Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
+                0, dof_stride_fine),
+              KOKKOS_LAMBDA(const unsigned int i) { src_slice_ptr[i] = src_block[i]; });
+            Kokkos::fence();
+
+            dst_slice = 0.;
+
+            this->restrict_and_add(dst_slice, src_slice);
+
+            Kokkos::parallel_for(
+              Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
+                0, dof_stride_coarse),
+              KOKKOS_LAMBDA(const unsigned int i) { dst_block[i] += dst_slice_ptr[i]; });
+            Kokkos::fence();
+          }
+      }
+
     protected:
       /**
        * Perform prolongation on vectors with correct ghosting.

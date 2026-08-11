@@ -175,7 +175,7 @@ private:
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, double>> bnn_preconditioner;
 
-  std::unique_ptr<Portable::BDDCPreconditioner<dim, double>> bddc_preconditioner;
+  std::unique_ptr<Portable::BDDCPreconditioner<dim, double, BddcSmootherType>> bddc_preconditioner;
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_solution_host,
     subdomain_solution_host;
@@ -886,9 +886,13 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
   Timer time;
 
   this->bddc_preconditioner =
-    std::make_unique<Portable::BDDCPreconditioner<dim, double>>(*interface_operator,
-                                                                *level_subdomain_matrices.back(),
-                                                                *subdomain_mg_preconditioner_bddc);
+    std::make_unique<Portable::BDDCPreconditioner<dim, double, BddcSmootherType>>(
+      *interface_operator,
+      *level_subdomain_matrices.back(),
+      *subdomain_mg_preconditioner_bddc,
+      level_subdomain_bddc_matrices,
+      subdomain_mg_transfers_bddc,
+      subdomain_mg_smoothers_bddc);
 
   Kokkos::fence();
   setup_time += time.wall_time();

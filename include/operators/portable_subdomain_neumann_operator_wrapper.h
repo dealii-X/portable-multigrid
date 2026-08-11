@@ -77,6 +77,27 @@ namespace Portable
     }
 
     void
+    vmult_plain_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const unsigned int n_rhs) const override
+    {
+      (void)dst;
+      (void)src;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
+    project_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
+                  const unsigned int n_rhs) const override
+    {
+      (void)vec;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
     vmult_neumann(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override

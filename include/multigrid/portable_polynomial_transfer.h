@@ -10,6 +10,7 @@
 
 #include "base/portable_mg_transfer_base.h"
 #include "kernels/bk1_kokkos_kernels.h"
+#include "kernels/bk1_kokkos_kernels_block.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -680,6 +681,18 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
     void
+    prolongate_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int n_rhs) const override;
+
+    void
+    restrict_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int n_rhs) const override;
+
+    void
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,
            const AffineConstraints<number> &constraints_coarse,
@@ -927,6 +940,186 @@ namespace Portable
             if (colored_graph[color].size() > 0)
               do_color(color);
           }
+
+        dst.compress(VectorOperation::add);
+      }
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, int p_coarse, int p_fine, typename number>
+  void
+  PolynomialTransfer<dim, p_coarse, p_fine, number>::prolongate_and_add_block(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+    const unsigned int                                                     n_rhs) const
+  {
+    AssertDimension(src.size() % n_rhs, 0u);
+    AssertDimension(dst.size() % n_rhs, 0u);
+    const unsigned int dof_stride_coarse = src.size() / n_rhs;
+    const unsigned int dof_stride_fine   = dst.size() / n_rhs;
+
+    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+
+    const unsigned int n_colors = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    DeviceVector<number> src_device(src.get_values(), src.size()),
+      dst_device(dst.get_values(), dst.size());
+
+    auto do_color = [&](const unsigned int color)
+      {
+        const auto n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            BK1Block::Parallel::KokkosProlongationBatchedBlockKernel<dim,
+                                                                     p_coarse + 1,
+                                                                     p_fine + 1,
+                                                                     number>(
+              this->prolongation_matrix_1d,
+              src_device,
+              dst_device,
+              this->dof_indices_coarse[color],
+              this->plain_dof_indices_fine[color],
+              this->weights_view_kokkos[color],
+              n_cells,
+              n_rhs,
+              dof_stride_coarse,
+              dof_stride_fine,
+              numBlocks,
+              threadsPerBlock);
+          }
+      };
+
+    if (matrix_free_fine->use_overlap_communication_computation())
+      {
+        src.update_ghost_values_start(0);
+
+        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
+          {
+            do_color(1);
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+
+        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          if (colored_graph[color].size() > 0)
+            do_color(color);
+
+        dst.compress(VectorOperation::add);
+      }
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, int p_coarse, int p_fine, typename number>
+  void
+  PolynomialTransfer<dim, p_coarse, p_fine, number>::restrict_and_add_block(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+    const unsigned int                                                     n_rhs) const
+  {
+    AssertDimension(src.size() % n_rhs, 0u);
+    AssertDimension(dst.size() % n_rhs, 0u);
+    const unsigned int dof_stride_fine   = src.size() / n_rhs;
+    const unsigned int dof_stride_coarse = dst.size() / n_rhs;
+
+    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+
+    const unsigned int n_colors = colored_graph.size();
+
+    DeviceVector<number> src_device(src.get_values(), src.size()),
+      dst_device(dst.get_values(), dst.size());
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    auto do_color = [&](const unsigned int color)
+      {
+        const auto n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            BK1Block::Parallel::KokkosRestrictionBatchedBlockKernel<dim,
+                                                                     p_coarse + 1,
+                                                                     p_fine + 1,
+                                                                     number>(
+              this->prolongation_matrix_1d,
+              src_device,
+              dst_device,
+              this->dof_indices_coarse[color],
+              this->plain_dof_indices_fine[color],
+              this->weights_view_kokkos[color],
+              n_cells,
+              n_rhs,
+              dof_stride_coarse,
+              dof_stride_fine,
+              numBlocks,
+              threadsPerBlock);
+          }
+      };
+
+    if (matrix_free_fine->use_overlap_communication_computation())
+      {
+        src.update_ghost_values_start(0);
+
+        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
+          {
+            do_color(1);
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+
+        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          if (colored_graph[color].size() > 0)
+            do_color(color);
 
         dst.compress(VectorOperation::add);
       }

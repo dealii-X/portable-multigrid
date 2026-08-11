@@ -96,6 +96,12 @@ namespace Portable
       apply(dst, src);
     }
 
+    const AdditionalData &
+    get_additional_data() const
+    {
+      return data;
+    }
+
   private:
     void
     apply(VectorType &x, const VectorType &b) const

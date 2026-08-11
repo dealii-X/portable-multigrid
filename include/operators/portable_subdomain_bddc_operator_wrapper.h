@@ -136,7 +136,7 @@ namespace Portable
      * shared data to reuse in the first place).
      */
     void
-    project_block(SubdomainVectorType &block_vector, const unsigned int n_rhs) const
+    project_block(SubdomainVectorType &block_vector, const unsigned int n_rhs) const override
     {
       AssertDimension(block_vector.size(), static_cast<std::size_t>(n_rhs) * n_subdomain_dofs);
 
@@ -147,6 +147,13 @@ namespace Portable
                                                    this->n_local_coarse_dofs,
                                                    n_rhs,
                                                    this->n_subdomain_dofs);
+    }
+
+    void
+    vmult_plain_block(SubdomainVectorType &dst, const SubdomainVectorType &src,
+                      const unsigned int n_rhs) const override
+    {
+      dirichlet_operator->vmult_plain_block(dst, src, n_rhs);
     }
 
     void
