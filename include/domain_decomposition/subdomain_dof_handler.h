@@ -564,14 +564,24 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
 
   // categorize inteface dofs
   {
+#ifdef DEBUG
+    // Debug-only: verify every interface dof ends up classified into
+    // exactly the union of the Vertex/Edge/Face equivalence classes below.
+    // In release builds this whole check -- both the add_index() calls
+    // inside the loop and the compress()+AssertThrow after it -- disappears,
+    // since it was the single largest cost in this function at scale: 24.6s
+    // alone at 17M dofs/subdomain on 64 ranks (~66% of
+    // distribute_subdomain_dofs(), ~53% of all of "Subdomain DoFs setup"
+    // there), from add_index()-ing every one of the n_global_interface_dofs
+    // dofs one at a time in scattered, non-monotonic order across
+    // interleaved classes.
     IndexSet used_dofs(this->distributed_dof_handler->n_dofs());
+#endif
 
     for (unsigned int class_idx = 0; class_idx < equivalent_dof_classes.size(); ++class_idx)
       {
         const auto &class_set     = equivalent_dof_classes[class_idx];
         const auto &dofs_in_class = dofs_per_equivalence_class[class_idx];
-
-        bool is_valid_constraint = false;
 
         PrimalConstraintType primal_constraint_type;
 
@@ -580,23 +590,12 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
             // vertex (corner) interface dofs are shared by a unique maximal set of processors (more
             // than 2)
             primal_constraint_type = PrimalConstraintType::Vertex;
-
-            is_valid_constraint = true;
-
-            for (const auto global_idx : dofs_in_class)
-              used_dofs.add_index(global_idx);
           }
         else if constexpr (dim == 2)
           {
             // in 2d all other interface dofs are edge dofs
             primal_constraint_type = PrimalConstraintType::Edge;
-
-            is_valid_constraint = true;
-
-            for (const auto global_idx : dofs_in_class)
-              used_dofs.add_index(global_idx);
           }
-
         else if constexpr (dim == 3)
           {
             if ((class_set.size() == 2) && (dofs_in_class.size() > 1))
@@ -605,27 +604,21 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
                 // we also filter out case there's only one dof shared by two subdomains
 
                 primal_constraint_type = PrimalConstraintType::Face;
-
-                is_valid_constraint = true;
-
-                for (const auto global_idx : dofs_in_class)
-                  used_dofs.add_index(global_idx);
               }
             else
               {
                 // all other interface dofs in 3d are edge dofs
 
                 primal_constraint_type = PrimalConstraintType::Edge;
-
-                is_valid_constraint = true;
-
-                for (const auto global_idx : dofs_in_class)
-                  used_dofs.add_index(global_idx);
               }
           }
 
-        if (is_valid_constraint)
-          {
+#ifdef DEBUG
+        for (const auto global_idx : dofs_in_class)
+          used_dofs.add_index(global_idx);
+#endif
+
+        {
             if (primal_constraint_type == PrimalConstraintType::Vertex)
               {
                 global_corner_class_idxs.push_back(class_idx);
@@ -700,11 +693,13 @@ SubdomainDoFHandler<dim>::categorize_interface_dofs(
           }
       }
 
+#ifdef DEBUG
     used_dofs.compress();
     AssertThrow(
       all_interface_dofs == used_dofs,
       ExcMessage(
         "SubdomainDoFHandler<dim>::categorize_interface_dofs() couldn't categorize some of the dofs."));
+#endif
   }
 
 
