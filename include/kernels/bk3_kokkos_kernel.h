@@ -33,7 +33,8 @@ namespace BK3
                  const unsigned int       n_cells,
                  const unsigned int       n_blocks          = numbers::invalid_unsigned_int,
                  const unsigned int       threads_per_block = numbers::invalid_unsigned_int,
-                 const CellRangeIdView    cell_range_ids    = CellRangeIdView())
+                 const CellRangeIdView    cell_range_ids    = CellRangeIdView(),
+                 const bool               use_coloring      = false)
     {
       if (n_cells == 0)
         return;
@@ -701,9 +702,25 @@ namespace BK3
 
                               if (dof_index != numbers::invalid_unsigned_int)
                                 {
-                                  // CRITICAL: Use atomic_add because elements share
-                                  // nodes!
-                                  Kokkos::atomic_add(&d_out[dof_index], s_wsp0[shared_idx]);
+                                  // use_coloring == true means the caller's
+                                  // dof_indices for this launch come from a
+                                  // real graph coloring (MatrixFree::AdditionalData
+                                  // ::use_coloring), guaranteeing no two cells in
+                                  // this single launch touch the same dof_index --
+                                  // safe to accumulate directly. Otherwise (no
+                                  // coloring, or overlap_communication_computation,
+                                  // which is mutually exclusive with real coloring
+                                  // and only splits cells for communication/
+                                  // computation overlap, not race-freedom) multiple
+                                  // cells here can share a node and atomic_add is
+                                  // required. Same choice
+                                  // Portable::LocalLaplaceOperator's own
+                                  // dof-distribution step makes off
+                                  // precomputed_data.use_coloring.
+                                  if (use_coloring)
+                                    d_out[dof_index] += s_wsp0[shared_idx];
+                                  else
+                                    Kokkos::atomic_add(&d_out[dof_index], s_wsp0[shared_idx]);
                                 }
                             }
                         }
@@ -726,9 +743,10 @@ namespace BK3
 
                               if (dof_index != numbers::invalid_unsigned_int)
                                 {
-                                  // CRITICAL: Use atomic_add because elements share
-                                  // nodes!
-                                  Kokkos::atomic_add(&d_out[dof_index], s_wsp0[shared_idx]);
+                                  if (use_coloring)
+                                    d_out[dof_index] += s_wsp0[shared_idx];
+                                  else
+                                    Kokkos::atomic_add(&d_out[dof_index], s_wsp0[shared_idx]);
                                 }
                             }
                         }

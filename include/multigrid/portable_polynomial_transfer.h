@@ -797,7 +797,8 @@ namespace Portable
               this->weights_view_kokkos[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              matrix_free_fine->get_data(color).use_coloring);
           }
       };
 
@@ -893,7 +894,8 @@ namespace Portable
               this->weights_view_kokkos[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              matrix_free_fine->get_data(color).use_coloring);
           }
       };
 

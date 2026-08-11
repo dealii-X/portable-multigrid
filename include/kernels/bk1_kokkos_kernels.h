@@ -468,7 +468,8 @@ namespace BK1
       const WeightsView<Number> weights,
       const unsigned int        n_cells,
       const unsigned int        n_blocks            = numbers::invalid_unsigned_int,
-      const unsigned int        n_threads_per_block = numbers::invalid_unsigned_int)
+      const unsigned int        n_threads_per_block = numbers::invalid_unsigned_int,
+      const bool                use_coloring        = false)
 
     {
       if (n_cells == 0)
@@ -766,9 +767,12 @@ namespace BK1
                               Number value_out = weights(local_idx, global_cell_index) *
                                                  s_wsp0[batch_id * nm_fine_total + local_idx];
 
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
-                              Kokkos::atomic_add(&d_out[dof_index], value_out);
+                              if (use_coloring)
+                                d_out[dof_index] += value_out;
+                              else
+                                // CRITICAL: Use atomic_add because elements
+                                // share nodes!
+                                Kokkos::atomic_add(&d_out[dof_index], value_out);
                             }
                         }
                       else if (dim == 3)
@@ -787,9 +791,12 @@ namespace BK1
                               Number value_out = weights(local_idx, global_cell_index) *
                                                  s_wsp1[batch_id * nm_fine_total + local_idx];
 
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
-                              Kokkos::atomic_add(&d_out[dof_index], value_out);
+                              if (use_coloring)
+                                d_out[dof_index] += value_out;
+                              else
+                                // CRITICAL: Use atomic_add because elements
+                                // share nodes!
+                                Kokkos::atomic_add(&d_out[dof_index], value_out);
                             }
                         }
                     }
@@ -814,7 +821,8 @@ namespace BK1
                                    const WeightsView<Number> weights,
                                    const unsigned int        n_cells,
                                    unsigned int n_blocks            = numbers::invalid_unsigned_int,
-                                   unsigned int n_threads_per_block = numbers::invalid_unsigned_int)
+                                   unsigned int n_threads_per_block = numbers::invalid_unsigned_int,
+                                   const bool   use_coloring        = false)
 
     {
       if (n_cells == 0)
@@ -1105,11 +1113,18 @@ namespace BK1
                               const unsigned int dof_index =
                                 dof_indices_coarse(local_idx, global_cell_index);
 
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
                               if (dof_index != numbers::invalid_unsigned_int)
-                                Kokkos::atomic_add(&d_out[dof_index],
-                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                                {
+                                  if (use_coloring)
+                                    d_out[dof_index] +=
+                                      s_wsp0[batch_id * nm_coarse_total + local_idx];
+                                  else
+                                    // CRITICAL: Use atomic_add because elements
+                                    // share nodes!
+                                    Kokkos::atomic_add(
+                                      &d_out[dof_index],
+                                      s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                                }
                             }
                         }
                       else if (dim == 3)
@@ -1125,11 +1140,18 @@ namespace BK1
                               const unsigned int dof_index =
                                 dof_indices_coarse(local_idx, global_cell_index);
 
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
                               if (dof_index != numbers::invalid_unsigned_int)
-                                Kokkos::atomic_add(&d_out[dof_index],
-                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                                {
+                                  if (use_coloring)
+                                    d_out[dof_index] +=
+                                      s_wsp0[batch_id * nm_coarse_total + local_idx];
+                                  else
+                                    // CRITICAL: Use atomic_add because elements
+                                    // share nodes!
+                                    Kokkos::atomic_add(
+                                      &d_out[dof_index],
+                                      s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                                }
                             }
                         }
                     }

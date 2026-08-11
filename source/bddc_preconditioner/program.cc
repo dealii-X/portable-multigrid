@@ -191,6 +191,15 @@ private:
   const unsigned int n_pre_smooth;
   const unsigned int n_post_smooth;
 
+  // Toggle for the subdomain MatrixFree objects (Laplace operator + p-MG
+  // transfer) used by the expensive fine correction: when true, a real
+  // graph coloring (MatrixFree::AdditionalData::use_coloring) is built so
+  // the BK3/BK1 scatter kernels can accumulate directly instead of going
+  // through Kokkos::atomic_add. overlap_communication_computation is not a
+  // relevant alternative here since these solves are purely local (no MPI
+  // communication happens inside a subdomain vmult).
+  static constexpr bool use_coloring_for_subdomain_solvers = true;
+
   double             setup_time;
   ConditionalOStream pcout;
   ConditionalOStream time_details;
@@ -218,7 +227,7 @@ private:
     SubdomainDoFHandler<dim>       &subomain_dof_handler;
     AffineConstraints<double>      &constraints;
     AffineConstraints<double>      &constraints_physical;
-    bool                            overlap_communication_computation;
+    bool                            use_coloring;
     LaplaceProblem<dim, fe_degree> &parent_problem;
 
     template <unsigned int degree>
@@ -230,7 +239,7 @@ private:
           subomain_dof_handler,
           constraints,
           constraints_physical,
-          overlap_communication_computation);
+          use_coloring);
 
 
       parent_problem.level_subdomain_neumann_matrices[level] =
@@ -587,7 +596,7 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
               level_subdomain_dof_handlers[level],
               level_subdomain_constraints[level],
               level_subdomain_constraints_physical[level],
-              false);
+              use_coloring_for_subdomain_solvers);
 
 
           level_subdomain_neumann_matrices[level] =
@@ -604,7 +613,7 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
                                                 level_subdomain_dof_handlers[level],
                                                 level_subdomain_constraints[level],
                                                 level_subdomain_constraints_physical[level],
-                                                false,
+                                                use_coloring_for_subdomain_solvers,
                                                 *this};
 
 

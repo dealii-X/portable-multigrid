@@ -26,16 +26,23 @@ namespace Portable
   class SubdomainLaplaceOperator : public SubdomainLaplaceOperatorBase<dim, Number>
   {
   public:
+    // overlap_communication_computation is not offered here: these
+    // MatrixFree objects are purely local per-subdomain solves (no MPI
+    // communication happens during a subdomain vmult), so overlapping
+    // communication with computation is meaningless in this context.
+    // use_coloring is the relevant race-avoidance option instead: it lets
+    // the scatter kernels (BK3::Parallel::KokkosKernel et al.) skip
+    // Kokkos::atomic_add in favor of plain accumulation.
     SubdomainLaplaceOperator(const SubdomainDoFHandler<dim>  &subdomain_dof_handler,
                              const AffineConstraints<Number> &constraints,
                              const AffineConstraints<Number> &constraints_physical,
-                             const bool overlap_communication_computation = false);
+                             const bool use_coloring = false);
 
 
     SubdomainLaplaceOperator(const DoFHandler<dim>           &dof_handler,
                              const AffineConstraints<Number> &constraints,
                              const AffineConstraints<Number> &constraints_physical,
-                             const bool overlap_communication_computation = false);
+                             const bool use_coloring = false);
     void
     vmult(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
@@ -230,7 +237,7 @@ namespace Portable
     const SubdomainDoFHandler<dim>  &subdomain_dof_handler,
     const AffineConstraints<Number> &constraints,
     const AffineConstraints<Number> &constraints_physical,
-    const bool                       overlap_communication_computation)
+    const bool                       use_coloring)
     : subdomain_dof_handler(&subdomain_dof_handler)
     , dof_handler(&subdomain_dof_handler.get_dof_handler())
     , constraints(&constraints)
@@ -243,7 +250,7 @@ namespace Portable
     additional_data.mapping_update_flags =
       update_gradients | update_JxW_values | update_quadrature_points;
 
-    additional_data.overlap_communication_computation = overlap_communication_computation;
+    additional_data.use_coloring = use_coloring;
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
 
@@ -267,7 +274,7 @@ namespace Portable
     const DoFHandler<dim>           &dof_handler,
     const AffineConstraints<Number> &constraints,
     const AffineConstraints<Number> &constraints_physical,
-    const bool                       overlap_communication_computation)
+    const bool                       use_coloring)
     : subdomain_dof_handler(nullptr)
     , dof_handler(&dof_handler)
     , constraints(&constraints)
@@ -280,7 +287,7 @@ namespace Portable
     additional_data.mapping_update_flags =
       update_gradients | update_JxW_values | update_quadrature_points;
 
-    additional_data.overlap_communication_computation = overlap_communication_computation;
+    additional_data.use_coloring = use_coloring;
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
 
@@ -375,7 +382,9 @@ namespace Portable
               interior_dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              BK3::Parallel::CellRangeIdView(),
+              precomputed_data.use_coloring);
 
             Kokkos::fence();
           }
@@ -447,7 +456,9 @@ namespace Portable
               interior_dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              BK3::Parallel::CellRangeIdView(),
+              precomputed_data.use_coloring);
 
             Kokkos::fence();
           }
@@ -517,7 +528,9 @@ namespace Portable
               plain_dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              BK3::Parallel::CellRangeIdView(),
+              precomputed_data.use_coloring);
 
             Kokkos::fence();
           }
@@ -796,7 +809,9 @@ namespace Portable
               plain_dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              BK3::Parallel::CellRangeIdView(),
+              precomputed_data.use_coloring);
 
             Kokkos::fence();
           }
@@ -877,7 +892,14 @@ namespace Portable
               n_interface_cells,
               numBlocks,
               threadsPerBlock,
-              interface_cell_ids_per_color[color]);
+              interface_cell_ids_per_color[color],
+              // interface_cell_ids_per_color subsets each color down to its
+              // interface-touching cells, but that subsetting is not itself
+              // built with dof-conflict-freedom in mind, so it cannot be
+              // assumed race-free even when matrix_free was built with
+              // real graph coloring. Always atomic here until that's
+              // addressed.
+              false);
 
             Kokkos::fence();
           }
