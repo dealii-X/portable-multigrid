@@ -178,7 +178,7 @@ namespace Portable
     const unsigned int n_subdomains;
     const unsigned int this_subdomain;
 
-    const InterfaceVectorType &interface_weights;
+    const DeviceVector<const Number> interface_weights;
 
     Kokkos::View<Number *, MemorySpace::Default::kokkos_space> coarse_weights;
 
@@ -577,8 +577,7 @@ namespace Portable
     DeviceVector<Number>       dst_view(dst.get_values(), dst.size());
     DeviceVector<const Number> src_view(src.get_values(), this->interface_vector_size);
 
-    const DeviceVector<const Number> weights(interface_weights.get_values(),
-                                             this->interface_vector_size);
+    const auto &weights = interface_weights;
     const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
 
     Kokkos::parallel_for(
@@ -605,8 +604,7 @@ namespace Portable
     DeviceVector<Number>       dst_view(dst.get_values(), this->interface_vector_size);
     DeviceVector<const Number> src_view(src.get_values(), src.size());
 
-    const DeviceVector<const Number> weights(interface_weights.get_values(),
-                                             this->interface_vector_size);
+    const auto &weights = interface_weights;
 
     const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
 

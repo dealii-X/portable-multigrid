@@ -128,6 +128,22 @@ namespace Portable
     void
     compute_G_tensors();
 
+    /**
+     * Device-side matrix-free replacement for a constant-forcing RHS
+     * assembly loop: dst_i = sum_cells sum_q value * phi_i(q) * JxW(q), the
+     * same tensor-product sum-factorized structure vmult_plain() uses for
+     * the operator, but building a right-hand side instead of applying A.
+     * Constrained dofs (plain_dof_indices_per_color marks them invalid) are
+     * skipped in the scatter, leaving them at their dst = 0 initial value --
+     * the matrix-free equivalent of manually zeroing
+     * subdomain_physical_boundary_dofs afterward. Replaces a host-side
+     * FEValues cell loop + Host-vector-then-device-copy pattern that was a
+     * measured multi-second cost at scale (BDDC "RHS assembled" bucket).
+     */
+    void
+    compute_rhs(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &dst,
+               const Number                                                      value) const;
+
   private:
     using TeamHandle =
       Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type;
@@ -516,6 +532,122 @@ namespace Portable
           const auto idx  = boundary_dofs(i);
           dst_device(idx) = src_device(idx);
         });
+  }
+
+  template <int dim, int fe_degree, typename Number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::compute_rhs(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &dst,
+    const Number                                                      value) const
+  {
+    dst = 0.0;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    DeviceVector<Number> dst_device(dst.get_values(), dst.size());
+
+    constexpr unsigned int n_1d         = fe_degree + 1;
+    constexpr unsigned int n_local_dofs = Utilities::pow(n_1d, dim);
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &mf_data      = matrix_free.get_data(color);
+            const auto &dof_indices  = plain_dof_indices_per_color[color];
+            const auto &shape_values = mf_data.shape_values;
+            const auto &JxW          = mf_data.JxW;
+
+            if constexpr (dim == 3)
+              {
+                Kokkos::parallel_for(
+                  "Compute_RHS_3D_Color_" + std::to_string(color),
+                  Kokkos::RangePolicy<typename MemorySpace::Default::kokkos_space::execution_space>(
+                    0, n_cells),
+                  KOKKOS_LAMBDA(const int cell_id) {
+                    Number local_rhs[n_local_dofs];
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      local_rhs[i] = 0.0;
+
+                    for (unsigned int qz = 0; qz < n_1d; ++qz)
+                      for (unsigned int qy = 0; qy < n_1d; ++qy)
+                        for (unsigned int qx = 0; qx < n_1d; ++qx)
+                          {
+                            const unsigned int q      = qx + qy * n_1d + qz * n_1d * n_1d;
+                            const Number       JxW_val = JxW(q, cell_id);
+
+                            for (unsigned int iz = 0; iz < n_1d; ++iz)
+                              {
+                                const Number phi_z = shape_values(iz * n_1d + qz);
+                                for (unsigned int iy = 0; iy < n_1d; ++iy)
+                                  {
+                                    const Number phi_y = shape_values(iy * n_1d + qy);
+                                    for (unsigned int ix = 0; ix < n_1d; ++ix)
+                                      {
+                                        const Number       phi_x = shape_values(ix * n_1d + qx);
+                                        const unsigned int i = ix + iy * n_1d + iz * n_1d * n_1d;
+
+                                        local_rhs[i] += value * phi_x * phi_y * phi_z * JxW_val;
+                                      }
+                                  }
+                              }
+                          }
+
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      {
+                        const unsigned int dof_idx = dof_indices(i, cell_id);
+                        if (dof_idx != numbers::invalid_unsigned_int)
+                          Kokkos::atomic_add(&dst_device(dof_idx), local_rhs[i]);
+                      }
+                  });
+              }
+            else // dim == 2
+              {
+                Kokkos::parallel_for(
+                  "Compute_RHS_2D_Color_" + std::to_string(color),
+                  Kokkos::RangePolicy<typename MemorySpace::Default::kokkos_space::execution_space>(
+                    0, n_cells),
+                  KOKKOS_LAMBDA(const int cell_id) {
+                    Number local_rhs[n_local_dofs];
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      local_rhs[i] = 0.0;
+
+                    for (unsigned int qy = 0; qy < n_1d; ++qy)
+                      for (unsigned int qx = 0; qx < n_1d; ++qx)
+                        {
+                          const unsigned int q       = qx + qy * n_1d;
+                          const Number       JxW_val = JxW(q, cell_id);
+
+                          for (unsigned int iy = 0; iy < n_1d; ++iy)
+                            {
+                              const Number phi_y = shape_values(iy * n_1d + qy);
+                              for (unsigned int ix = 0; ix < n_1d; ++ix)
+                                {
+                                  const Number       phi_x = shape_values(ix * n_1d + qx);
+                                  const unsigned int i     = ix + iy * n_1d;
+
+                                  local_rhs[i] += value * phi_x * phi_y * JxW_val;
+                                }
+                            }
+                        }
+
+                    for (unsigned int i = 0; i < n_local_dofs; ++i)
+                      {
+                        const unsigned int dof_idx = dof_indices(i, cell_id);
+                        if (dof_idx != numbers::invalid_unsigned_int)
+                          Kokkos::atomic_add(&dst_device(dof_idx), local_rhs[i]);
+                      }
+                  });
+              }
+
+            Kokkos::fence();
+          }
+      }
+
+    dst.compress(VectorOperation::add);
   }
 
   template <int dim, int fe_degree, typename Number>

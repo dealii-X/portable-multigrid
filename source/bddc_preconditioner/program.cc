@@ -995,47 +995,19 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   Timer time;
   Kokkos::fence();
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> system_rhs_host(
-    level_subdomain_dof_handlers.back().get_dof_handler().n_dofs());
-
-  const QGauss<dim> quadrature_formula(fe_degree + 1);
-
-  FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
-
-  const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
-  const unsigned int n_q_points    = quadrature_formula.size();
-
-  Vector<double> cell_rhs(dofs_per_cell);
-
-  std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-  for (const auto &cell :
-       level_subdomain_dof_handlers.back().get_dof_handler().active_cell_iterators())
-    {
-      cell_rhs = 0;
-
-      fe_values.reinit(cell);
-
-      for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
-        for (unsigned int i = 0; i < dofs_per_cell; ++i)
-          cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
-
-      cell->get_dof_indices(local_dof_indices);
-
-      for (unsigned int i = 0; i < dofs_per_cell; ++i)
-        system_rhs_host[local_dof_indices[i]] += cell_rhs[i];
-    }
-
-  for (const auto &index :
-       level_subdomain_dof_handlers.back().get_dof_info().subdomain_physical_boundary_dofs)
-    system_rhs_host[index] = 0.;
-
-
-  LinearAlgebra::ReadWriteVector<double> rw_vector(
-    level_subdomain_dof_handlers.back().get_dof_handler().n_dofs());
-
-  rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
-  subdomain_rhs_device.import_elements(rw_vector, VectorOperation::insert);
+  // Matrix-free, device-side replacement for the host FEValues cell loop +
+  // Host-vector-then-import_elements-to-device pattern this used to be:
+  // level_subdomain_matrices.back() is guaranteed to be a
+  // SubdomainLaplaceOperator<dim, fe_degree, double> (the finest p-level
+  // always uses degree == fe_degree, this class's own template parameter --
+  // see setup_dofs()'s p_level_fes construction), so the downcast here is
+  // safe. compute_rhs() already skips constrained dofs the same way
+  // vmult_plain() does (plain_dof_indices_per_color marks them invalid),
+  // which is exactly equivalent to the old code's explicit
+  // subdomain_physical_boundary_dofs zeroing pass.
+  static_cast<const Portable::SubdomainLaplaceOperator<dim, fe_degree, double> &>(
+    *level_subdomain_matrices.back())
+    .compute_rhs(subdomain_rhs_device, 1.0);
 
   Kokkos::fence();
   setup_time += time.wall_time();

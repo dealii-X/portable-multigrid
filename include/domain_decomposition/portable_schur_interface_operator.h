@@ -2,6 +2,7 @@
 #define portable_schur_interface_operator_h
 
 #include <deal.II/base/enable_observer_pointer.h>
+#include <deal.II/base/timer.h>
 
 #include <deal.II/lac/lapack_full_matrix.h>
 
@@ -71,7 +72,17 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &interface_solution,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &rhs_subdomain) const;
 
-    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &
+    // A non-owning view over interface_weights' storage -- every caller of
+    // this already just wraps interface_weights.get_values() into its own
+    // DeviceVector at the use site (same pointer, same size, five times
+    // over across BDDCPreconditioner/BNNPreconditioner); returning that
+    // wrapper directly here instead of the underlying
+    // LinearAlgebra::distributed::Vector centralizes that, with no copy --
+    // interface_weights itself stays exactly as it is (a real, owned,
+    // distributed vector; needed as such during compute_interface_weights()
+    // for compress()/update_ghost_values(), and there's no reason to
+    // duplicate its data into something else once built).
+    DeviceVector<const Number>
     get_interface_weights() const;
 
 
@@ -182,36 +193,59 @@ namespace Portable
   {
     this->interface_weights.reinit(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
-    LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> interface_weights_host(
-      this->subdomain_dof_handler->get_interface_vector_partitioner());
+    // Every locally-relevant (owned+ghost) interface index gets exactly one
+    // contribution of 1.0 from this rank -- there's no scatter/aliasing
+    // here (unlike a cell loop touching the same dof from multiple cells),
+    // so this is a flat fill rather than a += loop. Explicit Kokkos fill
+    // over the full owned+ghost range rather than
+    // interface_weights = Number(1.0): deal.II's distributed-vector
+    // operator=(scalar) semantics for a *nonzero* scalar are ambiguous
+    // about whether the ghost region is touched (and any Assert guarding
+    // that is compiled out under -DNDEBUG in this Release build), which
+    // silently corrupted the ghost contributions compress() below sums --
+    // same final solution norm either way (CG still converges), but nearly
+    // 2x the iteration count from the resulting worse-scaled preconditioner.
+    {
+      const unsigned int n_locally_relevant =
+        this->subdomain_dof_handler->n_locally_relevant_interface_indices();
+      Number *weights_ptr = interface_weights.get_values();
 
-    const unsigned int n_locally_relevant_interface_indices =
-      this->subdomain_dof_handler->n_locally_relevant_interface_indices();
+      Kokkos::parallel_for(
+        "interface_weights_fill",
+        Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
+          0, n_locally_relevant),
+        KOKKOS_LAMBDA(const unsigned int i) { weights_ptr[i] = Number(1.0); });
+      Kokkos::fence();
+    }
 
-    for (unsigned int i = 0; i < n_locally_relevant_interface_indices; ++i)
-      interface_weights_host[this->subdomain_dof_handler->local_to_global_interface_partitioner(
-        i)] += 1.0;
+    // Sums each interface dof's per-rank 1.0 contributions into its owning
+    // rank's entry. Entirely device-side: compress()/update_ghost_values()
+    // on a MemorySpace::Default vector is the same pattern every other
+    // vector in this codebase already uses (e.g.
+    // SubdomainLaplaceOperator::vmult()), so there's no need for a
+    // separate Host vector + ReadWriteVector staging round-trip here at
+    // all -- that used to be the entire cost of this function.
+    this->interface_weights.compress(VectorOperation::add);
 
-    interface_weights_host.compress(VectorOperation::add);
+    const unsigned int n_locally_owned = interface_weights.locally_owned_size();
+    Number            *weights_ptr     = interface_weights.get_values();
 
-    for (unsigned int i = 0; i < interface_weights.locally_owned_size(); ++i)
-      interface_weights_host.local_element(i) = 1. / interface_weights_host.local_element(i);
+    Kokkos::parallel_for(
+      "interface_weights_reciprocal",
+      Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(0, n_locally_owned),
+      KOKKOS_LAMBDA(const unsigned int i) { weights_ptr[i] = Number(1.0) / weights_ptr[i]; });
+    Kokkos::fence();
 
-    interface_weights_host.update_ghost_values();
-
-    LinearAlgebra::ReadWriteVector<Number> rw_vector(
-      interface_weights_host.locally_owned_elements());
-    rw_vector.import_elements(interface_weights_host, VectorOperation::insert);
-    interface_weights.import_elements(rw_vector, VectorOperation::insert);
-
-    interface_weights.update_ghost_values();
+    this->interface_weights.update_ghost_values();
   }
 
   template <int dim, typename Number>
-  const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &
+  DeviceVector<const Number>
   SchurInterfaceOperator<dim, Number>::get_interface_weights() const
   {
-    return interface_weights;
+    return DeviceVector<const Number>(
+      interface_weights.get_values(),
+      this->subdomain_dof_handler->n_locally_relevant_interface_indices());
   }
 
   template <int dim, typename Number>

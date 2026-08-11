@@ -93,7 +93,7 @@ namespace Portable
     const unsigned int n_subdomains;
     const unsigned int this_subdomain;
 
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_weights;
+    const DeviceVector<const number> interface_weights;
 
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       interface_dof_indices_subdomain;
@@ -415,8 +415,7 @@ namespace Portable
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
                                                interface_dof_indices_subdomain.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    const auto &weights_view = interface_weights;
 
     // retrieve subdomain coarse value by the interface weighted sum
     number subdomain_coarse_value = 0.;
@@ -461,8 +460,7 @@ namespace Portable
     DeviceVector<number> interface_vector_view(interface_vector.get_values(),
                                                interface_dof_indices_subdomain.size());
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    const auto &weights_view = interface_weights;
 
 
     // copy coarse Vector to std::vector for MPi::scatter
@@ -507,8 +505,7 @@ namespace Portable
                                                interface_dof_indices_subdomain.size());
 
 
-    DeviceVector<number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
+    const auto &weights_view = interface_weights;
 
     // copy coarse Vector to std::vector for MPi::scatter
     if (this->this_subdomain == this->coarse_problem_rank)
