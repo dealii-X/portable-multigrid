@@ -19,7 +19,6 @@ namespace Portable
 {
   namespace internal
   {
-
     template <typename Number>
     struct SimpleVectorDataExchange
     {

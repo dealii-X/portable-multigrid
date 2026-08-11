@@ -47,7 +47,7 @@ namespace Portable
       const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
       const SubdomainPreconditioner                   &subdomain_mg_preconditione,
       const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
-        &level_bddc_matrices,
+                                                                        &level_bddc_matrices,
       const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
       const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
       const BDDCVariant variant = BDDCVariant::corner_edge_face);
@@ -125,7 +125,8 @@ namespace Portable
     public:
       const BDDCPreconditioner<dim, Number, BddcSmootherType> &parent;
 
-      SubdomainProjectorWrapper(const BDDCPreconditioner<dim, Number, BddcSmootherType> &parent_preconditioner)
+      SubdomainProjectorWrapper(
+        const BDDCPreconditioner<dim, Number, BddcSmootherType> &parent_preconditioner)
         : parent(parent_preconditioner)
       {}
 
@@ -158,9 +159,9 @@ namespace Portable
     // comment on BddcSmootherType for why the type-erased
     // subdomain_mg_preconditioner alone isn't enough.
     const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
-                                                                        &level_bddc_matrices;
+                                                                      &level_bddc_matrices;
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers;
-    const MGLevelObject<BddcSmootherType>                              &level_bddc_smoothers;
+    const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers;
 
     SubdomainBDDCOperatorWrapper<dim, Number> subdomain_bddc_operator;
 
@@ -254,10 +255,10 @@ namespace Portable
     const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
     const SubdomainPreconditioner                   &subdomain_mg_preconditioner,
     const MGLevelObject<std::unique_ptr<SubdomainLaplaceOperatorBase<dim, Number>>>
-                                                                        &level_bddc_matrices,
+                                                                      &level_bddc_matrices,
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
-    const MGLevelObject<BddcSmootherType>                              &level_bddc_smoothers,
-    const BDDCVariant                                                   variant)
+    const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
+    const BDDCVariant                                                  variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
@@ -378,7 +379,7 @@ namespace Portable
   template <int dim, typename Number, typename BddcSmootherType>
   void
   BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult(InterfaceVectorType       &dst,
-                                         const InterfaceVectorType &src) const
+                                                           const InterfaceVectorType &src) const
   {
     Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("Interface vector is not initialized correctly."));
@@ -460,9 +461,9 @@ namespace Portable
     // fine_residual reference can be handed straight to solve() with no extra copy.
     SolverCG<SubdomainVectorType> solver(solver_control);
     solver.solve(this->subdomain_bddc_operator,
-                fine_solution,
-                fine_residual,
-                subdomain_mg_preconditioner);
+                 fine_solution,
+                 fine_residual,
+                 subdomain_mg_preconditioner);
 
     // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
     //           << "  iterations." << std::endl;
@@ -986,7 +987,8 @@ namespace Portable
     for (unsigned int level = minlevel; level <= maxlevel; ++level)
       {
         const auto &concrete_matrix =
-          static_cast<const SubdomainBDDCOperatorWrapper<dim, Number> &>(*level_bddc_matrices[level]);
+          static_cast<const SubdomainBDDCOperatorWrapper<dim, Number> &>(
+            *level_bddc_matrices[level]);
 
         block_matrices[level] =
           std::make_unique<BlockOperatorType>(concrete_matrix, n_coarse_local);
@@ -996,12 +998,14 @@ namespace Portable
             std::make_unique<BlockTransferType>(*level_bddc_transfers[level], n_coarse_local);
 
         typename BlockSmootherType::AdditionalData smoother_data;
-        const auto &scalar_data          = level_bddc_smoothers[level].get_additional_data();
-        smoother_data.degree             = scalar_data.degree;
-        smoother_data.max_eigenvalue     = scalar_data.max_eigenvalue;
-        smoother_data.smoothing_range    = scalar_data.smoothing_range;
-        smoother_data.preconditioner     = std::make_shared<BlockPreconditionerType>(
-          *block_matrices[level], level_bddc_matrices[level]->get_matrix_diagonal_inverse(), n_coarse_local);
+        const auto &scalar_data       = level_bddc_smoothers[level].get_additional_data();
+        smoother_data.degree          = scalar_data.degree;
+        smoother_data.max_eigenvalue  = scalar_data.max_eigenvalue;
+        smoother_data.smoothing_range = scalar_data.smoothing_range;
+        smoother_data.preconditioner  = std::make_shared<BlockPreconditionerType>(
+          *block_matrices[level],
+          level_bddc_matrices[level]->get_matrix_diagonal_inverse(),
+          n_coarse_local);
 
         block_smoothers[level].initialize(*block_matrices[level], smoother_data);
       }
@@ -1024,6 +1028,9 @@ namespace Portable
     Kokkos::fence();
     setup_timings[2] += time.wall_time();
 
+    std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
+              << solver_control.last_step() << " iterations." << std::endl;
+
     max_subdomain_mg_iterations =
       std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
 
@@ -1041,9 +1048,9 @@ namespace Portable
         DeviceVector<Number> phi_view(phi_j.get_values(), n_subdomain_dofs);
 
         Kokkos::parallel_for(
-          "unpack_phi_j",
-          n_subdomain_dofs,
-          KOKKOS_LAMBDA(const int i) { phi_view(i) = lifted_view(i) + correction_view(i); });
+          "unpack_phi_j", n_subdomain_dofs, KOKKOS_LAMBDA(const int i) {
+            phi_view(i) = lifted_view(i) + correction_view(i);
+          });
       }
     Kokkos::fence();
 
@@ -1054,9 +1061,16 @@ namespace Portable
     // coarse-solve path, since compute_local_coarse_matrix() only runs
     // once per preconditioner setup -- the extra n_coarse_local sequential
     // solves cost comparatively little next to that.
+    //
+    // Disabled (#if 0) for the Jupiter GPU perf run: it doubles the coarse-
+    // solve cost (a full sequential re-solve alongside the block one),
+    // which would confound a clean block-vs-sequential timing comparison.
+    // Already confirmed at machine precision on CPU -- re-enable once the
+    // GPU run itself needs a correctness re-check.
+#if 0
     {
       std::vector<SubdomainVectorType> phi_ref(n_coarse_local);
-      SubdomainVectorType               rhs_ref, correction_ref;
+      SubdomainVectorType              rhs_ref, correction_ref;
       rhs_ref.reinit(temp_subdomain_src);
       correction_ref.reinit(temp_subdomain_dst);
 
@@ -1081,8 +1095,9 @@ namespace Portable
         }
 
       std::cout << "[block coarse-matrix verification] subdomain " << this_subdomain
-               << ": max |phi_block - phi_sequential| = " << max_phi_diff << std::endl;
+                << ": max |phi_block - phi_sequential| = " << max_phi_diff << std::endl;
     }
+#endif
 
     for (unsigned int j = 0; j < n_coarse_local; ++j)
       {
