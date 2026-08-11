@@ -14,6 +14,7 @@
 
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
+#include "kernels/portable_block_group_mean_projection.h"
 #include "kernels/portable_local_laplace_operator.h"
 #include "operators/portable_laplace_operator_quad.h"
 #include "operators/portable_subdomain_laplace_operator.h"
@@ -119,6 +120,33 @@ namespace Portable
             }
         });
       Kokkos::fence();
+    }
+
+    /**
+     * Block Pi: applies project() independently to each of n_rhs blocks
+     * of block_vector, which must be sized n_rhs * n_subdomain_dofs and
+     * laid out as n_rhs blocks of n_subdomain_dofs each (same convention
+     * bk3_kokkos_kernel_block.h's KokkosKernelBlock() and SolverBlockCG
+     * use). Does not touch project() itself -- see
+     * apply_block_group_mean_projection()'s comment in
+     * portable_block_group_mean_projection.h for why this doesn't need
+     * the cell/shared-memory batching care the leaf matrix-free kernel
+     * did (primal_constraint_offsets/_dofs_subdomain/coarse_weights are
+     * the same for every RHS block, and this kernel has no per-cell
+     * shared data to reuse in the first place).
+     */
+    void
+    project_block(SubdomainVectorType &block_vector, const unsigned int n_rhs) const
+    {
+      AssertDimension(block_vector.size(), static_cast<std::size_t>(n_rhs) * n_subdomain_dofs);
+
+      internal::apply_block_group_mean_projection(block_vector.get_values(),
+                                                   this->primal_constraint_offsets,
+                                                   this->primal_constraint_dofs_subdomain,
+                                                   this->coarse_weights,
+                                                   this->n_local_coarse_dofs,
+                                                   n_rhs,
+                                                   this->n_subdomain_dofs);
     }
 
     void

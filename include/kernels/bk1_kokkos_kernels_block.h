@@ -1,0 +1,763 @@
+#ifndef bk1_kokkos_kernels_block_h
+#define bk1_kokkos_kernels_block_h
+
+#include <deal.II/base/memory_space.h>
+#include <deal.II/base/utilities.h>
+
+#include <Kokkos_Core.hpp>
+
+#include <vector>
+
+DEAL_II_NAMESPACE_OPEN
+
+// Copies of bk1_kokkos_kernels.h's KokkosProlongationBatchedKernel() /
+// KokkosRestrictionBatchedKernel() (the only two of that file's kernels
+// actually used in production -- see portable_geometric_transfer.h /
+// portable_polynomial_transfer.h; the "Batched" in their names refers to
+// batching multiple *cells* per team via shared memory, the same approach
+// bk3_kokkos_kernel.h uses for the leaf Laplace kernel, and is kept as-is
+// here since it's still exactly what's happening), extended with a second,
+// independent capability: n_rhs right-hand sides handled in one launch
+// instead of n_rhs sequential calls -- called "block" throughout this file
+// to keep it distinguishable from the pre-existing cell batching, for the
+// same compute_local_coarse_matrix() motivation as
+// bk3_kokkos_kernel_block.h/portable_block_group_mean_projection.h. Same
+// indexing convention throughout this effort: d_in/d_out are laid out as
+// n_rhs blocks of dof_stride each, block k occupies
+// [k*dof_stride, (k+1)*dof_stride), and global_cell_index (already
+// computed as cell_batch_index*nelmtPerBatch+batch_id here) splits into
+// physical_cell = global_cell_index % n_cells (for dof_indices_coarse/
+// dof_indices_fine/weights, which don't vary with the RHS) and rhs_idx =
+// global_cell_index / n_cells (for d_in/d_out). Unlike the leaf Laplace
+// kernel (where d_in and d_out are the same size), coarse and fine
+// vectors have different sizes here, so there are two separate strides
+// -- dof_stride_coarse and dof_stride_fine -- not one: prolongation
+// reads d_in at the coarse stride and writes d_out at the fine stride,
+// restriction the other way around.
+namespace BK1Block
+{
+  namespace Parallel
+  {
+
+    template <typename Number>
+    using DeviceView = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>;
+
+    using DoFIndicesView = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>;
+
+    template <typename Number>
+    using WeightsView = Kokkos::View<Number **, MemorySpace::Default::kokkos_space>;
+
+    template <int dim, int nm_coarse, int nm_fine, typename Number>
+    void
+    KokkosProlongationBatchedBlockKernel(
+      const DeviceView<Number>  d_shape_values,
+      const DeviceView<Number>  d_in,
+      DeviceView<Number>        d_out,
+      const DoFIndicesView      dof_indices_coarse,
+      const DoFIndicesView      dof_indices_fine,
+      const WeightsView<Number> weights,
+      const unsigned int        n_cells,
+      const unsigned int        n_rhs,
+      const unsigned int        dof_stride_coarse,
+      const unsigned int        dof_stride_fine,
+      const unsigned int        n_blocks            = numbers::invalid_unsigned_int,
+      const unsigned int        n_threads_per_block = numbers::invalid_unsigned_int)
+
+    {
+      if (n_cells == 0 || n_rhs == 0)
+        return;
+
+      constexpr int nm_coarse_total = Utilities::pow(nm_coarse, dim);
+      constexpr int nm_fine_total   = Utilities::pow(nm_fine, dim);
+
+      constexpr int shmemPerBlock = 10800;
+
+      const int nelmt = static_cast<int>(n_cells) * static_cast<int>(n_rhs);
+
+      int nelmtPerBatch = (shmemPerBlock / (2 * nm_fine_total * sizeof(Number)));
+
+      if (nelmtPerBatch == 0)
+        nelmtPerBatch = 1;
+      else if (nelmtPerBatch > nelmt)
+        nelmtPerBatch = nelmt;
+
+      const int numBlocks = std::max(1,
+                                     ((n_blocks == numbers::invalid_unsigned_int) ?
+                                        ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
+                                        static_cast<int>(n_blocks)));
+
+      const int threadsPerBlock = std::max(1,
+                                           ((n_threads_per_block == numbers::invalid_unsigned_int) ?
+                                              Utilities::pow(nm_fine, dim - 1) * nelmtPerBatch :
+                                              static_cast<int>(n_threads_per_block)));
+
+      {
+        const unsigned int ssize = nm_coarse * nm_fine +              // kernel matrix
+                                   2 * nelmtPerBatch * nm_fine_total; // temp vectors
+
+        const unsigned int shmem_size = ssize * sizeof(Number);
+
+        typedef Kokkos::TeamPolicy<>::member_type member_type;
+        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+
+        Kokkos::parallel_for(
+          policy, KOKKOS_LAMBDA(member_type team_member) {
+            Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+
+            Number *s_shape_values = scratch;
+
+            Number *s_wsp0 = s_shape_values + nm_coarse * nm_fine;
+            Number *s_wsp1 = s_wsp0 + nelmtPerBatch * nm_fine_total;
+
+            Number reg[nm_fine];
+
+            const int threadIdx = team_member.team_rank();
+            const int blockSize = team_member.team_size();
+
+            for (int tid = threadIdx; tid < nm_coarse * nm_fine; tid += blockSize)
+              s_shape_values[tid] = d_shape_values(tid);
+
+            team_member.team_barrier();
+
+            // element index
+            int cell_batch_index = team_member.league_rank();
+
+            while (cell_batch_index < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+              {
+                // current nelmtPerBatch (edge case, last batch size can be
+                // less)
+                const int c_nelmtPerBatch =
+                  (cell_batch_index * nelmtPerBatch + nelmtPerBatch > nelmt) ?
+                    (nelmt - cell_batch_index * nelmtPerBatch) :
+                    nelmtPerBatch;
+
+                // Gather coarse dof values
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
+
+                      const unsigned int physical_cell = global_cell_index % n_cells;
+                      const unsigned int rhs_offset = (global_cell_index / n_cells) * dof_stride_coarse;
+
+                      if (dim == 2)
+                        {
+                          const int i = tid % nm_coarse;
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              const int local_idx = j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, physical_cell);
+
+                              if (dof_index == numbers::invalid_unsigned_int)
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = 0;
+                              else
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] =
+                                  d_in[rhs_offset + dof_index];
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int j = (tid % co_dimension_size) / nm_coarse;
+                          const int i = tid % nm_coarse;
+
+                          for (int k = 0; k < nm_coarse; ++k)
+                            {
+                              const int local_idx = k * nm_coarse * nm_coarse + j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, physical_cell);
+
+                              if (dof_index == numbers::invalid_unsigned_int)
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] = 0;
+                              else
+                                s_wsp0[batch_id * nm_coarse_total + local_idx] =
+                                  d_in[rhs_offset + dof_index];
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                // direction 0
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      if (dim == 2)
+                        {
+                          const int j = tid % nm_coarse;
+
+                          for (int i = 0; i < nm_coarse; ++i)
+                            {
+                              reg[i] = s_wsp0[batch_id * nm_coarse * nm_coarse + j * nm_coarse + i];
+                            }
+
+                          for (int p = 0; p < nm_fine; ++p)
+                            {
+                              Number tmp = 0.;
+                              for (int i = 0; i < nm_coarse; ++i)
+                                {
+                                  tmp += s_shape_values[i * nm_fine + p] * reg[i];
+                                }
+
+                              s_wsp1[batch_id * nm_fine * nm_coarse + j * nm_fine + p] = tmp;
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int k = (tid % co_dimension_size) / nm_coarse;
+                          const int j = tid % nm_coarse;
+
+                          for (int i = 0; i < nm_coarse; ++i)
+                            {
+                              reg[i] = s_wsp0[batch_id * nm_coarse * nm_coarse * nm_coarse +
+                                              k * nm_coarse * nm_coarse + j * nm_coarse + i];
+                            }
+
+                          for (int p = 0; p < nm_fine; ++p)
+                            {
+                              Number tmp = 0.;
+                              for (int i = 0; i < nm_coarse; ++i)
+                                {
+                                  tmp += s_shape_values[i * nm_fine + p] * reg[i];
+                                }
+
+                              s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
+                                     k * nm_fine * nm_coarse + j * nm_fine + p] = tmp;
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                // direction 1
+                {
+                  constexpr int co_dimension_size = nm_fine * Utilities::pow(nm_coarse, dim - 2);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              reg[j] = s_wsp1[batch_id * nm_fine * nm_coarse + j * nm_fine + p];
+                            }
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              Number tmp = 0.;
+                              for (int j = 0; j < nm_coarse; ++j)
+                                {
+                                  tmp += s_shape_values[j * nm_fine + q] * reg[j];
+                                }
+
+                              s_wsp0[batch_id * nm_fine * nm_fine + q * nm_fine + p] = tmp;
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int k = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              reg[j] = s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
+                                              k * nm_fine * nm_coarse + j * nm_fine + p];
+                            }
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              Number tmp = 0.;
+                              for (int j = 0; j < nm_coarse; ++j)
+                                {
+                                  tmp += s_shape_values[j * nm_fine + q] * reg[j];
+                                }
+
+                              s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
+                                     k * nm_fine * nm_fine + q * nm_fine + p] = tmp;
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                // direction 2
+                if (dim == 3)
+                  {
+                    constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                         tid += blockSize)
+                      {
+                        const int batch_id = tid / co_dimension_size;
+
+                        const int q = (tid % co_dimension_size) / nm_fine;
+                        const int p = tid % nm_fine;
+
+                        for (int k = 0; k < nm_coarse; ++k)
+                          {
+                            reg[k] = s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
+                                            k * nm_fine * nm_fine + q * nm_fine + p];
+                          }
+
+                        for (int r = 0; r < nm_fine; ++r)
+                          {
+                            Number tmp = 0.;
+                            for (int k = 0; k < nm_coarse; ++k)
+                              {
+                                tmp += s_shape_values[k * nm_fine + r] * reg[k];
+                              }
+
+                            s_wsp1[batch_id * nm_fine * nm_fine * nm_fine + r * nm_fine * nm_fine +
+                                   q * nm_fine + p] = tmp;
+                          }
+                      }
+                    team_member.team_barrier();
+                  }
+
+                // Apply weights and scatter fine dof values
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
+
+                      const unsigned int physical_cell = global_cell_index % n_cells;
+                      const unsigned int rhs_offset = (global_cell_index / n_cells) * dof_stride_fine;
+
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              const int local_idx = q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, physical_cell);
+
+                              Number value_out = weights(local_idx, physical_cell) *
+                                                 s_wsp0[batch_id * nm_fine_total + local_idx];
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              Kokkos::atomic_add(&d_out[rhs_offset + dof_index], value_out);
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int q = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
+
+                          for (int r = 0; r < nm_fine; ++r)
+                            {
+                              const int local_idx = r * nm_fine * nm_fine + q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, physical_cell);
+
+                              Number value_out = weights(local_idx, physical_cell) *
+                                                 s_wsp1[batch_id * nm_fine_total + local_idx];
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              Kokkos::atomic_add(&d_out[rhs_offset + dof_index], value_out);
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                cell_batch_index += team_member.league_size();
+              }
+          });
+
+        Kokkos::fence();
+      }
+    }
+
+    template <int dim, int nm_coarse, int nm_fine, typename Number>
+    void
+    KokkosRestrictionBatchedBlockKernel(const DeviceView<Number>  d_shape_values,
+                                   const DeviceView<Number>  d_in,
+                                   DeviceView<Number>        d_out,
+                                   const DoFIndicesView      dof_indices_coarse,
+                                   const DoFIndicesView      dof_indices_fine,
+                                   const WeightsView<Number> weights,
+                                   const unsigned int        n_cells,
+                                   const unsigned int        n_rhs,
+                                   const unsigned int        dof_stride_coarse,
+                                   const unsigned int        dof_stride_fine,
+                                   unsigned int n_blocks            = numbers::invalid_unsigned_int,
+                                   unsigned int n_threads_per_block = numbers::invalid_unsigned_int)
+
+    {
+      if (n_cells == 0 || n_rhs == 0)
+        return;
+
+      constexpr int nm_coarse_total = Utilities::pow(nm_coarse, dim);
+      constexpr int nm_fine_total   = Utilities::pow(nm_fine, dim);
+
+      constexpr int shmemPerBlock = 10800;
+
+      const int nelmt = static_cast<int>(n_cells) * static_cast<int>(n_rhs);
+
+      int nelmtPerBatch = (shmemPerBlock / (2 * nm_fine_total * sizeof(Number)));
+
+      if (nelmtPerBatch == 0)
+        nelmtPerBatch = 1;
+      else if (nelmtPerBatch > nelmt)
+        nelmtPerBatch = nelmt;
+
+      const int numBlocks = std::max(1,
+                                     ((n_blocks == numbers::invalid_unsigned_int) ?
+                                        ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
+                                        static_cast<int>(n_blocks)));
+
+      const int threadsPerBlock = std::max(1,
+                                           ((n_threads_per_block == numbers::invalid_unsigned_int) ?
+                                              Utilities::pow(nm_fine, dim - 1) * nelmtPerBatch :
+                                              static_cast<int>(n_threads_per_block)));
+
+      {
+        const unsigned int ssize = nm_coarse * nm_fine +              // kernel matrix
+                                   2 * nelmtPerBatch * nm_fine_total; // temp vectors
+
+        const unsigned int shmem_size = ssize * sizeof(Number);
+
+        typedef Kokkos::TeamPolicy<>::member_type member_type;
+        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+
+        Kokkos::parallel_for(
+          policy, KOKKOS_LAMBDA(member_type team_member) {
+            Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+
+            Number *s_shape_values = scratch;
+
+            Number *s_wsp0 = s_shape_values + nm_coarse * nm_fine;
+            Number *s_wsp1 = s_wsp0 + nelmtPerBatch * nm_fine_total;
+
+            Number reg[nm_fine];
+
+            const int threadIdx = team_member.team_rank();
+            const int blockSize = team_member.team_size();
+
+            for (int tid = threadIdx; tid < nm_coarse * nm_fine; tid += blockSize)
+              s_shape_values[tid] = d_shape_values(tid);
+
+            team_member.team_barrier();
+
+            // element index
+            int cell_batch_index = team_member.league_rank();
+
+            while (cell_batch_index < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+              {
+                // current nelmtPerBatch (edge case, last batch size can be
+                // less)
+                const int c_nelmtPerBatch =
+                  (cell_batch_index * nelmtPerBatch + nelmtPerBatch > nelmt) ?
+                    (nelmt - cell_batch_index * nelmtPerBatch) :
+                    nelmtPerBatch;
+
+                // Gather fine dof values and apply weights
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
+
+                      const unsigned int physical_cell = global_cell_index % n_cells;
+                      const unsigned int rhs_offset =
+                        (global_cell_index / n_cells) * dof_stride_fine;
+
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              const int local_idx = q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, physical_cell);
+
+                              s_wsp0[batch_id * nm_fine_total + local_idx] =
+                                weights(local_idx, physical_cell) * d_in[rhs_offset + dof_index];
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int q = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
+
+                          for (int r = 0; r < nm_fine; ++r)
+                            {
+                              const int local_idx = r * nm_fine * nm_fine + q * nm_fine + p;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_fine(local_idx, physical_cell);
+
+                              s_wsp1[batch_id * nm_fine_total + local_idx] =
+                                weights(local_idx, physical_cell) * d_in[rhs_offset + dof_index];
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                //  direction 2
+                if (dim == 3)
+                  {
+                    constexpr int co_dimension_size = Utilities::pow(nm_fine, dim - 1);
+
+                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                         tid += blockSize)
+                      {
+                        const int batch_id = tid / co_dimension_size;
+
+                        const int q = (tid % co_dimension_size) / nm_fine;
+                        const int p = tid % nm_fine;
+
+                        for (int r = 0; r < nm_fine; ++r)
+                          {
+                            reg[r] = s_wsp1[batch_id * nm_fine * nm_fine * nm_fine +
+                                            r * nm_fine * nm_fine + q * nm_fine + p];
+                          }
+
+                        for (int k = 0; k < nm_coarse; ++k)
+                          {
+                            Number tmp = 0.;
+                            for (int r = 0; r < nm_fine; ++r)
+                              {
+                                tmp += s_shape_values[k * nm_fine + r] * reg[r];
+                              }
+
+                            s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
+                                   k * nm_fine * nm_fine + q * nm_fine + p] = tmp;
+                          }
+                      }
+                    team_member.team_barrier();
+                  }
+
+                // direction 1
+                {
+                  constexpr int co_dimension_size = nm_fine * Utilities::pow(nm_coarse, dim - 2);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      if (dim == 2)
+                        {
+                          const int p = tid % nm_fine;
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              reg[q] = s_wsp0[batch_id * nm_fine * nm_fine + q * nm_fine + p];
+                            }
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              Number tmp = 0.;
+                              for (int q = 0; q < nm_fine; ++q)
+                                {
+                                  tmp += s_shape_values[j * nm_fine + q] * reg[q];
+                                }
+
+                              s_wsp1[batch_id * nm_fine * nm_coarse + j * nm_fine + p] = tmp;
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int k = (tid % co_dimension_size) / nm_fine;
+                          const int p = tid % nm_fine;
+
+                          for (int q = 0; q < nm_fine; ++q)
+                            {
+                              reg[q] = s_wsp0[batch_id * nm_fine * nm_fine * nm_coarse +
+                                              k * nm_fine * nm_fine + q * nm_fine + p];
+                            }
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              Number tmp = 0.;
+                              for (int q = 0; q < nm_fine; ++q)
+                                {
+                                  tmp += s_shape_values[j * nm_fine + q] * reg[q];
+                                }
+
+                              s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
+                                     k * nm_fine * nm_coarse + j * nm_fine + p] = tmp;
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                // direction 0
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      if (dim == 2)
+                        {
+                          const int j = tid % nm_coarse;
+
+                          for (int p = 0; p < nm_fine; ++p)
+                            {
+                              reg[p] = s_wsp1[batch_id * nm_fine * nm_coarse + j * nm_fine + p];
+                            }
+
+                          for (int i = 0; i < nm_coarse; ++i)
+                            {
+                              Number tmp = 0.;
+                              for (int p = 0; p < nm_fine; ++p)
+                                {
+                                  tmp += s_shape_values[i * nm_fine + p] * reg[p];
+                                }
+
+                              s_wsp0[batch_id * nm_coarse * nm_coarse + j * nm_coarse + i] = tmp;
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int k = (tid % co_dimension_size) / nm_coarse;
+                          const int j = tid % nm_coarse;
+
+                          for (int p = 0; p < nm_fine; ++p)
+                            {
+                              reg[p] = s_wsp1[batch_id * nm_fine * nm_coarse * nm_coarse +
+                                              k * nm_fine * nm_coarse + j * nm_fine + p];
+                            }
+
+                          for (int i = 0; i < nm_coarse; ++i)
+                            {
+                              Number tmp = 0.;
+                              for (int p = 0; p < nm_fine; ++p)
+                                {
+                                  tmp += s_shape_values[i * nm_fine + p] * reg[p];
+                                }
+
+                              s_wsp0[batch_id * nm_coarse * nm_coarse * nm_coarse +
+                                     k * nm_coarse * nm_coarse + j * nm_coarse + i] = tmp;
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                // Scatter coarse dof values
+                {
+                  constexpr int co_dimension_size = Utilities::pow(nm_coarse, dim - 1);
+
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                       tid += blockSize)
+                    {
+                      const int batch_id = tid / co_dimension_size;
+
+                      const unsigned int global_cell_index =
+                        cell_batch_index * nelmtPerBatch + batch_id;
+
+                      const unsigned int physical_cell = global_cell_index % n_cells;
+                      const unsigned int rhs_offset =
+                        (global_cell_index / n_cells) * dof_stride_coarse;
+
+                      if (dim == 2)
+                        {
+                          const int i = tid % nm_coarse;
+
+                          for (int j = 0; j < nm_coarse; ++j)
+                            {
+                              const int local_idx = j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, physical_cell);
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              if (dof_index != numbers::invalid_unsigned_int)
+                                Kokkos::atomic_add(&d_out[rhs_offset + dof_index],
+                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                            }
+                        }
+                      else if (dim == 3)
+                        {
+                          const int j = (tid % co_dimension_size) / nm_coarse;
+                          const int i = tid % nm_coarse;
+
+                          for (int k = 0; k < nm_coarse; ++k)
+                            {
+                              const int local_idx = k * nm_coarse * nm_coarse + j * nm_coarse + i;
+
+                              // Fetch the global DoF index
+                              const unsigned int dof_index =
+                                dof_indices_coarse(local_idx, physical_cell);
+
+                              // CRITICAL: Use atomic_add because elements share
+                              // nodes!
+                              if (dof_index != numbers::invalid_unsigned_int)
+                                Kokkos::atomic_add(&d_out[rhs_offset + dof_index],
+                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
+                            }
+                        }
+                    }
+                  team_member.team_barrier();
+                }
+
+                cell_batch_index += team_member.league_size();
+              }
+          });
+
+        Kokkos::fence();
+      }
+    }
+  } // namespace Parallel
+} // namespace BK1Block
+
+DEAL_II_NAMESPACE_CLOSE
+
+#endif
