@@ -936,9 +936,17 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
       cg(solver_control);
 
-    bnn_preconditioner->reset_timings();
-
+    // vmult() requires a balanced residual (zero coarse component) to use
+    // its cheaper 1-Dirichlet-solve form -- establish that once here (same
+    // pattern solve_enhanced() already uses for the enhanced path) rather
+    // than every iteration. solve_dd()'s own initial-residual computation
+    // (A.vmult(r, x) for nonzero x) then produces r_0 = b - S(Q b), which
+    // is exactly the balanced residual the invariant needs; it stays
+    // balanced automatically afterwards (see vmult()'s comment).
     solution_interface_device = 0.;
+    bnn_preconditioner->vmult_coarse_correction(solution_interface_device, rhs_schur_device);
+
+    bnn_preconditioner->reset_timings();
 
     cg.solve_dd(*interface_operator,
                solution_interface_device,
@@ -1237,7 +1245,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 15 - dim; ++cycle)
+  for (unsigned int cycle = 0; cycle < 9 - dim; ++cycle)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
@@ -1389,13 +1397,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 4;
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 4;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
     }
   catch (std::exception &exc)
     {

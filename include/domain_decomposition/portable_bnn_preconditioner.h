@@ -59,7 +59,7 @@ namespace Portable
     vmult_coarse_correction_dummy(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
-      const bool computation_on,
+      const bool                                                              computation_on,
       const bool communication_on) const;
 
     void
@@ -255,7 +255,7 @@ namespace Portable
       // every rank's own 1-hop neighbor list so each rank can compute its
       // 2-hop closure locally -- a small, one-time setup cost.
       const std::vector<unsigned int> own_one_hop_neighbors(one_hop_neighbors.begin(),
-                                                             one_hop_neighbors.end());
+                                                            one_hop_neighbors.end());
 
       const std::vector<std::vector<unsigned int>> all_one_hop_neighbors =
         Utilities::MPI::all_gather(this->subdomain_dof_handler->get_mpi_communicator(),
@@ -375,10 +375,10 @@ namespace Portable
     // instead, so comparing solve_dd()+vmult() against
     // solve_enhanced()+vmult_and_S_update() gives a direct vanilla-vs-
     // enhanced timing comparison.
-    this->vmult_coarse_correction(temp_vmult_coarse, src); // w = Q r
+    this->vmult_coarse_correction(temp_vmult_coarse, src);     // w = Q r
     this->vmult_interface(temp_vmult_fine, temp_vmult_coarse); // temp_vmult_fine = S w
     temp_interface = src;
-    temp_interface -= temp_vmult_fine; // temp_interface = (I - S Q) r
+    temp_interface -= temp_vmult_fine;                            // temp_interface = (I - S Q) r
     this->vmult_fine_correction(temp_vmult_fine, temp_interface); // z = M_NN^{-1} (I - S Q) r
     this->project(dst, temp_vmult_fine);                          // dst = (I - Q S) z
     dst += temp_vmult_coarse;                                     // dst += Q r
@@ -434,7 +434,6 @@ namespace Portable
         t_subdomain_src_view(interface_dofs(i)) = weights_view(i) * src_view(i);
       });
 
-    SolverControl solver_control(temp_subdomain_vector_src.size(), 1e-12 * src.l2_norm());
 
     if (physical_boundary_dof_indices_subdomain.size() == 0)
       {
@@ -442,22 +441,24 @@ namespace Portable
         temp_subdomain_vector_src.add(-mean_value_src);
       }
 
+    SolverControl solver_control(temp_subdomain_vector_src.size(), 1e-12 * src.l2_norm());
     SolverCG<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>> cg(solver_control);
-
     temp_subdomain_vector_dst = 0.;
     cg.solve(this->subdomain_neumann_operator,
              temp_subdomain_vector_dst,
              temp_subdomain_vector_src,
              *neumann_preconditioner);
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+
+    // neumann_preconditioner->vmult(temp_subdomain_vector_dst, temp_subdomain_vector_src);
+    // max_subdomain_mg_iterations = std::max(max_subdomain_mg_iterations, 1u);
 
     if (physical_boundary_dof_indices_subdomain.size() == 0)
       {
         number mean_value_dst = temp_subdomain_vector_dst.mean_value();
         temp_subdomain_vector_dst.add(-mean_value_dst);
       }
-
-    max_subdomain_mg_iterations =
-      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
 
     // apply weights and write dst interface values
     Kokkos::parallel_for(
@@ -639,7 +640,9 @@ namespace Portable
           },
           subdomain_coarse_value);
 
-        std::fill(this->temp_coarse_allreduce.begin(), this->temp_coarse_allreduce.end(), number(0));
+        std::fill(this->temp_coarse_allreduce.begin(),
+                  this->temp_coarse_allreduce.end(),
+                  number(0));
         this->temp_coarse_allreduce[this_subdomain] = subdomain_coarse_value;
       }
 
@@ -668,7 +671,9 @@ namespace Portable
         Kokkos::parallel_for(
           "vmult_coarse_correction_dummy_local_lift",
           interface_dof_indices_subdomain.size(),
-          KOKKOS_LAMBDA(const unsigned int i) { dst_view(i) = subdomain_coarse_value * weights_view(i); });
+          KOKKOS_LAMBDA(const unsigned int i) {
+            dst_view(i) = subdomain_coarse_value * weights_view(i);
+          });
       }
 
     if (communication_on)

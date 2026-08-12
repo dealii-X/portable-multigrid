@@ -236,10 +236,7 @@ private:
     {
       parent_problem.level_subdomain_matrices[level] =
         std::make_unique<Portable::SubdomainLaplaceOperator<dim, degree, double>>(
-          subomain_dof_handler,
-          constraints,
-          constraints_physical,
-          use_coloring);
+          subomain_dof_handler, constraints, constraints_physical, use_coloring);
 
 
       parent_problem.level_subdomain_neumann_matrices[level] =
@@ -496,7 +493,8 @@ LaplaceProblem<dim, fe_degree>::setup_dofs()
 
     const unsigned int n_subdomain_dofs = finest_subdomain_dof_handler.get_dof_handler().n_dofs();
 
-    const auto &interface_partitioner = finest_subdomain_dof_handler.get_interface_vector_partitioner();
+    const auto &interface_partitioner =
+      finest_subdomain_dof_handler.get_interface_vector_partitioner();
 
     const unsigned int n_interface_owned =
       interface_partitioner ? interface_partitioner->locally_owned_size() : 0;
@@ -872,8 +870,7 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
   Timer time;
 
   interface_operator = std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
-    *level_subdomain_matrices.back(),
-    *subdomain_mg_preconditioner_dirichlet);
+    *level_subdomain_matrices.back(), *subdomain_mg_preconditioner_dirichlet);
 
   rhs_schur_device.reinit(
     this->level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
@@ -954,15 +951,14 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
     const unsigned int local_n_faces    = local_coarse_offsets[3] - local_coarse_offsets[2];
 
     const unsigned int local_n_coarse_dofs = this->bddc_preconditioner->get_n_local_coarse_dofs();
-    const double        local_compute_time =
+    const double       local_compute_time =
       setup_timings[0] + setup_timings[1] + setup_timings[2] + setup_timings[3];
 
-    const auto all_n_vertices = Utilities::MPI::gather(mpi_communicator, local_n_vertices, 0);
-    const auto all_n_edges    = Utilities::MPI::gather(mpi_communicator, local_n_edges, 0);
-    const auto all_n_faces    = Utilities::MPI::gather(mpi_communicator, local_n_faces, 0);
-    const auto all_n_coarse_dofs =
-      Utilities::MPI::gather(mpi_communicator, local_n_coarse_dofs, 0);
-    const auto all_compute_time = Utilities::MPI::gather(mpi_communicator, local_compute_time, 0);
+    const auto all_n_vertices    = Utilities::MPI::gather(mpi_communicator, local_n_vertices, 0);
+    const auto all_n_edges       = Utilities::MPI::gather(mpi_communicator, local_n_edges, 0);
+    const auto all_n_faces       = Utilities::MPI::gather(mpi_communicator, local_n_faces, 0);
+    const auto all_n_coarse_dofs = Utilities::MPI::gather(mpi_communicator, local_n_coarse_dofs, 0);
+    const auto all_compute_time  = Utilities::MPI::gather(mpi_communicator, local_compute_time, 0);
 
     if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
       {
@@ -1023,7 +1019,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 {
   Timer time;
   Kokkos::fence();
-  SolverControl solver_control(1000, 1e-6 * rhs_schur_device.l2_norm());
+  SolverControl solver_control(rhs_schur_device.size(), 1e-6 * rhs_schur_device.l2_norm());
 
   // solve_dd() runs the same PCG recursion as a plain solve(), but routes
   // the per-iteration matrix-vector product through
@@ -1033,6 +1029,12 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // Dirichlet-solve cost lands in bddc_preconditioner->get_timings() (see
   // timings[4] below) under the same instrumentation BNNPreconditioner
   // already uses, making the two preconditioners' timings comparable.
+  //
+  // (A SolverFlexibleCG A/B test confirmed the Polak-Ribiere vs.
+  // Fletcher-Reeves beta formula makes no difference here -- BDDC's vmult()
+  // behaves close enough to a fixed linear operator that FCG's correction
+  // term is a no-op, so solve_dd()'s plain PCG recursion is not leaving
+  // anything on the table.)
   Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
     solver_control);
 
@@ -1040,9 +1042,9 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
   solution_interface_device = 0.;
   cg.solve_dd(*interface_operator,
-             solution_interface_device,
-             rhs_schur_device,
-             *bddc_preconditioner);
+              solution_interface_device,
+              rhs_schur_device,
+              *bddc_preconditioner);
 
   solution_interface_device.update_ghost_values();
 
@@ -1071,10 +1073,14 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // one row per rank from setup_bddc_preconditioner(), populated earlier
   // this cycle) rather than opening a new table, since it already lines up
   // rank <-> coarse-dof-count <-> setup-time.
-  const auto all_mg_iterations_dirichlet = Utilities::MPI::gather(
-    mpi_communicator, interface_operator->get_maximum_subdomain_mg_iterations(), 0);
-  const auto all_mg_iterations_bddc = Utilities::MPI::gather(
-    mpi_communicator, bddc_preconditioner->get_maximum_subdomain_mg_iterations(), 0);
+  const auto all_mg_iterations_dirichlet =
+    Utilities::MPI::gather(mpi_communicator,
+                           interface_operator->get_maximum_subdomain_mg_iterations(),
+                           0);
+  const auto all_mg_iterations_bddc =
+    Utilities::MPI::gather(mpi_communicator,
+                           bddc_preconditioner->get_maximum_subdomain_mg_iterations(),
+                           0);
 
   if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
     {
@@ -1163,9 +1169,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            computation_on,
-                                            communication_on);
+                                                            dummy_rhs,
+                                                            computation_on,
+                                                            communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1194,9 +1200,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            !computation_on,
-                                            communication_on);
+                                                            dummy_rhs,
+                                                            !computation_on,
+                                                            communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1226,9 +1232,9 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
           bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                            dummy_rhs,
-                                            computation_on,
-                                            !communication_on);
+                                                            dummy_rhs,
+                                                            computation_on,
+                                                            !communication_on);
         Kokkos::fence();
 
         Utilities::MPI::MinMaxAvg stat =
@@ -1496,7 +1502,7 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 15 - dim; ++cycle)
+  for (unsigned int cycle = 0; cycle < 9 - dim; ++cycle)
     {
       pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
             << std::endl;
@@ -1629,13 +1635,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 4;
+      {
+        constexpr int dim       = 2;
+        constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
 
 
       // {
@@ -1659,13 +1665,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 4;
+      // {
+      //   constexpr int dim       = 3;
+      //   constexpr int fe_degree = 4;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
     }
   catch (std::exception &exc)
     {

@@ -392,8 +392,8 @@ namespace Portable
 
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
-        if (A.enable_printing())
-          std::cout << "residual_norm = " << residual_norm << std::endl;
+        // if (A.enable_printing())
+        //   std::cout << "residual_norm = " << residual_norm << std::endl;
 
         solver_state = this->iteration_status(it, residual_norm, x);
       }
@@ -509,8 +509,8 @@ namespace Portable
 
         residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
 
-        if (A.enable_printing())
-          std::cout << "                      residual_norm = " << residual_norm << std::endl;
+        // if (A.enable_printing())
+        //   std::cout << "                      residual_norm = " << residual_norm << std::endl;
 
         solver_state = this->iteration_status(it, residual_norm, x);
       }

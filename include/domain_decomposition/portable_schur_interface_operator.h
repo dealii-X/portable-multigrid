@@ -129,6 +129,12 @@ namespace Portable
     DirichletSubdomainOperator subdomain_dirichlet_operator;
 
     mutable unsigned int max_subdomain_mg_iterations;
+
+    // Set after the first dirichlet_solve_subdomain() call on this operator
+    // instance (one instance per refinement cycle), so the RHS-norm trace
+    // below prints exactly once per cycle instead of once per outer CG
+    // iteration.
+    mutable bool printed_dirichlet_diagnostics = false;
   };
 
   template <int dim, typename Number>
@@ -292,6 +298,25 @@ namespace Portable
                                                          temp_subdomain_vector_src);
 
     // solve interior z = A_II^{-1} * v
+    //
+    // temp_subdomain_vector_dst here is A_IG*x -- purely interface-derived,
+    // no volumetric source -- so it's the BC-only counterpart to BDDC's
+    // fine_residual (unlike assemble_rhs_schur()'s call to
+    // dirichlet_solve_subdomain(), whose src is the real physical RHS).
+    // This is the one that runs once per outer CG iteration.
+    if (!printed_dirichlet_diagnostics &&
+        Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) == 0)
+      {
+        const Number rhs_norm         = temp_subdomain_vector_dst.l2_norm();
+        const Number reduction_target = 1e-12 * rhs_norm;
+        std::cout << "[Dirichlet RHS trace] ||A_IG*x||_2 = " << rhs_norm
+                   << ", n_subdomain_dofs = " << temp_subdomain_vector_dst.size()
+                   << ", interface_vector_size = " << interface_dof_indices_subdomain.size()
+                   << ", 1e-12*||rhs|| = " << reduction_target
+                   << ", abs floor (1e-16) active = " << (reduction_target < 1e-16 ? "YES" : "no")
+                   << std::endl;
+        printed_dirichlet_diagnostics = true;
+      }
     this->dirichlet_solve_subdomain(temp_subdomain_vector_work, temp_subdomain_vector_dst);
 
     // zero out entries of z corresponding to interface dofs

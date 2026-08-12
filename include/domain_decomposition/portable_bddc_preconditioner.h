@@ -4,7 +4,13 @@
 #include <deal.II/base/mg_level_object.h>
 #include <deal.II/base/timer.h>
 
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/sparsity_pattern.h>
+
+#include <cmath>
 
 #include "base/portable_mg_transfer_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
@@ -92,6 +98,11 @@ namespace Portable
                           const SubdomainVectorType &fine_residual) const;
 
     void
+    solve_fine_correction(SubdomainVectorType       &fine_solution,
+                          const SubdomainVectorType &fine_residual) const;
+
+
+    void
     vmult_coarse_correction(SubdomainVectorType       &coarse_solution,
                             const SubdomainVectorType &fine_residual) const;
 
@@ -177,7 +188,17 @@ namespace Portable
 
     SubdomainBDDCOperatorWrapper<dim, Number> subdomain_bddc_operator;
 
-    LAPACKFullMatrix<Number> coarse_matrix;
+    // The global coarse matrix is a finite-element-like graph (each global
+    // coarse dof only couples to the others sharing a subdomain with it),
+    // so it's sparse -- assembled as such (see compute_coarse_matrix()) and
+    // factorized/solved with UMFPACK instead of a dense LAPACKFullMatrix.
+    // BNN's own coarse matrix stays dense: it needs an SVD-based
+    // pseudoinverse (compute_inverse_svd()) rather than a direct
+    // factorization, since it isn't guaranteed SPD/nonsingular the way
+    // BDDC's is (checked below, in DEBUG builds).
+    SparsityPattern      coarse_sparsity_pattern;
+    SparseMatrix<Number> coarse_matrix;
+    SparseDirectUMFPACK  coarse_matrix_solver;
 
     BDDCVariant bddc_variant;
 
@@ -243,6 +264,12 @@ namespace Portable
      *              through SolverProjectedCG::solve_dd() instead of vmult())
      */
     mutable std::array<double, 5> timings;
+
+    // Set after the first vmult_fine_correction() call on this preconditioner
+    // instance (one instance per refinement cycle), so the RHS-norm trace
+    // below prints exactly once per cycle instead of once per outer CG
+    // iteration.
+    mutable bool printed_fine_correction_diagnostics = false;
 
     /**
      * One-shot setup-phase timings for compute_coarse_matrix() /
@@ -475,6 +502,71 @@ namespace Portable
 
     fine_solution = 0;
 
+
+    // subdomain_bddc_operator.vmult() == Pi*A*Pi and subdomain_mg_preconditioner.vmult()
+    // are both symmetric and map into V = range(Pi) by construction (Pi is baked into
+    // vmult() itself, and the BDDC-level smoother's elementary correction is sandwiched
+    // as Pi*(omega*D^{-1})*Pi), so plain CG works directly -- only the RHS needs to be
+    // in V up front.
+    //
+    // Precondition: fine_residual must already satisfy Pi*fine_residual == fine_residual
+    // on entry -- this function does NOT project it. SolverCG::solve() takes its RHS by
+    // const reference and never writes to it internally, so as long as the caller has
+    // already projected the vector it's about to pass in (both callers do: vmult()
+    // projects temp_subdomain_src in place right before calling this, and
+    // compute_local_coarse_matrix() projects its local rhs before calling this), the
+    // fine_residual reference can be handed straight to solve() with no extra copy.
+
+    // fine_solution == 0 on entry, so the initial residual ReductionControl
+    // measures internally is exactly ||fine_residual|| -- same quantity the
+    // trace below reports, and the same one dirichlet_solve_subdomain()'s
+    // ReductionControl(100, 1e-16, 1e-12) is built on (see
+    // portable_schur_interface_operator.h). Floor kept at 1e-15 rather than
+    // that 1e-16 -- one order of magnitude of headroom above double epsilon
+    // for CG's accumulated round-off, still to be checked against 1e-16
+    // empirically via the Dirichlet trace.
+    if (!printed_fine_correction_diagnostics &&
+        Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) == 0)
+      {
+        const Number rhs_norm    = fine_residual.l2_norm();
+        const Number rel_tol_abs = 1e-12 * rhs_norm;
+        std::cout << "[fine-correction RHS trace] ||fine_residual||_2 = " << rhs_norm
+                   << ", n_subdomain_dofs = " << n_subdomain_dofs
+                   << ", interface_vector_size = " << interface_vector_size
+                   << ", sqrt(n_subdomain_dofs) = " << std::sqrt(static_cast<double>(n_subdomain_dofs))
+                   << ", sqrt(interface_vector_size) = "
+                   << std::sqrt(static_cast<double>(interface_vector_size))
+                   << ", 1e-12*||rhs|| = " << rel_tol_abs
+                   << ", floor (1e-15) active = " << (rel_tol_abs < 1e-15 ? "YES" : "no") << std::endl;
+        printed_fine_correction_diagnostics = true;
+      }
+    ReductionControl               solver_control(fine_residual.size(), 1e-12, 1e-9);
+    SolverCG<SubdomainVectorType>  solver(solver_control);
+    solver.solve(this->subdomain_bddc_operator,
+                 fine_solution,
+                 fine_residual,
+                 subdomain_mg_preconditioner);
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+
+    // subdomain_mg_preconditioner.vmult(fine_solution, fine_residual);
+    // max_subdomain_mg_iterations = std::max(max_subdomain_mg_iterations, 1u);
+
+    // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
+    //           << "  iterations." << std::endl;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::solve_fine_correction(
+    SubdomainVectorType       &fine_solution,
+    const SubdomainVectorType &fine_residual) const
+  {
+    AssertDimension(fine_solution.size(), n_subdomain_dofs);
+    AssertDimension(fine_residual.size(), n_subdomain_dofs);
+
+    fine_solution = 0;
+
     SolverControl solver_control(fine_residual.size(), 1e-12 * fine_residual.l2_norm());
     // ReductionControl solver_control(100, 1e-16, 1e-12);
 
@@ -491,17 +583,18 @@ namespace Portable
     // projects temp_subdomain_src in place right before calling this, and
     // compute_local_coarse_matrix() projects its local rhs before calling this), the
     // fine_residual reference can be handed straight to solve() with no extra copy.
+
     SolverCG<SubdomainVectorType> solver(solver_control);
     solver.solve(this->subdomain_bddc_operator,
                  fine_solution,
                  fine_residual,
                  subdomain_mg_preconditioner);
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+
 
     // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
     //           << "  iterations." << std::endl;
-
-    max_subdomain_mg_iterations =
-      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
   }
 
   template <int dim, typename Number, typename BddcSmootherType>
@@ -569,7 +662,7 @@ namespace Portable
     for (unsigned int i = 0; i < n_coarse_global; ++i)
       temp_coarse_global(i) = temp_global_coarse_std[i];
 
-    coarse_matrix.solve(temp_coarse_global);
+    coarse_matrix_solver.solve(temp_coarse_global);
 
     for (unsigned int j = 0; j < n_coarse_local; ++j)
       {
@@ -606,8 +699,8 @@ namespace Portable
     DeviceVector<Number>       dst_view(dst.get_values(), dst.size());
     DeviceVector<const Number> src_view(src.get_values(), this->interface_vector_size);
 
-    const auto &weights = interface_weights;
-    const auto interface_dof_subdomain = this->interface_dof_indices_subdomain;
+    const auto &weights                 = interface_weights;
+    const auto  interface_dof_subdomain = this->interface_dof_indices_subdomain;
 
     Kokkos::parallel_for(
       "scale_interface_residual", this->interface_vector_size, KOKKOS_LAMBDA(const int i) {
@@ -1043,7 +1136,11 @@ namespace Portable
     SubdomainVectorType correction_block;
     correction_block.reinit(rhs_block);
 
-    SolverControl solver_control(rhs_block.size(), 1e-12 * rhs_block.l2_norm());
+    // Same interface-derived-RHS/precision-floor reasoning as
+    // vmult_fine_correction() above -- rhs_block is n_coarse_local stacked
+    // lifted-constraint RHS's, same BC-only origin, so it's exposed to the
+    // same shrinking-norm-under-refinement effect.
+    ReductionControl                   solver_control(rhs_block.size(), 1e-15, 1e-12);
     SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
 
     time.restart();
@@ -1058,8 +1155,9 @@ namespace Portable
     // std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
     //           << solver_control.last_step() << " iterations." << std::endl;
 
-    max_subdomain_mg_iterations =
-      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+    // max_subdomain_mg_iterations =
+    //   std::max(max_subdomain_mg_iterations, static_cast<unsigned
+    //   int>(solver_control.last_step()));
 
     // phi_j = lifted_constraints[j] + correction_j, unpacked straight into
     // coarse_basis_functions (matches the old loop's
@@ -1112,7 +1210,7 @@ namespace Portable
           this->subdomain_bddc_operator.project(rhs_ref);
 
           correction_ref = 0;
-          this->vmult_fine_correction(correction_ref, rhs_ref);
+          this->solve_fine_correction(correction_ref, rhs_ref);
 
           phi_ref[j].add(Number(1), correction_ref);
 
@@ -1150,65 +1248,81 @@ namespace Portable
     reset_setup_timings();
 
     const unsigned int n_coarse_global = this->n_global_coarse_dofs;
-    this->coarse_matrix.reinit(n_coarse_global, n_coarse_global);
+    const unsigned int n_coarse_local  = this->n_local_coarse_dofs;
+    const auto        &local_to_global = this->coarse_dofs_local_to_global_vector_host;
 
     LAPACKFullMatrix<Number> local_coarse_matrix;
     this->compute_local_coarse_matrix(local_coarse_matrix);
 
-    std::vector<Number> local_global_contribution(n_coarse_global * n_coarse_global, Number(0));
-
-    const unsigned int n_coarse_local  = this->n_local_coarse_dofs;
-    const auto        &local_to_global = this->coarse_dofs_local_to_global_vector_host;
-
     Kokkos::fence();
+
+    // Flatten this rank's local_coarse_matrix entries as
+    // (row*n_coarse_global + col, value) pairs -- only the n_coarse_local^2
+    // entries this rank actually touches, not a dense n_coarse_global^2
+    // array. All-gathering these small per-rank lists (rather than
+    // Utilities::MPI::sum-ing a dense n_coarse_global^2 array, as before)
+    // is the sparse analogue of the same assembly: every rank ends up with
+    // every contribution and can build the same sparse matrix locally, but
+    // the communication volume scales with the number of coarse dofs
+    // actually touched (O(P * n_coarse_local^2)) rather than the square of
+    // the global coarse space size.
+    std::vector<unsigned int> own_flat_indices;
+    std::vector<Number>       own_values;
+    own_flat_indices.reserve(n_coarse_local * n_coarse_local);
+    own_values.reserve(n_coarse_local * n_coarse_local);
 
     for (unsigned int i = 0; i < n_coarse_local; ++i)
-      {
-        const unsigned int global_idx_i = local_to_global[i];
+      for (unsigned int j = 0; j < n_coarse_local; ++j)
+        {
+          own_flat_indices.push_back(local_to_global[i] * n_coarse_global + local_to_global[j]);
+          own_values.push_back(local_coarse_matrix(i, j));
+        }
 
-        for (unsigned int j = 0; j < n_coarse_local; ++j)
-          {
-            const unsigned int global_idx_j = local_to_global[j];
-
-            local_global_contribution[global_idx_i * n_coarse_global + global_idx_j] =
-              local_coarse_matrix(i, j);
-          }
-      }
-
-    Kokkos::fence();
-
-    std::vector<Number> globally_summed_matrix(n_coarse_global * n_coarse_global, Number(0));
-
-    Timer mpi_sum_time;
-    Utilities::MPI::sum(local_global_contribution,
-                        this->subdomain_dof_handler->get_mpi_communicator(),
-                        globally_summed_matrix);
+    Timer                                        mpi_sum_time;
+    const std::vector<std::vector<unsigned int>> all_flat_indices =
+      Utilities::MPI::all_gather(this->subdomain_dof_handler->get_mpi_communicator(),
+                                 own_flat_indices);
+    const std::vector<std::vector<Number>> all_values =
+      Utilities::MPI::all_gather(this->subdomain_dof_handler->get_mpi_communicator(), own_values);
     setup_timings[4] += mpi_sum_time.wall_time();
 
-    for (unsigned int i = 0; i < n_coarse_global; ++i)
-      for (unsigned int j = 0; j < n_coarse_global; ++j)
-        this->coarse_matrix(i, j) = globally_summed_matrix[i * n_coarse_global + j];
+    DynamicSparsityPattern dsp(n_coarse_global, n_coarse_global);
+    for (const auto &rank_indices : all_flat_indices)
+      for (const auto &flat : rank_indices)
+        dsp.add(flat / n_coarse_global, flat % n_coarse_global);
+
+    this->coarse_sparsity_pattern.copy_from(dsp);
+    this->coarse_matrix.reinit(this->coarse_sparsity_pattern);
+
+    // SparseMatrix::add() accumulates rather than overwrites, so entries
+    // contributed by multiple ranks (any pair of global coarse dofs shared
+    // by more than one subdomain) sum correctly -- the same semantics the
+    // old Utilities::MPI::sum() had.
+    for (unsigned int r = 0; r < all_flat_indices.size(); ++r)
+      for (unsigned int k = 0; k < all_flat_indices[r].size(); ++k)
+        {
+          const unsigned int flat = all_flat_indices[r][k];
+          this->coarse_matrix.add(flat / n_coarse_global, flat % n_coarse_global, all_values[r][k]);
+        }
 
 #ifdef DEBUG
     {
-      LAPACKFullMatrix<Number> check_matrix;
-      check_matrix = this->coarse_matrix;
-
-      check_matrix.compute_eigenvalues(false, false);
-
       bool   is_spd     = true;
       Number min_eigenv = std::numeric_limits<Number>::max();
 
+      // Diagonal-positivity is a cheap necessary (not sufficient) proxy for
+      // SPD-ness, not an actual eigenvalue computation -- matches what this
+      // check already did before (it called compute_eigenvalues() but then
+      // read the matrix's own diagonal, not the eigenvalues, so dropping
+      // that unused call here changes nothing observable).
       for (unsigned int i = 0; i < n_coarse_global; ++i)
         {
-          const Number eigv = check_matrix(i, i);
-          if (eigv < min_eigenv)
-            min_eigenv = eigv;
+          const Number diag = this->coarse_matrix.diag_element(i);
+          if (diag < min_eigenv)
+            min_eigenv = diag;
 
-          if (eigv <= 1e-10)
-            {
-              is_spd = false;
-            }
+          if (diag <= 1e-10)
+            is_spd = false;
         }
 
       if (Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) ==
@@ -1216,7 +1330,7 @@ namespace Portable
         {
           std::cout << "============================================" << std::endl;
           std::cout << "BDDC COARSE MATRIX CHARACTERISTICS:" << std::endl;
-          std::cout << "Minimum Eigenvalue: " << min_eigenv << std::endl;
+          std::cout << "Minimum diagonal entry: " << min_eigenv << std::endl;
           std::cout << "Is Strictly Positive Definite? " << (is_spd ? "YES" : "NO") << std::endl;
           std::cout << "============================================" << std::endl;
 
@@ -1226,7 +1340,7 @@ namespace Portable
 #endif
 
     Timer lu_time;
-    this->coarse_matrix.compute_lu_factorization();
+    this->coarse_matrix_solver.initialize(this->coarse_matrix);
     setup_timings[5] += lu_time.wall_time();
   }
 
