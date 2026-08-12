@@ -2,6 +2,8 @@
 #define portable_bnn_preconditioner_h
 
 
+#include <set>
+
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
@@ -89,7 +91,6 @@ namespace Portable
 
     LAPACKFullMatrix<number> coarse_matrix;
 
-    const unsigned int coarse_problem_rank;
     const unsigned int n_subdomains;
     const unsigned int this_subdomain;
 
@@ -101,11 +102,30 @@ namespace Portable
     mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default> temp_interface, z0,
       S_z0;
 
-    std::vector<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
-      S_per_coarse_basis_functions;
+    // Global coarse indices whose coarse basis function phi_i has a
+    // nonzero-support S*phi_i on this rank: this_subdomain itself, plus
+    // every subdomain this rank shares an interface dof with. A single
+    // vmult()'s cell loops only ever touch interface-adjacent cells (see
+    // setup_coarse_matrix()), so S*phi_i never spreads further than that --
+    // for any other global index, S_per_coarse_basis_local would just be
+    // all zero on this rank, so it isn't computed or stored at all.
+    std::vector<unsigned int> relevant_coarse_indices;
 
-    mutable std::vector<number> temp_coarse_gather;
-    mutable std::vector<number> temp_coarse_broadcast;
+    // S_per_coarse_basis_local[m] == S * phi_{relevant_coarse_indices[m]},
+    // already cross-rank-merged (post-compress()) at this rank's own
+    // interface entries -- computed once in setup_coarse_matrix() and
+    // linearly recombined at solve time in
+    // coarse_to_global_interface_and_S_update() to reconstruct S*z0
+    // without an extra Dirichlet solve.
+    std::vector<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
+      S_per_coarse_basis_local;
+
+    // Send/receive buffer for the allreduce in global_interface_to_coarse():
+    // every rank contributes its own scalar at index this_subdomain (zero
+    // elsewhere) and ends up with the fully assembled length-n_subdomains
+    // vector -- replicated identically everywhere, so no follow-up
+    // scatter/broadcast is needed by callers.
+    mutable std::vector<number> temp_coarse_allreduce;
 
     mutable Vector<number> temp_coarse_rhs;
     mutable Vector<number> temp_coarse_solution;
@@ -126,7 +146,6 @@ namespace Portable
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
-    , coarse_problem_rank(subdomain_dof_handler->n_subdomains() - 1)
     , n_subdomains(subdomain_dof_handler->n_subdomains())
     , this_subdomain(subdomain_dof_handler->get_subdomain_id())
     , interface_weights(interface_operator.get_interface_weights())
@@ -134,15 +153,51 @@ namespace Portable
   {
     temp_interface.reinit(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
-    S_per_coarse_basis_functions.resize(n_subdomains);
-
-    for (unsigned int i = 0; i < n_subdomains; ++i)
-      S_per_coarse_basis_functions[i].reinit(temp_interface);
-
     z0.reinit(temp_interface);
     S_z0.reinit(temp_interface);
 
-    temp_coarse_gather.resize(n_subdomains);
+    {
+      std::set<unsigned int> one_hop_neighbors;
+
+      const auto &partitioner = *this->subdomain_dof_handler->get_interface_vector_partitioner();
+      for (const auto &target : partitioner.ghost_targets())
+        one_hop_neighbors.insert(target.first);
+      for (const auto &target : partitioner.import_targets())
+        one_hop_neighbors.insert(target.first);
+
+      // A direct neighbor m's own contribution to S*phi_i comes from m's
+      // *own* local Dirichlet solve, whose Green's function is dense over
+      // m's entire subdomain (elliptic solves have no compact support) --
+      // so m's output is generally nonzero at *all* of m's own interface
+      // dofs, not just the ones shared with i. Those land on m's other
+      // neighbors via compress(), so the true support of S*phi_i is the
+      // 2-hop neighborhood of i, not just its direct neighbors. Gather
+      // every rank's own 1-hop neighbor list so each rank can compute its
+      // 2-hop closure locally -- a small, one-time setup cost.
+      const std::vector<unsigned int> own_one_hop_neighbors(one_hop_neighbors.begin(),
+                                                             one_hop_neighbors.end());
+
+      const std::vector<std::vector<unsigned int>> all_one_hop_neighbors =
+        Utilities::MPI::all_gather(this->subdomain_dof_handler->get_mpi_communicator(),
+                                   own_one_hop_neighbors);
+
+      std::set<unsigned int> relevant;
+      relevant.insert(this_subdomain);
+      for (const auto &m : one_hop_neighbors)
+        {
+          relevant.insert(m);
+          for (const auto &k : all_one_hop_neighbors[m])
+            relevant.insert(k);
+        }
+
+      relevant_coarse_indices.assign(relevant.begin(), relevant.end());
+    }
+
+    S_per_coarse_basis_local.resize(relevant_coarse_indices.size());
+    for (auto &basis_function : S_per_coarse_basis_local)
+      basis_function.reinit(temp_interface);
+
+    temp_coarse_allreduce.resize(n_subdomains);
     temp_coarse_rhs.reinit(n_subdomains);
     temp_coarse_solution.reinit(n_subdomains);
   }
@@ -298,6 +353,12 @@ namespace Portable
    * Result: retrieved values in the kernel space (i.e., mean values)
    * (Id - R_0^T*S_0^{-1}*R_0) -- returns balanced vector, i.e. compatible for
    * the subdomain Neumann solve
+   *
+   * The coarse matrix is replicated and factorized identically on every
+   * rank (see setup_coarse_matrix()), so the coarse solve below runs
+   * redundantly on every rank against an already-replicated RHS -- no
+   * elected "coarse_problem_rank" gather/scatter/broadcast is needed
+   * anywhere in this step.
    */
   template <int dim, typename number>
   void
@@ -312,18 +373,12 @@ namespace Portable
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
-    this->temp_coarse_rhs = 0.;
-
-    // project from global interface to coarse space
+    // project from global interface to coarse space (replicated on every rank)
     this->global_interface_to_coarse(this->temp_coarse_rhs, src);
 
-    // solve coarse problem
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        this->temp_coarse_solution = 0.;
-
-        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-      }
+    // solve coarse problem redundantly on every rank
+    this->temp_coarse_solution = 0.;
+    this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
 
     // project back to the global interface space
     this->coarse_to_global_interface(dst, this->temp_coarse_solution);
@@ -343,18 +398,12 @@ namespace Portable
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
-    this->temp_coarse_rhs = 0.;
-
-    // project from global interface to coarse space
+    // project from global interface to coarse space (replicated on every rank)
     this->global_interface_to_coarse(this->temp_coarse_rhs, src);
 
-    // solve coarse problem
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        this->temp_coarse_solution = 0.;
-
-        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-      }
+    // solve coarse problem redundantly on every rank
+    this->temp_coarse_solution = 0.;
+    this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
 
     // project back to the global interface space
     this->coarse_to_global_interface_and_S_update(dst, S_per_dst, this->temp_coarse_solution);
@@ -376,28 +425,145 @@ namespace Portable
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
 
-    this->temp_coarse_rhs = 0.;
+    DeviceVector<number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
+      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
 
-    // project from global interface to coarse space
-    if (communication_on)
-      this->global_interface_to_coarse(this->temp_coarse_rhs, src);
+    const auto &weights_view = interface_weights;
 
+    // project from global interface to coarse space: local weighted
+    // reduction (computation) followed by an allreduce (communication)
     if (computation_on)
       {
-        // solve coarse problem
-        if (this->this_subdomain == this->coarse_problem_rank)
-          {
-            this->temp_coarse_solution = 0.;
+        number subdomain_coarse_value = 0.;
+        Kokkos::parallel_reduce(
+          "balance_dummy_local_reduce",
+          interface_dof_indices_subdomain.size(),
+          KOKKOS_LAMBDA(const unsigned int i, number &coarse_value) {
+            coarse_value += src_view(i) * weights_view(i);
+          },
+          subdomain_coarse_value);
 
-            this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-          }
+        std::fill(this->temp_coarse_allreduce.begin(), this->temp_coarse_allreduce.end(), number(0));
+        this->temp_coarse_allreduce[this_subdomain] = subdomain_coarse_value;
       }
 
-    // project back to the global interface space
     if (communication_on)
-      this->coarse_to_global_interface(dst, this->temp_coarse_solution);
+      Utilities::MPI::sum(this->temp_coarse_allreduce,
+                          this->subdomain_dof_handler->get_mpi_communicator(),
+                          this->temp_coarse_allreduce);
+
+    // solve coarse problem redundantly on every rank (computation only)
+    if (computation_on)
+      {
+        for (unsigned int i = 0; i < this->n_subdomains; ++i)
+          this->temp_coarse_rhs[i] = this->temp_coarse_allreduce[i];
+
+        this->temp_coarse_solution = 0.;
+        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
+      }
+
+    // project back to the global interface space: local lift (computation),
+    // shared-dof reconciliation (communication)
+    if (computation_on)
+      {
+        const number subdomain_coarse_value = this->temp_coarse_solution[this_subdomain];
+
+        dst = 0.;
+        Kokkos::parallel_for(
+          "balance_dummy_local_lift",
+          interface_dof_indices_subdomain.size(),
+          KOKKOS_LAMBDA(const unsigned int i) { dst_view(i) = subdomain_coarse_value * weights_view(i); });
+      }
+
+    if (communication_on)
+      dst.compress(VectorOperation::add);
   }
 
+
+  /**
+   * Projects a length-n_subdomains vector, already replicated identically
+   * on every rank (as produced by global_interface_to_coarse() or a coarse
+   * solve run redundantly everywhere), back onto this rank's own local
+   * interface entries. this_subdomain's own entry is read directly -- no
+   * scatter/broadcast needed, since the caller already has the full vector.
+   */
+  template <int dim, typename number>
+  void
+  BNNPreconditioner<dim, number>::coarse_to_global_interface(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+    const Vector<number>                                             &coarse_vector) const
+  {
+    Assert(interface_vector.get_partitioner() ==
+             this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+    AssertDimension(coarse_vector.size(), this->n_subdomains);
+
+    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+                                               interface_dof_indices_subdomain.size());
+
+    const auto &weights_view = interface_weights;
+
+    const number subdomain_coarse_value = coarse_vector[this_subdomain];
+
+    // propagate coarse value to the interface by applying weights
+    interface_vector = 0.;
+    Kokkos::parallel_for(
+      "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const unsigned int i) {
+        interface_vector_view(i) = subdomain_coarse_value * weights_view(i);
+      });
+
+    // condense
+    interface_vector.compress(VectorOperation::add);
+    interface_vector.update_ghost_values();
+  }
+
+  template <int dim, typename number>
+  void
+  BNNPreconditioner<dim, number>::coarse_to_global_interface_and_S_update(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
+    const Vector<number>                                             &coarse_vector) const
+  {
+    Assert(interface_vector.get_partitioner() ==
+             this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+    AssertDimension(coarse_vector.size(), this->n_subdomains);
+
+    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+                                               interface_dof_indices_subdomain.size());
+
+
+    const auto &weights_view = interface_weights;
+
+    const number subdomain_coarse_value = coarse_vector[this_subdomain];
+
+    // propagate coarse value to the interface by applying weights
+    interface_vector = 0.;
+    Kokkos::parallel_for(
+      "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
+      interface_dof_indices_subdomain.size(),
+      KOKKOS_LAMBDA(const unsigned int i) {
+        interface_vector_view(i) = subdomain_coarse_value * weights_view(i);
+      });
+
+    // condense
+    interface_vector.compress(VectorOperation::add);
+
+    // S * z0 = sum_i c_i * (S * phi_i). Only i == this_subdomain and i's
+    // interface neighbors ever contribute a nonzero S*phi_i on this rank
+    // (relevant_coarse_indices), and each S_per_coarse_basis_local entry
+    // already holds the full cross-rank-merged value at this rank's own
+    // interface entries, so this local weighted sum reproduces S*z0 exactly
+    // without needing another Dirichlet solve or any communication here.
+    S_per_interface_vector = 0;
+    for (unsigned int m = 0; m < this->relevant_coarse_indices.size(); ++m)
+      S_per_interface_vector.add(coarse_vector[this->relevant_coarse_indices[m]],
+                                 this->S_per_coarse_basis_local[m]);
+
+    S_per_interface_vector.compress(VectorOperation::add);
+  }
 
   template <int dim, typename number>
   void
@@ -427,131 +593,30 @@ namespace Portable
       },
       subdomain_coarse_value);
 
-    // gather all coarse values
-    this->temp_coarse_gather =
-      Utilities::MPI::gather(this->subdomain_dof_handler->get_mpi_communicator(),
-                             subdomain_coarse_value,
-                             this->coarse_problem_rank);
+    // Every rank contributes its own scalar at index this_subdomain (zero
+    // elsewhere); summing via allreduce, rather than gathering to one
+    // elected rank, leaves every rank holding the same fully assembled
+    // length-n_subdomains vector directly, so callers never need a
+    // separate scatter/broadcast afterwards.
+    std::fill(this->temp_coarse_allreduce.begin(), this->temp_coarse_allreduce.end(), number(0));
+    this->temp_coarse_allreduce[this_subdomain] = subdomain_coarse_value;
 
-    // copy coarse std::vector to Vector
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        Assert(this->temp_coarse_gather.size() == this->n_subdomains,
-               ExcMessage("Number of values gathered does not match number of \
-                         subdomains."));
-        coarse_vector = 0.;
-        for (unsigned int i = 0; i < this->temp_coarse_gather.size(); ++i)
-          coarse_vector[i] = this->temp_coarse_gather[i];
-      }
+    Utilities::MPI::sum(this->temp_coarse_allreduce,
+                        this->subdomain_dof_handler->get_mpi_communicator(),
+                        this->temp_coarse_allreduce);
+
+    AssertDimension(coarse_vector.size(), this->n_subdomains);
+    for (unsigned int i = 0; i < this->n_subdomains; ++i)
+      coarse_vector[i] = this->temp_coarse_allreduce[i];
 
     interface_vector.zero_out_ghost_values();
   }
 
   template <int dim, typename number>
   void
-  BNNPreconditioner<dim, number>::coarse_to_global_interface(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-    const Vector<number>                                             &coarse_vector) const
-  {
-    Assert(interface_vector.get_partitioner() ==
-             this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("Interface vector is not initialized correctly."));
-
-    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
-                                               interface_dof_indices_subdomain.size());
-
-    const auto &weights_view = interface_weights;
-
-
-    // copy coarse Vector to std::vector for MPi::scatter
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        for (unsigned int i = 0; i < coarse_vector.size(); ++i)
-          this->temp_coarse_gather[i] = coarse_vector[i];
-      }
-
-    // retrieve subdomain coarse value (i.e., mean value)
-    const number subdomain_coarse_value =
-      Utilities::MPI::scatter(this->subdomain_dof_handler->get_mpi_communicator(),
-                              this->temp_coarse_gather,
-                              this->coarse_problem_rank);
-
-    // propagate coarse value to the interface by applying weights
-    interface_vector = 0.;
-    Kokkos::parallel_for(
-      "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
-      interface_dof_indices_subdomain.size(),
-      KOKKOS_LAMBDA(const unsigned int i) {
-        interface_vector_view(i) = subdomain_coarse_value * weights_view(i);
-      });
-
-    // condense
-    interface_vector.compress(VectorOperation::add);
-    interface_vector.update_ghost_values();
-  }
-
-  template <int dim, typename number>
-  void
-  BNNPreconditioner<dim, number>::coarse_to_global_interface_and_S_update(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
-    const Vector<number>                                             &coarse_vector) const
-  {
-    Assert(interface_vector.get_partitioner() ==
-             this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("Interface vector is not initialized correctly."));
-
-    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
-                                               interface_dof_indices_subdomain.size());
-
-
-    const auto &weights_view = interface_weights;
-
-    // copy coarse Vector to std::vector for MPi::scatter
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        for (unsigned int i = 0; i < coarse_vector.size(); ++i)
-          this->temp_coarse_gather[i] = coarse_vector[i];
-      }
-
-    // retrieve subdomain coarse value (i.e., mean value)
-    // const number subdomain_coarse_value = Utilities::MPI::scatter(
-    //   this->subdomain_dof_handler->get_mpi_communicator(),
-    //   this->temp_coarse_gather,
-    //   this->coarse_problem_rank);
-
-    temp_coarse_broadcast =
-      Utilities::MPI::broadcast(this->subdomain_dof_handler->get_mpi_communicator(),
-                                this->temp_coarse_gather,
-                                this->coarse_problem_rank);
-
-    const number subdomain_coarse_value = temp_coarse_broadcast[this_subdomain];
-
-    // propagate coarse value to the interface by applying weights
-    interface_vector = 0.;
-    Kokkos::parallel_for(
-      "SubdomainLaplaceOperator::coarse_to_subdomain_interface",
-      interface_dof_indices_subdomain.size(),
-      KOKKOS_LAMBDA(const unsigned int i) {
-        interface_vector_view(i) = subdomain_coarse_value * weights_view(i);
-      });
-
-    // condense
-    interface_vector.compress(VectorOperation::add);
-
-    S_per_interface_vector = 0;
-    for (unsigned int i = 0; i < n_subdomains; ++i)
-      S_per_interface_vector.add(temp_coarse_broadcast[i], S_per_coarse_basis_functions[i]);
-
-    S_per_interface_vector.compress(VectorOperation::add);
-  }
-
-  template <int dim, typename number>
-  void
   BNNPreconditioner<dim, number>::setup_coarse_matrix()
   {
-    if (this->this_subdomain == this->coarse_problem_rank)
-      coarse_matrix.reinit(this->n_subdomains, this->n_subdomains);
+    coarse_matrix.reinit(this->n_subdomains, this->n_subdomains);
 
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default> phi_j(
       this->subdomain_dof_handler->get_interface_vector_partitioner()),
@@ -559,33 +624,45 @@ namespace Portable
 
     Vector<number> e_j(this->n_subdomains), coarse_column(this->n_subdomains);
 
+    // relevant_coarse_indices is sorted ascending (built from a std::set in
+    // the constructor), matching the ascending j below, so a single
+    // linear walk picks out exactly the columns worth keeping.
+    unsigned int next_relevant = 0;
+
     for (unsigned int j = 0; j < this->n_subdomains; ++j)
       {
-        e_j = 0.;
-
-        if (this->this_subdomain == this->coarse_problem_rank)
-          e_j[j] = 1.;
+        // phi_j is nonzero only via this_subdomain's own contribution (all
+        // other ranks write zero everywhere), so e_j can be built directly
+        // and identically on every rank -- no communication needed to
+        // determine it, unlike the coarse system solve itself below.
+        e_j    = 0.;
+        e_j[j] = 1.;
 
         this->coarse_to_global_interface(phi_j, e_j);
 
-        this->interface_operator->vmult(S_per_coarse_basis_functions[j], phi_j);
+        this->interface_operator->vmult(S_phi_j, phi_j);
 
-        this->global_interface_to_coarse(coarse_column, S_per_coarse_basis_functions[j]);
+        this->global_interface_to_coarse(coarse_column, S_phi_j);
 
-        if (this->this_subdomain == this->coarse_problem_rank)
-          for (unsigned int i = 0; i < this->n_subdomains; ++i)
-            coarse_matrix(i, j) = coarse_column[i];
+        for (unsigned int i = 0; i < this->n_subdomains; ++i)
+          coarse_matrix(i, j) = coarse_column[i];
+
+        if (next_relevant < this->relevant_coarse_indices.size() &&
+            this->relevant_coarse_indices[next_relevant] == j)
+          {
+            this->S_per_coarse_basis_local[next_relevant] = S_phi_j;
+            ++next_relevant;
+          }
       }
 
-    if (this->this_subdomain == this->coarse_problem_rank)
-      {
-        coarse_matrix.compute_inverse_svd(1e-12);
+    AssertDimension(next_relevant, this->relevant_coarse_indices.size());
 
-        // std::cout << "Singular values of the coarse matrix: " << std::endl;
-        // for (unsigned int i = 0; i < this->n_subdomains; ++i)
-        //   std::cout << coarse_matrix.singular_value(i) << " ";
-        // std::cout << std::endl;
-      }
+    coarse_matrix.compute_inverse_svd(1e-12);
+
+    // std::cout << "Singular values of the coarse matrix: " << std::endl;
+    // for (unsigned int i = 0; i < this->n_subdomains; ++i)
+    //   std::cout << coarse_matrix.singular_value(i) << " ";
+    // std::cout << std::endl;
   }
 
 } // namespace Portable
