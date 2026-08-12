@@ -180,6 +180,16 @@ private:
 
   ConvergenceTable timing_table_per_iteration;
 
+  // Vanilla (non-enhanced) BNN, driven through SolverProjectedCG::solve_dd()
+  // instead of solve_enhanced() -- same preconditioner action, but paying
+  // for the outer Dirichlet-based S application separately every iteration
+  // instead of reusing the precomputed coarse basis actions. Populated
+  // alongside timing_table/timing_table_per_iteration in solve_interface()
+  // so the two can be compared side by side.
+  ConvergenceTable vanilla_timing_table;
+
+  ConvergenceTable vanilla_timing_table_per_iteration;
+
   ConvergenceTable ghost_timing_table;
 
   unsigned int n_cells_total;
@@ -767,8 +777,7 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
 
   interface_operator = std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
     *level_subdomain_matrices.back(),
-    *subdomain_mg_preconditioner_dirichlet,
-    *subdomain_mg_preconditioner_neumann);
+    *subdomain_mg_preconditioner_dirichlet);
 
   rhs_schur_device.reinit(this->subdomain_dof_handler_fine.get_interface_vector_partitioner());
 
@@ -790,7 +799,8 @@ LaplaceProblem<dim, fe_degree>::setup_bnn_preconditioner()
 
   this->bnn_preconditioner =
     std::make_unique<Portable::BNNPreconditioner<dim, double>>(*interface_operator,
-                                                               *level_subdomain_matrices.back());
+                                                               *level_subdomain_matrices.back(),
+                                                               *subdomain_mg_preconditioner_neumann);
 
 
   Kokkos::fence();
@@ -848,62 +858,123 @@ template <int dim, int fe_degree>
 void
 LaplaceProblem<dim, fe_degree>::solve_interface()
 {
-  Timer time;
-  Kokkos::fence();
-  SolverControl solver_control(rhs_schur_device.size(), 1e-6 * rhs_schur_device.l2_norm());
+  // Enhanced BNN: avoids the outer Dirichlet solve every iteration by
+  // reusing the coarse basis functions' precomputed S*phi_i (see
+  // BNNPreconditioner::vmult_and_S_update()).
+  {
+    Timer time;
+    Kokkos::fence();
+    SolverControl solver_control(rhs_schur_device.size(), 1e-6 * rhs_schur_device.l2_norm());
 
-  Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
-    solver_control);
+    Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+      cg(solver_control);
 
-  solution_interface_device = 0.;
+    solution_interface_device = 0.;
 
-  cg.solve_enhanced(*interface_operator,
-                    solution_interface_device,
-                    rhs_schur_device,
-                    *bnn_preconditioner);
+    cg.solve_enhanced(*interface_operator,
+                      solution_interface_device,
+                      rhs_schur_device,
+                      *bnn_preconditioner);
 
-  solution_interface_device.update_ghost_values();
+    solution_interface_device.update_ghost_values();
 
-  Kokkos::fence();
-  const double time_solve = time.wall_time();
+    Kokkos::fence();
+    const double time_solve = time.wall_time();
 
-  pcout << "                      Interface solver converged in " << solver_control.last_step()
-        << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
-        << std::endl;
+    pcout << "                      [enhanced] Interface solver converged in "
+          << solver_control.last_step() << " iterations.    (CPU/wall) " << time.cpu_time() << "s/"
+          << time.wall_time() << 's' << std::endl;
 
-  // SchurInterfaceOperator tracks a single combined max iteration count
-  // across both its Dirichlet and Neumann subdomain solves (see
-  // get_maximum_subdomain_mg_iterations() in portable_schur_interface_operator.h),
-  // so there's only one figure to report here, not a separate Dirichlet/
-  // Neumann pair.
-  const unsigned int max_mg_iterations =
-    Utilities::MPI::max(interface_operator->get_maximum_subdomain_mg_iterations(),
-                        mpi_communicator);
+    // interface_operator only tracks the Dirichlet solve now (shared with
+    // BDDC); the Neumann solve's own iteration count lives on
+    // bnn_preconditioner since vmult_fine_correction() moved there.
+    const unsigned int max_mg_iterations_dirichlet =
+      Utilities::MPI::max(interface_operator->get_maximum_subdomain_mg_iterations(),
+                          mpi_communicator);
+    const unsigned int max_mg_iterations_neumann =
+      Utilities::MPI::max(bnn_preconditioner->get_maximum_subdomain_mg_iterations(),
+                          mpi_communicator);
 
-  pcout << "                      Subdomain MG iterations (Dirichlet+Neumann max): "
-        << max_mg_iterations << std::endl;
+    pcout << "                      Subdomain Dirichlet/Neumann MG iterations: "
+          << max_mg_iterations_dirichlet << "   /    " << max_mg_iterations_neumann << std::endl;
 
-  const auto iterations = std::max(solver_control.last_step(), 1u);
+    const auto iterations = std::max(solver_control.last_step(), 1u);
 
-  const std::array<double, 4> &timings = bnn_preconditioner->get_timings();
+    const std::array<double, 4> &timings = bnn_preconditioner->get_timings();
 
-  timing_table.add_value("cells", n_cells_total);
-  timing_table.add_value("dofs", dof_handler_fine.n_dofs());
-  timing_table.add_value("Dirichlet", timings[0]);
-  timing_table.add_value("Neumann", timings[1]);
-  timing_table.add_value("Coarse", timings[2]);
-  timing_table.add_value("Project", timings[3]);
-  timing_table.add_value("CG_time", time_solve);
-  timing_table.add_value("Iters", solver_control.last_step());
+    timing_table.add_value("cells", n_cells_total);
+    timing_table.add_value("dofs", dof_handler_fine.n_dofs());
+    timing_table.add_value("Dirichlet", timings[0]);
+    timing_table.add_value("Neumann", timings[1]);
+    timing_table.add_value("Coarse", timings[2]);
+    timing_table.add_value("Project", timings[3]);
+    timing_table.add_value("CG_time", time_solve);
+    timing_table.add_value("Iters", solver_control.last_step());
 
-  timing_table_per_iteration.add_value("cells", n_cells_total);
-  timing_table_per_iteration.add_value("dofs", dof_handler_fine.n_dofs());
-  timing_table_per_iteration.add_value("Dir_per_iter", timings[0] / iterations);
-  timing_table_per_iteration.add_value("Neu_per_iter", timings[1] / iterations);
-  timing_table_per_iteration.add_value("Crs_per_iter", timings[2] / iterations);
-  timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
-  timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
-  timing_table_per_iteration.add_value("mg_its", max_mg_iterations);
+    timing_table_per_iteration.add_value("cells", n_cells_total);
+    timing_table_per_iteration.add_value("dofs", dof_handler_fine.n_dofs());
+    timing_table_per_iteration.add_value("Dir_per_iter", timings[0] / iterations);
+    timing_table_per_iteration.add_value("Neu_per_iter", timings[1] / iterations);
+    timing_table_per_iteration.add_value("Crs_per_iter", timings[2] / iterations);
+    timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
+    timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
+    timing_table_per_iteration.add_value("dirichlet_mg_its", max_mg_iterations_dirichlet);
+    timing_table_per_iteration.add_value("neumann_mg_its", max_mg_iterations_neumann);
+  }
+
+  // Vanilla BNN: the same preconditioner action (BNNPreconditioner::vmult()),
+  // but driven through solve_dd() -- the same generic PCG BDDC now uses --
+  // which applies the outer S operator via vmult_interface() every
+  // iteration instead of reusing a precomputed coarse-basis action. Lets
+  // the enhanced variant's savings be read off directly by comparing this
+  // block's timings/iteration count against the one above.
+  {
+    Timer time;
+    Kokkos::fence();
+    SolverControl solver_control(rhs_schur_device.size(), 1e-6 * rhs_schur_device.l2_norm());
+
+    Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
+      cg(solver_control);
+
+    bnn_preconditioner->reset_timings();
+
+    solution_interface_device = 0.;
+
+    cg.solve_dd(*interface_operator,
+               solution_interface_device,
+               rhs_schur_device,
+               *bnn_preconditioner);
+
+    solution_interface_device.update_ghost_values();
+
+    Kokkos::fence();
+    const double time_solve = time.wall_time();
+
+    pcout << "                      [vanilla]  Interface solver converged in "
+          << solver_control.last_step() << " iterations.    (CPU/wall) " << time.cpu_time() << "s/"
+          << time.wall_time() << 's' << std::endl;
+
+    const auto iterations = std::max(solver_control.last_step(), 1u);
+
+    const std::array<double, 4> &timings = bnn_preconditioner->get_timings();
+
+    vanilla_timing_table.add_value("cells", n_cells_total);
+    vanilla_timing_table.add_value("dofs", dof_handler_fine.n_dofs());
+    vanilla_timing_table.add_value("Dirichlet", timings[0]);
+    vanilla_timing_table.add_value("Neumann", timings[1]);
+    vanilla_timing_table.add_value("Coarse", timings[2]);
+    vanilla_timing_table.add_value("Project", timings[3]);
+    vanilla_timing_table.add_value("CG_time", time_solve);
+    vanilla_timing_table.add_value("Iters", solver_control.last_step());
+
+    vanilla_timing_table_per_iteration.add_value("cells", n_cells_total);
+    vanilla_timing_table_per_iteration.add_value("dofs", dof_handler_fine.n_dofs());
+    vanilla_timing_table_per_iteration.add_value("Dir_per_iter", timings[0] / iterations);
+    vanilla_timing_table_per_iteration.add_value("Neu_per_iter", timings[1] / iterations);
+    vanilla_timing_table_per_iteration.add_value("Crs_per_iter", timings[2] / iterations);
+    vanilla_timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
+    vanilla_timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
+  }
 }
 
 
@@ -952,7 +1023,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             computation_on,
                                             communication_on);
@@ -983,7 +1054,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             !computation_on,
                                             communication_on);
@@ -1015,7 +1086,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             computation_on,
                                             !communication_on);
@@ -1228,6 +1299,29 @@ LaplaceProblem<dim, fe_degree>::run()
           std::cout << std::endl
                     << "BNN interface-solve timings per CG iteration (seconds):" << std::endl;
           timing_table_per_iteration.write_text(std::cout);
+          std::cout << std::endl;
+
+          for (const char *column : {"Dirichlet", "Neumann", "Coarse", "Project", "CG_time"})
+            {
+              vanilla_timing_table.set_scientific(column, true);
+              vanilla_timing_table.set_precision(column, 3);
+            }
+
+          std::cout << std::endl << "Vanilla BNN interface-solve timings (seconds):" << std::endl;
+          vanilla_timing_table.write_text(std::cout);
+          std::cout << std::endl;
+
+          for (const char *column :
+               {"Dir_per_iter", "Neu_per_iter", "Crs_per_iter", "Prj_per_iter", "CG_per_iter"})
+            {
+              vanilla_timing_table_per_iteration.set_scientific(column, true);
+              vanilla_timing_table_per_iteration.set_precision(column, 3);
+            }
+
+          std::cout << std::endl
+                    << "Vanilla BNN interface-solve timings per CG iteration (seconds):"
+                    << std::endl;
+          vanilla_timing_table_per_iteration.write_text(std::cout);
           std::cout << std::endl;
         }
     }

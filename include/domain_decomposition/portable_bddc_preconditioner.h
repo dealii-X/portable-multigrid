@@ -55,6 +55,16 @@ namespace Portable
     void
     vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
+    // Timed wrapper around interface_operator->vmult() -- the same Schur-
+    // complement action (a subdomain Dirichlet solve under the hood) that
+    // SchurInterfaceOperator::vmult() performs as the outer CG's A.vmult().
+    // Exists so SolverProjectedCG::solve_dd() can route the per-iteration
+    // matvec through the preconditioner and have its Dirichlet-solve cost
+    // captured under the same instrumentation BNNPreconditioner's
+    // vmult_interface() already provides, making the two comparable.
+    void
+    vmult_interface(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
+
     void
     project_to_homogeneous_constraints_interface(InterfaceVectorType &interface_vector) const;
 
@@ -107,7 +117,7 @@ namespace Portable
     reset_timings() const;
 
 
-    const std::array<double, 4> &
+    const std::array<double, 5> &
     get_timings() const;
 
     void
@@ -229,8 +239,10 @@ namespace Portable
      * timings[1] = vmult_coarse_correction (global coarse problem solve)
      * timings[2] = vmult_fine_correction (local constrained CG solve)
      * timings[3] = total vmult() wall time
+     * timings[4] = vmult_interface (outer Dirichlet solve via S, when driven
+     *              through SolverProjectedCG::solve_dd() instead of vmult())
      */
-    mutable std::array<double, 4> timings;
+    mutable std::array<double, 5> timings;
 
     /**
      * One-shot setup-phase timings for compute_coarse_matrix() /
@@ -372,7 +384,7 @@ namespace Portable
   }
 
   template <int dim, typename Number, typename BddcSmootherType>
-  const std::array<double, 4> &
+  const std::array<double, 5> &
   BDDCPreconditioner<dim, Number, BddcSmootherType>::get_timings() const
   {
     return timings;
@@ -432,6 +444,24 @@ namespace Portable
 
     Kokkos::fence();
     timings[3] += total_time.wall_time();
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult_interface(
+    InterfaceVectorType       &dst,
+    const InterfaceVectorType &src) const
+  {
+    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
+           ExcMessage("Interface vector is not initialized correctly."));
+
+    Kokkos::fence();
+    Timer time;
+    this->interface_operator->vmult(dst, src);
+    Kokkos::fence();
+    timings[4] += time.wall_time();
   }
 
   template <int dim, typename Number, typename BddcSmootherType>

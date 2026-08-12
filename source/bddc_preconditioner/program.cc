@@ -873,8 +873,7 @@ LaplaceProblem<dim, fe_degree>::setup_interface_system()
 
   interface_operator = std::make_unique<Portable::SchurInterfaceOperator<dim, double>>(
     *level_subdomain_matrices.back(),
-    *subdomain_mg_preconditioner_dirichlet,
-    *subdomain_mg_preconditioner_neumann);
+    *subdomain_mg_preconditioner_dirichlet);
 
   rhs_schur_device.reinit(
     this->level_subdomain_dof_handlers.back().get_interface_vector_partitioner());
@@ -1026,12 +1025,24 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   Kokkos::fence();
   SolverControl solver_control(1000, 1e-6 * rhs_schur_device.l2_norm());
 
-  SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(solver_control);
+  // solve_dd() runs the same PCG recursion as a plain solve(), but routes
+  // the per-iteration matrix-vector product through
+  // bddc_preconditioner->vmult_interface() instead of a bare
+  // interface_operator->vmult() -- vmult_interface() is a timed wrapper
+  // around exactly the same Schur-complement action, so the outer-matvec
+  // Dirichlet-solve cost lands in bddc_preconditioner->get_timings() (see
+  // timings[4] below) under the same instrumentation BNNPreconditioner
+  // already uses, making the two preconditioners' timings comparable.
+  Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>> cg(
+    solver_control);
 
   bddc_preconditioner->reset_timings();
 
   solution_interface_device = 0.;
-  cg.solve(*interface_operator, solution_interface_device, rhs_schur_device, *bddc_preconditioner);
+  cg.solve_dd(*interface_operator,
+             solution_interface_device,
+             rhs_schur_device,
+             *bddc_preconditioner);
 
   solution_interface_device.update_ghost_values();
 
@@ -1080,10 +1091,12 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // timings[1] = vmult_coarse_correction
   // timings[2] = vmult_fine_correction
   // timings[3] = total vmult() wall time
-  const std::array<double, 4> &timings = bddc_preconditioner->get_timings();
+  // timings[4] = vmult_interface (outer Dirichlet solve via S, driven by solve_dd())
+  const std::array<double, 5> &timings = bddc_preconditioner->get_timings();
 
   timing_table.add_value("cells", n_cells_total);
   timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+  timing_table.add_value("Dirichlet", timings[4]);
   timing_table.add_value("gather_scatter", timings[0]);
   timing_table.add_value("coarse_correction", timings[1]);
   timing_table.add_value("fine_correction", timings[2]);
@@ -1093,6 +1106,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
   timing_table_per_iteration.add_value("cells", n_cells_total);
   timing_table_per_iteration.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
+  timing_table_per_iteration.add_value("Dir_per_iter", timings[4] / iterations);
   timing_table_per_iteration.add_value("gather_scatter_per_iter", timings[0] / iterations);
   timing_table_per_iteration.add_value("coarse_per_iter", timings[1] / iterations);
   timing_table_per_iteration.add_value("fine_per_iter", timings[2] / iterations);
@@ -1148,7 +1162,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             computation_on,
                                             communication_on);
@@ -1179,7 +1193,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             !computation_on,
                                             communication_on);
@@ -1211,7 +1225,7 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
         Kokkos::fence();
         time.restart();
         for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->balance_dummy(dummy_solution,
+          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
                                             dummy_rhs,
                                             computation_on,
                                             !communication_on);
@@ -1549,8 +1563,12 @@ LaplaceProblem<dim, fe_degree>::run()
           bddc_setup_timing_table.write_text(std::cout);
           std::cout << std::endl;
 
-          for (const char *column :
-               {"gather_scatter", "coarse_correction", "fine_correction", "total_vmult", "CG_time"})
+          for (const char *column : {"Dirichlet",
+                                     "gather_scatter",
+                                     "coarse_correction",
+                                     "fine_correction",
+                                     "total_vmult",
+                                     "CG_time"})
             {
               timing_table.set_scientific(column, true);
               timing_table.set_precision(column, 3);
@@ -1560,7 +1578,8 @@ LaplaceProblem<dim, fe_degree>::run()
           timing_table.write_text(std::cout);
           std::cout << std::endl;
 
-          for (const char *column : {"gather_scatter_per_iter",
+          for (const char *column : {"Dir_per_iter",
+                                     "gather_scatter_per_iter",
                                      "coarse_per_iter",
                                      "fine_per_iter",
                                      "vmult_per_iter",

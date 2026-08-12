@@ -26,8 +26,7 @@ namespace Portable
     using SubdomainPreconditioner = VCycleMultigridBase<dim, Number>;
 
     SchurInterfaceOperator(const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
-                           const SubdomainPreconditioner &dirichlet_preconditioner,
-                           const SubdomainPreconditioner &neumann_preconditioner);
+                           const SubdomainPreconditioner &dirichlet_preconditioner);
 
     void
     vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
@@ -65,11 +64,6 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
 
     void
-    neumann_solve_subdomain(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
-
-    void
     reconstruct_subdomain_solution_from_interface(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &subdomain_solution,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &interface_solution,
@@ -100,22 +94,6 @@ namespace Portable
       return;
     }
 
-    struct NeumannSubdomainOperator
-    {
-      NeumannSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, Number> &op)
-        : op(op)
-      {}
-
-      void
-      vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-            const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-      {
-        op.vmult_neumann(dst, src);
-      }
-
-      const SubdomainLaplaceOperatorBase<dim, Number> &op;
-    };
-
     struct DirichletSubdomainOperator
     {
       DirichletSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, Number> &op)
@@ -140,13 +118,8 @@ namespace Portable
 
     ObserverPointer<const SubdomainPreconditioner> dirichlet_preconditioner;
 
-    ObserverPointer<const SubdomainPreconditioner> neumann_preconditioner;
-
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       interface_dof_indices_subdomain;
-
-    const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
-      physical_boundary_dof_indices_subdomain;
 
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> interface_weights;
 
@@ -154,7 +127,6 @@ namespace Portable
       temp_subdomain_vector_src, temp_subdomain_vector_dst, temp_subdomain_vector_work;
 
     DirichletSubdomainOperator subdomain_dirichlet_operator;
-    NeumannSubdomainOperator   subdomain_neumann_operator;
 
     mutable unsigned int max_subdomain_mg_iterations;
   };
@@ -162,17 +134,12 @@ namespace Portable
   template <int dim, typename Number>
   SchurInterfaceOperator<dim, Number>::SchurInterfaceOperator(
     const SubdomainLaplaceOperatorBase<dim, Number> &subdomain_operator,
-    const SubdomainPreconditioner                   &dirichlet_preconditioner,
-    const SubdomainPreconditioner                   &neumann_preconditioner)
+    const SubdomainPreconditioner                   &dirichlet_preconditioner)
     : subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
     , dirichlet_preconditioner(&dirichlet_preconditioner)
-    , neumann_preconditioner(&neumann_preconditioner)
     , interface_dof_indices_subdomain(subdomain_operator.get_interface_dof_indices_subdomain())
-    , physical_boundary_dof_indices_subdomain(
-        subdomain_operator.get_physical_boundary_dof_indices_subdomain())
     , subdomain_dirichlet_operator(subdomain_operator)
-    , subdomain_neumann_operator(subdomain_operator)
   {
     Assert(this->subdomain_operator->get_subdomain_dof_handler()
                .get_interface_vector_partitioner() != nullptr,
@@ -274,89 +241,6 @@ namespace Portable
 
     max_subdomain_mg_iterations =
       std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
-  }
-
-  /**
-   * Inverse Schur action: y = D*S^{-1}*D
-   * D - interface weights diagonal matrix
-   * S^{-1} defines pseudoinverse action via subdomain Neumann solve
-   * with imposing zero mean. In principle, imposing zero mean is not necessary
-   * as the balancing step of BNN preconditioner ensures that the rhs is
-   * compatible for Neumann solve, but it is still good to keep it for numerical
-   * stability.
-   */
-  template <int dim, typename Number>
-  void
-  SchurInterfaceOperator<dim, Number>::neumann_solve_subdomain(
-    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
-  {
-    src.update_ghost_values();
-
-    dst = 0.;
-
-    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
-      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
-
-    DeviceVector<Number> weights_view(interface_weights.get_values(),
-                                      interface_dof_indices_subdomain.size());
-
-    DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
-                                              temp_subdomain_vector_src.size()),
-      t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
-                           temp_subdomain_vector_dst.size());
-
-
-    const auto interface_dofs = this->interface_dof_indices_subdomain;
-
-    // read src interface values and apply weights
-    temp_subdomain_vector_src = 0;
-    Kokkos::parallel_for(
-      "read_src_subdomain_neumann", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
-        t_subdomain_src_view(interface_dofs(i)) = weights_view(i) * src_view(i);
-      });
-
-    SolverControl solver_control(temp_subdomain_vector_src.size(), 1e-12 * src.l2_norm());
-
-    // ReductionControl solver_control(100, 1e-16, 1e-9);
-
-    if (physical_boundary_dof_indices_subdomain.size() == 0)
-      {
-        Number mean_value_src = temp_subdomain_vector_src.mean_value();
-        temp_subdomain_vector_src.add(-mean_value_src);
-      }
-
-    SolverCG<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>> cg(solver_control);
-
-    temp_subdomain_vector_dst = 0.;
-    cg.solve(this->subdomain_neumann_operator,
-             temp_subdomain_vector_dst,
-             temp_subdomain_vector_src,
-             *neumann_preconditioner);
-
-    // neumann_preconditioner->vmult(temp_subdomain_vector_dst, temp_subdomain_vector_src);
-
-    if (physical_boundary_dof_indices_subdomain.size() == 0)
-      {
-        Number mean_value_dst = temp_subdomain_vector_dst.mean_value();
-        temp_subdomain_vector_dst.add(-mean_value_dst);
-      }
-
-    // std::cout << "    Neumann solver on subdomain "
-    //           << this->subdomain_dof_handler->get_subdomain_id()
-    //           << " converged in " << solver_control.last_step()
-    //           << " iterations " << std::endl;
-
-
-
-    // apply weights and write dst interface values
-    Kokkos::parallel_for(
-      "write_dst_subdomain_neumann", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
-        dst_view(i) = weights_view(i) * t_subdomain_dst_view(interface_dofs(i));
-      });
-
-    dst.compress(VectorOperation::add);
-    src.zero_out_ghost_values();
   }
 
   /**
