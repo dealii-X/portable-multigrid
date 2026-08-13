@@ -1113,7 +1113,6 @@ namespace BK1
                               const unsigned int dof_index =
                                 dof_indices_coarse(local_idx, global_cell_index);
 
-<<<<<<< HEAD
                               if (dof_index != numbers::invalid_unsigned_int)
                                 {
                                   if (use_coloring)
@@ -1126,13 +1125,6 @@ namespace BK1
                                       &d_out[dof_index],
                                       s_wsp0[batch_id * nm_coarse_total + local_idx]);
                                 }
-=======
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
-                              if (dof_index != numbers::invalid_unsigned_int)
-                                Kokkos::atomic_add(&d_out[dof_index],
-                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
->>>>>>> 086fb3d (Fix kernels on Jupiter)
                             }
                         }
                       else if (dim == 3)
@@ -1148,7 +1140,6 @@ namespace BK1
                               const unsigned int dof_index =
                                 dof_indices_coarse(local_idx, global_cell_index);
 
-<<<<<<< HEAD
                               if (dof_index != numbers::invalid_unsigned_int)
                                 {
                                   if (use_coloring)
@@ -1161,13 +1152,6 @@ namespace BK1
                                       &d_out[dof_index],
                                       s_wsp0[batch_id * nm_coarse_total + local_idx]);
                                 }
-=======
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
-                              if (dof_index != numbers::invalid_unsigned_int)
-                                Kokkos::atomic_add(&d_out[dof_index],
-                                                   s_wsp0[batch_id * nm_coarse_total + local_idx]);
->>>>>>> 086fb3d (Fix kernels on Jupiter)
                             }
                         }
                     }
