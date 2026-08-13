@@ -52,7 +52,7 @@ namespace Portable
       // followed by a separate elementwise multiply, two kernel launches
       // for something that's really one elementwise expression. project()
       // still has to stay a separate call: it averages across groups of
-      // dofs (see SubdomainBDDCOperatorWrapper::project()), so it can only
+      // dofs (see SubdomainBDDCOperator::project()), so it can only
       // run once every dof's scaled value is fully written, not fused into
       // the same pass that produces them.
       fused_scale(dst, src, inverse_diagonal->get_vector());

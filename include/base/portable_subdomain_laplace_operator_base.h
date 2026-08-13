@@ -77,6 +77,27 @@ namespace Portable
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
+    /**
+     * Same tensor-product cell-loop kernel as vmult_plain()/vmult_neumann(),
+     * but scattering against a caller-supplied dof-index mask instead of one
+     * of this operator's own precomputed ones -- lets a caller that only
+     * knows *which* subdomain-local dofs it wants excluded (not the fe_degree
+     * needed to launch the kernel itself) reuse this operator's concrete,
+     * fe_degree-aware implementation via virtual dispatch. dof_indices_per_color
+     * must follow the same per-color/per-cell layout as plain_dof_indices_per_color
+     * (numbers::invalid_unsigned_int marks an excluded dof); copy_through_dof_indices
+     * lists the excluded dofs to pass through unchanged from src to dst (the same
+     * role physical_boundary_dof_indices plays in vmult_plain()).
+     */
+    virtual void
+    vmult_masked(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+        &copy_through_dof_indices) const = 0;
+
     // virtual void
     // vmult_bddc_preconditioner(
     //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,

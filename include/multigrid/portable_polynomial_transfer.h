@@ -11,6 +11,7 @@
 #include "base/portable_mg_transfer_base.h"
 #include "kernels/bk1_kokkos_kernels.h"
 #include "kernels/bk1_kokkos_kernels_block.h"
+#include "operators/portable_masked_dof_indices.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -698,7 +699,28 @@ namespace Portable
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) override;
 
+    // Convenience wrapper for the A_RR (primal-pinned) MG hierarchy -- see
+    // GeometricTransfer::reinit_primal_pinned()'s comment; same idea here.
+    void
+    reinit_primal_pinned(const MatrixFree<dim, number>   &mf_coarse,
+                         const MatrixFree<dim, number>   &mf_fine,
+                         const AffineConstraints<number> &constraints_physical_coarse,
+                         const std::vector<unsigned int> &primal_pinned_dofs_coarse,
+                         const AffineConstraints<number> &constraints_physical_fine,
+                         const std::vector<unsigned int> &primal_pinned_dofs_fine)
+    {
+      primal_pinned_constraints_coarse = internal::build_pinned_constraints(
+        constraints_physical_coarse, primal_pinned_dofs_coarse);
+      primal_pinned_constraints_fine =
+        internal::build_pinned_constraints(constraints_physical_fine, primal_pinned_dofs_fine);
+
+      this->reinit(mf_coarse, mf_fine, primal_pinned_constraints_coarse, primal_pinned_constraints_fine);
+    }
+
   private:
+    AffineConstraints<number> primal_pinned_constraints_coarse;
+    AffineConstraints<number> primal_pinned_constraints_fine;
+
     void
     prolongate_and_add_internal(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,

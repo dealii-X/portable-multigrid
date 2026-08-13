@@ -100,14 +100,24 @@ public:
   LaplaceProblem(const unsigned int n_pre_smooth, const unsigned int n_post_smooth);
 
   // Selects BDDCPreconditioner's fine-correction algorithm (see
-  // BDDCPreconditioner::set_fine_correction_mode()): false (default) = the
-  // original Ahat/project() path, true = static condensation of A_RR.
-  // Public and mutable directly (rather than a constructor arg or setter)
-  // to match this file's existing "flip a flag between run()/main() calls"
-  // style for A/B comparisons -- set before calling run().
+  // BDDCPreconditioner::set_fine_correction_mode()): false = the original
+  // Ahat/project() path, true = classical corner-pin + edge/face-Lagrange-
+  // multiplier static condensation. run() below solves the SAME problem
+  // with both settings and compares -- this member is only read/set
+  // internally by run() now, not toggled externally between calls the way
+  // the source/bddc_preconditioner/program.cc original uses it.
   bool use_static_condensation_fine_correction = false;
 
-  void
+  // Runs the same fixed problem twice (Pi-projected fine correction, then
+  // static condensation) and compares the two outer interface-CG solutions:
+  // they must agree, since both solve the SAME linear system
+  // interface_operator * x = rhs_schur_device -- the preconditioner only
+  // affects the convergence path, not the fixed point CG converges to.
+  // Also reports both solves' iteration counts (informational: the two
+  // fine-correction algorithms are different, not required to need the
+  // same number of iterations, just to converge to the same answer).
+  // Returns true iff the comparison passes.
+  bool
   run();
 
   void
@@ -144,7 +154,8 @@ private:
   void
   assemble_rhs();
 
-  // Returns the outer interface-CG iteration count (solver_control.last_step()).
+  // Returns the outer interface-CG iteration count (solver_control.last_step())
+  // -- used by the correctness comparison in run() below.
   unsigned int
   solve_interface();
 
@@ -164,19 +175,6 @@ private:
   // per-application cost without threading timers through dealii's solver.
   void
   fine_correction_component_timing(const unsigned int cycle);
-
-  // Static-condensation counterpart of fine_correction_component_timing()
-  // above -- same "best of n_reps" isolated-kernel-call approach, but for
-  // the corner-pinned operator/smoother/transfers, plus the two BDDCPre-
-  // conditioner-internal costs (C_R reduction, small dense Schur solve)
-  // that have no per-level analogue and are instead read back from a real
-  // solve via bddc_preconditioner->get_static_condensation_timings() (set
-  // this cycle's solve_interface() call, not synthetically benchmarked --
-  // divided by n_outer_iterations to report a per-fine-correction-call
-  // cost, comparable to the per-call microbenchmark columns).
-  void
-  fine_correction_component_timing_static_condensation(const unsigned int cycle,
-                                                       const unsigned int n_outer_iterations);
 
   void
   postprocess_subdomain_solution();
@@ -315,25 +313,6 @@ private:
   ConvergenceTable ghost_timing_table;
 
   ConvergenceTable fine_correction_component_timing_table;
-
-  // Static-condensation counterpart of fine_correction_component_timing_
-  // table above: since the corner-pinned smoother is a plain dealii::
-  // PreconditionChebyshev (a fused black box, unlike the hand-rolled
-  // ProjectedChebyshevSmoother the Pi-projected table instruments
-  // component-by-component), the per-level columns here are just the
-  // operator matvec, the smoother's own vmult(), and the two MG transfer
-  // directions. The two new per-iteration costs that have no per-level
-  // meaning (the C_R group-average reduction and the small dense Schur
-  // solve) are reported as extra columns repeated on every row -- see
-  // fine_correction_component_timing_static_condensation().
-  ConvergenceTable fine_correction_component_timing_table_sc;
-
-  // compute_local_edge_face_schur_complement()'s own one-shot setup costs
-  // (basis-vector lift/solve, Schur-matrix column fill, Cholesky
-  // factorization) -- the static-condensation counterpart of
-  // bddc_setup_timing_table below, which times compute_local_coarse_matrix()
-  // instead.
-  ConvergenceTable edge_face_setup_timing_table;
 
   ConvergenceTable bddc_setup_timing_table;
 
@@ -1209,21 +1188,6 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
   time_details << "                      BDDC preconditioner setup                  (CPU/wall) "
                << time.cpu_time() << "s/" << time.wall_time() << 's' << std::endl;
 
-  {
-    const std::array<double, 4> &edge_face_timings =
-      this->bddc_preconditioner->get_edge_face_setup_timings();
-    const double edge_face_total = edge_face_timings[0] + edge_face_timings[1] +
-                                   edge_face_timings[2] + edge_face_timings[3];
-
-    edge_face_setup_timing_table.add_value("cells", n_cells_total);
-    edge_face_setup_timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
-    edge_face_setup_timing_table.add_value("lift", edge_face_timings[0]);
-    edge_face_setup_timing_table.add_value("basis_solves", edge_face_timings[1]);
-    edge_face_setup_timing_table.add_value("schur_column_fill", edge_face_timings[2]);
-    edge_face_setup_timing_table.add_value("cholesky_factorization", edge_face_timings[3]);
-    edge_face_setup_timing_table.add_value("total", edge_face_total);
-  }
-
   Kokkos::fence();
   time.restart();
 
@@ -1358,7 +1322,6 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     solver_control);
 
   bddc_preconditioner->reset_timings();
-  bddc_preconditioner->reset_static_condensation_timings();
 
   solution_interface_device = 0.;
   cg.solve_dd(*interface_operator,
@@ -1393,14 +1356,6 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // one row per rank from setup_bddc_preconditioner(), populated earlier
   // this cycle) rather than opening a new table, since it already lines up
   // rank <-> coarse-dof-count <-> setup-time.
-  //
-  // Column names are mode-suffixed: run() now calls solve_interface() twice
-  // per cycle (Pi-projected, then static condensation), and every other
-  // column in this table is populated exactly once per cycle (from
-  // setup_bddc_preconditioner()) -- using the same "dirichlet_mg_its"/
-  // "bddc_mg_its" names for both calls would give those two columns twice
-  // as many rows as the rest, which TableHandler::write_text() rejects
-  // (ConvergenceTable requires uniform row counts across columns).
   const auto all_mg_iterations_dirichlet =
     Utilities::MPI::gather(mpi_communicator,
                            interface_operator->get_maximum_subdomain_mg_iterations(),
@@ -1412,13 +1367,10 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
   if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
     {
-      const std::string mode_suffix = use_static_condensation_fine_correction ? "_sc" : "_pi";
-
       for (unsigned int rank = 0; rank < all_mg_iterations_dirichlet.size(); ++rank)
         {
-          per_rank_load_table.add_value("dirichlet_mg_its" + mode_suffix,
-                                        all_mg_iterations_dirichlet[rank]);
-          per_rank_load_table.add_value("bddc_mg_its" + mode_suffix, all_mg_iterations_bddc[rank]);
+          per_rank_load_table.add_value("dirichlet_mg_its", all_mg_iterations_dirichlet[rank]);
+          per_rank_load_table.add_value("bddc_mg_its", all_mg_iterations_bddc[rank]);
         }
     }
 
@@ -1780,114 +1732,6 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned 
 
 template <int dim, int fe_degree>
 void
-LaplaceProblem<dim, fe_degree>::fine_correction_component_timing_static_condensation(
-  const unsigned int cycle,
-  const unsigned int n_outer_iterations)
-{
-  const unsigned int n_reps = 5;
-
-  Timer time;
-
-  auto time_op = [&](const std::function<void()> &op, unsigned int n_mv)
-    {
-      double best = 1e10;
-      for (unsigned int rep = 0; rep < n_reps; ++rep)
-        {
-          Kokkos::fence();
-          time.restart();
-          for (unsigned int i = 0; i < n_mv; ++i)
-            op();
-          Kokkos::fence();
-
-          const Utilities::MPI::MinMaxAvg stat =
-            Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-          best = std::min(best, stat.max);
-        }
-      return best;
-    };
-
-  // Read back this cycle's real static-condensation solve costs (accumulated
-  // over n_outer_iterations calls to vmult_fine_correction_static_
-  // condensation() by solve_interface()'s cg.solve_dd()) and turn them into
-  // per-fine-correction-call numbers, comparable to the per-call isolated
-  // microbenchmarks below. 0 for BDDCVariant::corner (no Lagrange system).
-  const std::array<double, 4> &sc_timings = bddc_preconditioner->get_static_condensation_timings();
-  const unsigned int           iterations = std::max(n_outer_iterations, 1u);
-  const double                 sc_C_R_reduction_per_call = sc_timings[1] / iterations;
-  const double                 sc_schur_solve_per_call   = sc_timings[2] / iterations;
-  const double                 sc_recombination_per_call = sc_timings[3] / iterations;
-
-  for (unsigned int level = level_subdomain_matrices.min_level();
-       level <= level_subdomain_matrices.max_level();
-       ++level)
-    {
-      const unsigned int n_mv = level_subdomain_matrices[level]->m() < 1e6 ? 200 : 50;
-
-      VectorTypeMG dummy_src, dummy_dst;
-      level_subdomain_corner_pinned_matrices[level]->initialize_dof_vector(dummy_src);
-      dummy_dst.reinit(dummy_src);
-      dummy_src = 1.;
-
-      const double matvec = time_op(
-        [&]() { level_subdomain_corner_pinned_matrices[level]->vmult(dummy_dst, dummy_src); }, n_mv);
-
-      // dealii::PreconditionChebyshev is a fused black box (see the class-
-      // level comment on fine_correction_component_timing_table_sc) --
-      // there's no separate diagonal-vmult/sadd/recurrence-update to
-      // isolate the way the hand-rolled BDDC smoother above has, so this
-      // one number (a full vmult(), i.e. the whole degree-n_pre_smooth
-      // smoothing pass) stands in for all of those columns at once.
-      const double smoother_vmult = time_op(
-        [&]() { subdomain_mg_smoothers_corner_pinned[level].vmult(dummy_dst, dummy_src); }, n_mv);
-
-      double corner_pinned_prolongate = 0.;
-      double corner_pinned_restrict   = 0.;
-
-      if (level > level_subdomain_matrices.min_level())
-        {
-          VectorTypeMG dummy_coarse_src, dummy_coarse_dst;
-          level_subdomain_matrices[level - 1]->initialize_dof_vector(dummy_coarse_src);
-          dummy_coarse_dst.reinit(dummy_coarse_src);
-          dummy_coarse_src = 1.;
-
-          corner_pinned_prolongate = time_op(
-            [&]() {
-              subdomain_mg_transfers_corner_pinned[level]->prolongate_and_add(dummy_dst,
-                                                                              dummy_coarse_src);
-            },
-            n_mv);
-
-          corner_pinned_restrict = time_op(
-            [&]() {
-              subdomain_mg_transfers_corner_pinned[level]->restrict_and_add(dummy_coarse_dst,
-                                                                            dummy_src);
-            },
-            n_mv);
-        }
-
-      fine_correction_component_timing_table_sc.add_value("cycle", cycle);
-      fine_correction_component_timing_table_sc.add_value("level", level);
-      fine_correction_component_timing_table_sc.add_value("subdomain_dofs",
-                                                          level_subdomain_matrices[level]->m());
-      fine_correction_component_timing_table_sc.add_value("matvec", matvec);
-      fine_correction_component_timing_table_sc.add_value("smoother_vmult", smoother_vmult);
-      fine_correction_component_timing_table_sc.add_value("prolongate", corner_pinned_prolongate);
-      fine_correction_component_timing_table_sc.add_value("restrict", corner_pinned_restrict);
-      // Repeated on every row (same convention "cells"/"dofs" already use
-      // in the other tables) -- these three have no per-level meaning,
-      // they're per-outer-iteration totals from the finest level's real
-      // solve only.
-      fine_correction_component_timing_table_sc.add_value("C_R_reduction_per_call",
-                                                          sc_C_R_reduction_per_call);
-      fine_correction_component_timing_table_sc.add_value("schur_solve_per_call",
-                                                          sc_schur_solve_per_call);
-      fine_correction_component_timing_table_sc.add_value("recombination_per_call",
-                                                          sc_recombination_per_call);
-    }
-}
-
-template <int dim, int fe_degree>
-void
 LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 {
   const auto &subdomain_dof_handler_fine = level_subdomain_dof_handlers.back();
@@ -2128,290 +1972,112 @@ LaplaceProblem<dim, fe_degree>::test_bddc()
 }
 
 template <int dim, int fe_degree>
-void
+bool
 LaplaceProblem<dim, fe_degree>::run()
 {
-  for (unsigned int cycle = 0; cycle < 7 - dim; ++cycle)
+  // Fixed, small problem -- this is a correctness check, not a performance
+  // sweep, so one h-refinement level is enough (still multi-level p+h MG,
+  // still real edge/face primal constraints for any rank count >= 2 per
+  // axis). All of this setup is independent of the fine-correction mode,
+  // so it's built once and reused for both solves below.
+  const unsigned int n_refinement_cycles = 2;
+
+  create_subdomain_triangulations(n_refinement_cycles);
+  setup_dofs();
+  compute_interface_weights();
+  setup_matrix_free();
+  setup_mg_transfers();
+  setup_smoothers();
+  setup_mg_preconditioners();
+  setup_interface_system();
+
+  // Independent of the fine-correction mode (only reads level_subdomain_
+  // matrices/interface_operator, never bddc_preconditioner) -- built once,
+  // reused for both solves.
+  assemble_rhs();
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_pi, solution_sc;
+  unsigned int                                                    iterations_pi = 0;
+  unsigned int                                                    iterations_sc = 0;
+
+  for (const bool use_static_condensation : {false, true})
     {
-      pcout << "dim = " << dim << ", fe_degree = " << fe_degree << ":  cycle " << cycle
-            << std::endl;
+      use_static_condensation_fine_correction = use_static_condensation;
 
-      create_subdomain_triangulations(cycle + 2);
-
-      setup_dofs();
-
-      compute_interface_weights();
-
-      setup_matrix_free();
-
-      setup_mg_transfers();
-
-      setup_smoothers();
-
-      setup_mg_preconditioners();
-
-      setup_interface_system();
-
-      // Builds both the Pi-projected coarse-matrix infrastructure AND the
-      // static-condensation edge/face Schur complement unconditionally
-      // (setup_bddc_preconditioner() always computes both, regardless of
-      // the flag) -- called ONCE per cycle, not once per mode below, so
-      // that work isn't duplicated and bddc_setup_timing_table/edge_face_
-      // setup_timing_table each get exactly one row per cycle.
+      // Rebuilds bddc_preconditioner from scratch each time (a fresh
+      // make_unique, see setup_bddc_preconditioner()), including
+      // compute_local_edge_face_schur_complement() and
+      // set_fine_correction_mode(use_static_condensation_fine_correction).
       setup_bddc_preconditioner();
 
-      assemble_rhs();
+      const unsigned int iterations = solve_interface();
 
-      pcout << "                      setup time: " << setup_time << "s" << std::endl;
+      pcout << "  fine-correction mode = "
+            << (use_static_condensation ? "static condensation" : "Pi-projected (Ahat)")
+            << ": interface CG converged in " << iterations << " iterations" << std::endl;
 
-      // Two solves in the same launch, same mesh, same RHS -- Pi-projected
-      // fine correction, then static condensation -- toggling only
-      // set_fine_correction_mode() between them (no need to rebuild
-      // bddc_preconditioner). The two must converge to the same interface
-      // solution (both precondition the identical linear system; the
-      // preconditioner only changes the CG convergence path, never the
-      // fixed point), so comparing solution_interface_device after each is
-      // a rigorous correctness check, not just a smoke test -- see
-      // correctness_tests/check_correctness_bddc_static_condensation/ for
-      // the standalone version of this same comparison.
-      LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_pi, solution_sc;
-      unsigned int                                                    iterations_pi = 0;
-      unsigned int                                                    iterations_sc = 0;
-
-      for (const bool use_static_condensation : {false, true})
+      if (use_static_condensation)
         {
-          use_static_condensation_fine_correction = use_static_condensation;
-          bddc_preconditioner->set_fine_correction_mode(use_static_condensation);
-
-          const unsigned int iterations = solve_interface();
-
-          if (use_static_condensation)
-            {
-              iterations_sc = iterations;
-              solution_sc   = solution_interface_device;
-              fine_correction_component_timing_static_condensation(cycle, iterations);
-            }
-          else
-            {
-              iterations_pi = iterations;
-              solution_pi   = solution_interface_device;
-              fine_correction_component_timing(cycle);
-            }
+          solution_sc   = solution_interface_device;
+          iterations_sc = iterations;
         }
-
-      {
-        LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = solution_pi;
-        diff -= solution_sc;
-
-        const double solution_norm = solution_pi.l2_norm();
-        const double relative_diff = diff.l2_norm() / std::max(solution_norm, 1e-300);
-
-        pcout << std::endl
-              << "  [Pi-projected vs static condensation] ||x_pi||_2 = " << solution_norm
-              << ", ||x_pi - x_sc||_2 / ||x_pi||_2 = " << relative_diff << std::endl
-              << "  iterations: Pi-projected = " << iterations_pi
-              << ", static condensation = " << iterations_sc << std::endl
-              << "  " << (relative_diff < 1e-4 ? "PASSED" : "FAILED") << std::endl
-              << std::endl;
-      }
-
-      // matvec_ghost_timing();
-
-      // // test_coarse_problem();
-
-      // test_bddc();
-
-      postprocess_subdomain_solution();
-
-      output_results(cycle);
-
-      pcout << std::endl << std::endl;
-
-      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      else
         {
-          std::cout << std::endl << "Per-subdomain DoF distribution:" << std::endl;
-          per_rank_dof_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          std::cout << "Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
-          per_rank_load_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column : {"lift",
-                                     "vmult_plain",
-                                     "fine_correction",
-                                     "inner_products",
-                                     "mpi_sum",
-                                     "lu_factorization",
-                                     "total"})
-            {
-              bddc_setup_timing_table.set_scientific(column, true);
-              bddc_setup_timing_table.set_precision(column, 3);
-            }
-
-          std::cout << std::endl << "BDDC coarse-matrix setup timings (seconds):" << std::endl;
-          bddc_setup_timing_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column :
-               {"lift", "basis_solves", "schur_column_fill", "cholesky_factorization", "total"})
-            {
-              edge_face_setup_timing_table.set_scientific(column, true);
-              edge_face_setup_timing_table.set_precision(column, 3);
-            }
-
-          std::cout << std::endl
-                    << "Static-condensation edge/face Schur-complement setup timings (seconds):"
-                    << std::endl;
-          edge_face_setup_timing_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column : {"Dirichlet",
-                                     "gather_scatter",
-                                     "coarse_correction",
-                                     "fine_correction",
-                                     "total_vmult",
-                                     "CG_time"})
-            {
-              timing_table.set_scientific(column, true);
-              timing_table.set_precision(column, 3);
-            }
-
-          std::cout << std::endl << "BDDC interface-solve timings (seconds):" << std::endl;
-          timing_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column : {"Dir_per_iter",
-                                     "gather_scatter_per_iter",
-                                     "coarse_per_iter",
-                                     "fine_per_iter",
-                                     "vmult_per_iter",
-                                     "CG_per_iter"})
-            {
-              timing_table_per_iteration.set_scientific(column, true);
-              timing_table_per_iteration.set_precision(column, 3);
-            }
-
-          std::cout << std::endl
-                    << "BDDC interface-solve timings per CG iteration (seconds):" << std::endl;
-          timing_table_per_iteration.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column : {"bddc_vmult",
-                                     "bddc_vmult_plain",
-                                     "bddc_project",
-                                     "diag_precond_vmult",
-                                     "diag_fused_scale",
-                                     "neumann_diag_vmult_unfused_ref",
-                                     "dirichlet_vmult",
-                                     "neumann_vmult",
-                                     "bddc_sadd",
-                                     "bddc_fused_update",
-                                     "bddc_recurrence_update",
-                                     "bddc_prolongate",
-                                     "bddc_restrict"})
-            {
-              fine_correction_component_timing_table.set_scientific(column, true);
-              fine_correction_component_timing_table.set_precision(column, 3);
-            }
-
-          std::cout << std::endl
-                    << "[Pi-projected] Fine-correction component timings, per MG level, best-of-"
-                    << "5x50 (seconds/call):" << std::endl;
-          fine_correction_component_timing_table.write_text(std::cout);
-          std::cout << std::endl;
-
-          for (const char *column : {"matvec",
-                                     "smoother_vmult",
-                                     "prolongate",
-                                     "restrict",
-                                     "C_R_reduction_per_call",
-                                     "schur_solve_per_call",
-                                     "recombination_per_call"})
-            {
-              fine_correction_component_timing_table_sc.set_scientific(column, true);
-              fine_correction_component_timing_table_sc.set_precision(column, 3);
-            }
-
-          std::cout
-            << std::endl
-            << "[Static condensation] Fine-correction component timings, per MG level, best-of-"
-            << "5x50 (seconds/call):" << std::endl;
-          fine_correction_component_timing_table_sc.write_text(std::cout);
-          std::cout << std::endl;
+          solution_pi   = solution_interface_device;
+          iterations_pi = iterations;
         }
     }
+
+  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = solution_pi;
+  diff -= solution_sc;
+
+  const double solution_norm   = solution_pi.l2_norm();
+  const double relative_diff   = diff.l2_norm() / std::max(solution_norm, 1e-300);
+
+  pcout << std::endl
+        << "  ||x_pi||_2 = " << solution_norm << ", ||x_pi - x_sc||_2 / ||x_pi||_2 = "
+        << relative_diff << std::endl
+        << "  iterations: Pi-projected = " << iterations_pi
+        << ", static condensation = " << iterations_sc << std::endl;
+
+  // Pass/fail: both fine-correction modes precondition the SAME linear
+  // system (interface_operator * x = rhs_schur_device) -- the
+  // preconditioner only changes the convergence path, not the fixed point
+  // both CG solves converge to. So the two solutions must agree, to
+  // roughly the outer solver's own relative tolerance (1e-6 in
+  // solve_interface()) with some slack for two independently-accumulated
+  // rounding errors. Iteration counts are reported but not gated on --
+  // the two algorithms are genuinely different preconditioners, not
+  // required to need the same iteration count, just to converge to the
+  // same answer.
+  return relative_diff < 1e-4;
 }
 
 int
 main(int argc, char *argv[])
 {
+  bool passed = false;
+
   try
     {
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-
       const unsigned int n_pre_smooth  = 5;
       const unsigned int n_post_smooth = 5;
 
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 1;
+      constexpr int dim       = 3;
+      constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 2;
+      LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      passed = laplace_problem.run();
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 3;
-
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 2;
-      //   constexpr int fe_degree = 4;
-
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-
-
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 1;
-
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 2;
-
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 3;
-
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
-      {
-        constexpr int dim       = 3;
-        constexpr int fe_degree = 4;
-
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      // The comparison in run() is a global (MPI-reduced) vector norm, so
+      // every rank already computed the same pass/fail verdict -- no
+      // further MPI reduction needed here, unlike check_correctness_bddc_
+      // arr_mg's per-rank-local-quantity pattern.
+      const unsigned int rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
+      if (rank == 0)
+        std::cout << std::endl << (passed ? "PASSED" : "FAILED") << std::endl;
     }
   catch (std::exception &exc)
     {
@@ -2435,5 +2101,5 @@ main(int argc, char *argv[])
       return 1;
     }
 
-  return 0;
+  return passed ? 0 : 1;
 }

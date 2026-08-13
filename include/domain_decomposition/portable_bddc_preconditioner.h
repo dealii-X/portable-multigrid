@@ -56,7 +56,43 @@ namespace Portable
                                                                         &level_bddc_matrices,
       const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
       const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
+      // Corner-only-pinned MG preconditioner (level_subdomain_corner_pinned_
+      // matrices' V-cycle in program.cc) -- optional: only needed when
+      // set_fine_correction_mode(true) is used to switch vmult()'s fine
+      // correction over to the classical corner-pin + edge/face-Lagrange-
+      // multiplier static condensation (see below); nullptr is fine for
+      // callers that never do that. Also requires
+      // compute_local_edge_face_schur_complement() to be called once during
+      // setup before set_fine_correction_mode(true) is used.
+      const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned = nullptr,
       const BDDCVariant variant = BDDCVariant::corner_edge_face);
+
+    // Selects which algorithm vmult()'s fine-correction step uses:
+    // false (default) = CG against Ahat = Pi*A*Pi (the original, project()-
+    //   based path -- project() is a tiny serial per-primal-constraint-group
+    //   kernel, poor GPU occupancy, called on every fine-correction CG
+    //   iteration).
+    // true = classical BDDC static condensation (Klawonn/Widlund/Dohrmann-
+    //   style saddle-point fine-grid solve): corner primal dofs are hard-
+    //   pinned (Dirichlet-style, baked into the corner-pinned operator's
+    //   per-cell dof mask -- no separate kernel launch), which alone is
+    //   enough to make the remaining "R" system SPD; edge/face primal
+    //   constraints are then enforced weakly via a small, dense, local
+    //   Lagrange-multiplier system (see compute_local_edge_face_schur_
+    //   complement()/vmult_fine_correction_static_condensation()). This
+    //   replaces project()'s per-iteration serial-kernel cost with (a) an
+    //   MG-preconditioned CG solve against the corner-pinned operator and
+    //   (b) a tiny precomputed-Cholesky-factor triangular solve, both
+    //   cheaper on GPU.
+    // Coarse correction is unaffected either way -- it's a once-per-setup,
+    // MPI-global solve, not the per-iteration GPU bottleneck this flag
+    // exists to let around. See [[project-static-condensation-arr]] for the
+    // motivation/derivation. Requires a non-null
+    // subdomain_mg_preconditioner_corner_pinned to have been passed to the
+    // constructor, and compute_local_edge_face_schur_complement() to have
+    // been called, when enabling.
+    void
+    set_fine_correction_mode(bool use_static_condensation);
 
     void
     vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
@@ -93,9 +129,47 @@ namespace Portable
     void
     compute_local_coarse_matrix(LAPACKFullMatrix<Number> &local_coarse_matrix);
 
+    // One-time setup for vmult_fine_correction_static_condensation() (call
+    // once, alongside compute_coarse_matrix(), before enabling
+    // set_fine_correction_mode(true)): for each active edge/face primal
+    // constraint group l (corners are excluded -- they're hard-pinned into
+    // the corner-pinned operator itself, not part of this Lagrange system),
+    // solves A_RR_corner_pinned w_l = c_l via CG preconditioned by
+    // subdomain_mg_preconditioner_corner_pinned, where c_l is group l's
+    // constraint functional lifted into subdomain-vector space (coarse_
+    // weights(l) at the group's dofs, zero elsewhere). Stores the w_l in
+    // edge_face_basis_functions and forms/factorizes the small, dense,
+    // LOCAL (no MPI -- unlike the global coarse matrix) SPD Schur matrix
+    // edge_face_schur_matrix(k,l) = c_k . w_l = C_R A_RR_corner_pinned^{-1}
+    // C_R^t, safe to factorize locally because corner-only pinning already
+    // makes A_RR_corner_pinned SPD regardless of bddc_variant/floating-
+    // subdomain status (see [[project-static-condensation-arr]]).
+    void
+    compute_local_edge_face_schur_complement();
+
     void
     vmult_fine_correction(SubdomainVectorType       &fine_solution,
                           const SubdomainVectorType &fine_residual) const;
+
+    // Static-condensation replacement for vmult_fine_correction(): computes
+    // fine_solution = A^{-1} fine_residual restricted to the non-corner
+    // ("R") dofs via the classical corner-pin + edge/face-Lagrange-multiplier
+    // construction (see set_fine_correction_mode()'s class-level comment):
+    //   t_R = A_RR_corner_pinned^{-1} fine_residual                 (CG, MG-preconditioned)
+    //   rhs_lambda = C_R t_R                                        (small dense, apply_edge_face_constraints())
+    //   lambda = edge_face_schur_matrix^{-1} rhs_lambda              (small dense, precomputed Cholesky factor)
+    //   fine_solution = t_R - sum_l lambda(l) * edge_face_basis_functions[l]
+    // Corner dofs end up exactly zero in fine_solution automatically (no
+    // special-casing needed): both t_R and every basis function are zero
+    // there by construction of the corner-pinned operator's identity block.
+    // Precondition on fine_residual: zero at CORNER-pinned dof positions
+    // only (NOT edge/face -- those are genuine input here, unlike the Ahat
+    // path's project()). Requires compute_local_edge_face_schur_complement()
+    // to have been called, and a non-null subdomain_mg_preconditioner_
+    // corner_pinned to have been passed to the constructor.
+    void
+    vmult_fine_correction_static_condensation(SubdomainVectorType       &fine_solution,
+                                              const SubdomainVectorType &fine_residual) const;
 
     void
     solve_fine_correction(SubdomainVectorType       &fine_solution,
@@ -137,6 +211,32 @@ namespace Portable
     const std::array<double, 6> &
     get_setup_timings() const;
 
+    // Reset before a solve_dd()-style outer loop, same convention as
+    // reset_timings() -- accumulated across repeated vmult() calls when
+    // use_static_condensation_fine_correction is true. All 0 otherwise
+    // (never touched by the Ahat path).
+    //
+    // [0] = CG solve for t_R (A_RR_corner_pinned^{-1} fine_residual)
+    // [1] = apply_edge_face_constraints (C_R reduction forming rhs_lambda)
+    // [2] = edge_face_schur_matrix.solve (small dense triangular solve)
+    // [3] = recombination (fine_solution.add(-lambda(l), w_l) loop)
+    void
+    reset_static_condensation_timings() const;
+
+    const std::array<double, 4> &
+    get_static_condensation_timings() const;
+
+    // One-shot setup-phase timings for compute_local_edge_face_schur_
+    // complement(), same convention as setup_timings above (reset
+    // internally at the start of that call).
+    //
+    // [0] = building c_l (the per-group constraint-functional lift kernel), all l
+    // [1] = the n_edge_face_local CG solves for w_l = A_RR_corner_pinned^{-1} c_l
+    // [2] = apply_edge_face_constraints calls filling edge_face_schur_matrix's columns
+    // [3] = set_property(symmetric) + compute_cholesky_factorization()
+    const std::array<double, 4> &
+    get_edge_face_setup_timings() const;
+
     unsigned int
     get_n_local_coarse_dofs() const;
 
@@ -168,6 +268,20 @@ namespace Portable
     void
     setup_primal_constraint_views();
 
+    // C_R applied to x: for each active edge/face primal constraint group l
+    // (group indices [n_corner_local, n_local_coarse_dofs) -- corners are
+    // excluded, see n_corner_local's class-level comment), out(l) =
+    // coarse_weights(n_corner_local + l) * sum over the group's dofs of
+    // x(dof) -- the group's weighted average, i.e. the same per-group
+    // reduction project()/vmult_coarse_correction() already do, just written
+    // into a small Vector<Number> (size n_edge_face_local) instead of
+    // subtracted back into x. Shared by compute_local_edge_face_schur_
+    // complement() (forming a column of edge_face_schur_matrix per basis
+    // vector) and vmult_fine_correction_static_condensation() (forming
+    // rhs_lambda = C_R t_R).
+    void
+    apply_edge_face_constraints(Vector<Number> &out, const SubdomainVectorType &x) const;
+
 
 
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
@@ -175,6 +289,17 @@ namespace Portable
     ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
 
     const SubdomainPreconditioner &subdomain_mg_preconditioner;
+
+    // A_RR's own MG preconditioner (nullptr unless the caller passed one in,
+    // see the constructor's comment) -- only vmult_fine_correction_static_
+    // condensation() dereferences this, i.e. only when
+    // use_static_condensation_fine_correction is true.
+    const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned;
+
+    // Set via set_fine_correction_mode(); read by vmult() to pick which
+    // algorithm its fine-correction step uses. See set_fine_correction_mode()'s
+    // class-level comment.
+    bool use_static_condensation_fine_correction = false;
 
     // Per-level BDDC matrices/transfers/smoothers, needed (alongside
     // subdomain_mg_preconditioner above) to build a second, block-shaped
@@ -186,7 +311,15 @@ namespace Portable
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers;
     const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers;
 
-    SubdomainBDDCOperatorWrapper<dim, Number> subdomain_bddc_operator;
+    SubdomainBDDCOperator<dim, Number> subdomain_bddc_operator;
+
+    // Presents subdomain_bddc_operator.vmult_corner_pinned() (corners hard-
+    // pinned, edges/faces free) as vmult() -- the interface SolverCG
+    // expects -- for compute_local_edge_face_schur_complement()/
+    // vmult_fine_correction_static_condensation(). See the class-level
+    // comment on SubdomainBDDCOperatorCornerPinnedAdapter for why this can't
+    // just be subdomain_bddc_operator.vmult() itself.
+    SubdomainBDDCOperatorCornerPinnedAdapter<dim, Number> subdomain_bddc_operator_corner;
 
     // The global coarse matrix is a finite-element-like graph (each global
     // coarse dof only couples to the others sharing a subdomain with it),
@@ -236,6 +369,41 @@ namespace Portable
     std::vector<unsigned int> coarse_dofs_local_to_global_vector_host;
 
     std::vector<SubdomainVectorType> coarse_basis_functions;
+
+    // Set by compute_local_edge_face_schur_complement(). n_corner_local is
+    // the number of active corner (vertex) primal constraint groups --
+    // corner_dofs_subdomain.size(), equivalently local_coarse_offsets[1] --
+    // always the leading n_corner_local groups of n_local_coarse_dofs
+    // (constraint groups are ordered vertices, then edges, then faces).
+    // n_edge_face_local = n_local_coarse_dofs - n_corner_local is the size
+    // of the Lagrange system (0 for BDDCVariant::corner, where hard-pinning
+    // IS the whole primal set and no Lagrange system is needed at all --
+    // vmult_fine_correction_static_condensation() short-circuits in that
+    // case).
+    unsigned int n_corner_local    = 0;
+    unsigned int n_edge_face_local = 0;
+
+    // Guards against enabling the static-condensation fine correction
+    // before compute_local_edge_face_schur_complement() has run: without
+    // this, n_edge_face_local's default of 0 would be indistinguishable
+    // from "computed and turned out to be 0" (BDDCVariant::corner), and
+    // vmult_fine_correction_static_condensation() would silently skip the
+    // edge/face correction instead of producing a clear error.
+    bool edge_face_schur_computed = false;
+
+    // w_l = A_RR_corner_pinned^{-1} c_l for each active edge/face group l
+    // (size n_edge_face_local), where c_l is that group's constraint
+    // functional lifted into subdomain-vector space. See
+    // compute_local_edge_face_schur_complement()'s class-level comment.
+    std::vector<SubdomainVectorType> edge_face_basis_functions;
+
+    // C_R A_RR_corner_pinned^{-1} C_R^t (size n_edge_face_local), Cholesky-
+    // factorized in place by compute_local_edge_face_schur_complement() --
+    // LOCAL (no MPI), unlike coarse_matrix/coarse_matrix_solver above, since
+    // corner-only pinning already makes A_RR_corner_pinned SPD regardless of
+    // floating-subdomain status (see compute_local_edge_face_schur_
+    // complement()'s class-level comment).
+    LAPACKFullMatrix<Number> edge_face_schur_matrix;
 
     mutable InterfaceVectorType temp_interface;
     mutable Vector<Number>      temp_coarse_local;
@@ -287,6 +455,15 @@ namespace Portable
      */
     mutable std::array<double, 6> setup_timings;
 
+    // See get_static_condensation_timings()'s class-level comment for the
+    // slot meanings; accumulated only inside vmult_fine_correction_static_
+    // condensation(), left at 0 by the Ahat path.
+    mutable std::array<double, 4> static_condensation_timings{};
+
+    // See get_edge_face_setup_timings()'s class-level comment; populated
+    // once by compute_local_edge_face_schur_complement().
+    mutable std::array<double, 4> edge_face_setup_timings{};
+
     mutable unsigned int max_subdomain_mg_iterations;
   };
 
@@ -299,15 +476,18 @@ namespace Portable
                                                                       &level_bddc_matrices,
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
     const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
-    const BDDCVariant                                                  variant)
+    const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned,
+    const BDDCVariant              variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
     , subdomain_mg_preconditioner(subdomain_mg_preconditioner)
+    , subdomain_mg_preconditioner_corner_pinned(subdomain_mg_preconditioner_corner_pinned)
     , level_bddc_matrices(level_bddc_matrices)
     , level_bddc_transfers(level_bddc_transfers)
     , level_bddc_smoothers(level_bddc_smoothers)
     , subdomain_bddc_operator(subdomain_operator)
+    , subdomain_bddc_operator_corner(subdomain_bddc_operator)
     , n_subdomain_dofs(subdomain_operator.get_subdomain_dof_handler().get_dof_handler().n_dofs())
     , interface_vector_size(subdomain_operator.get_interface_dof_indices_subdomain().size())
     , coarse_problem_rank(subdomain_dof_handler->n_subdomains() - 1)
@@ -397,6 +577,28 @@ namespace Portable
   }
 
   template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::reset_static_condensation_timings() const
+  {
+    for (unsigned int i = 0; i < static_condensation_timings.size(); ++i)
+      static_condensation_timings[i] = 0.;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  const std::array<double, 4> &
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_static_condensation_timings() const
+  {
+    return static_condensation_timings;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  const std::array<double, 4> &
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::get_edge_face_setup_timings() const
+  {
+    return edge_face_setup_timings;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
   unsigned int
   BDDCPreconditioner<dim, Number, BddcSmootherType>::get_n_local_coarse_dofs() const
   {
@@ -415,6 +617,21 @@ namespace Portable
   BDDCPreconditioner<dim, Number, BddcSmootherType>::get_timings() const
   {
     return timings;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::set_fine_correction_mode(
+    bool use_static_condensation)
+  {
+    Assert(!use_static_condensation || subdomain_mg_preconditioner_corner_pinned != nullptr,
+           ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
+                     "A_RR MG preconditioner -- pass one to the constructor before "
+                     "enabling the static-condensation fine correction."));
+    Assert(!use_static_condensation || edge_face_schur_computed,
+           ExcMessage("compute_local_edge_face_schur_complement() must be called before "
+                     "enabling the static-condensation fine correction."));
+    use_static_condensation_fine_correction = use_static_condensation;
   }
 
   template <int dim, typename Number, typename BddcSmootherType>
@@ -446,16 +663,33 @@ namespace Portable
 
     // vmult_coarse_correction() above needs the raw (unprojected) residual --
     // it takes inner products against the coarse basis functions, not Ahat/
-    // Chat's sandwiched action -- so this project() has to happen here,
-    // after the coarse correction and before the fine one, rather than
-    // earlier. Projecting temp_subdomain_src in place lets
-    // vmult_fine_correction() take its RHS by const reference directly
-    // (no internal copy) since the "RHS must already be in V" precondition
-    // is now satisfied by the caller.
-    this->subdomain_bddc_operator.project(temp_subdomain_src);
-
+    // Chat's sandwiched action -- so the fine-correction precondition is only
+    // imposed here, after the coarse correction and before the fine one,
+    // rather than earlier. Applying it to temp_subdomain_src in place lets
+    // vmult_fine_correction()/vmult_fine_correction_static_condensation()
+    // take their RHS by const reference directly (no internal copy) since
+    // the precondition is now satisfied by the caller either way -- only
+    // which precondition differs: project()'s per-group mean subtraction
+    // (Pi, weak, over ALL active primal groups) for the Ahat path, vs
+    // zero_corner_pinned_dofs()'s hard zero (Dirichlet, strong, CORNER
+    // groups only) for the static-condensation path. See
+    // set_fine_correction_mode()'s class-level comment for what selects
+    // between the two.
     time.restart();
-    vmult_fine_correction(temp_subdomain_fine, temp_subdomain_src);
+    if (use_static_condensation_fine_correction)
+      {
+        // Only CORNER positions need zeroing here (matching x_C = 0 in the
+        // classical construction) -- edge/face values must stay intact,
+        // they're genuine input to the Lagrange system inside
+        // vmult_fine_correction_static_condensation(), not pinned away.
+        this->subdomain_bddc_operator.zero_corner_pinned_dofs(temp_subdomain_src);
+        vmult_fine_correction_static_condensation(temp_subdomain_fine, temp_subdomain_src);
+      }
+    else
+      {
+        this->subdomain_bddc_operator.project(temp_subdomain_src);
+        vmult_fine_correction(temp_subdomain_fine, temp_subdomain_src);
+      }
     Kokkos::fence();
     timings[2] += time.wall_time();
 
@@ -554,6 +788,215 @@ namespace Portable
 
     // std::cout << "Constrained projected solver converged in " << solver_control.last_step()
     //           << "  iterations." << std::endl;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::apply_edge_face_constraints(
+    Vector<Number>            &out,
+    const SubdomainVectorType &x) const
+  {
+    AssertDimension(out.size(), n_edge_face_local);
+
+    if (n_edge_face_local == 0)
+      return;
+
+    DeviceVector<const Number> x_view(x.get_values(), n_subdomain_dofs);
+
+    const auto         offsets         = this->primal_constraint_offsets;
+    const auto         constraint_dofs = this->primal_constraint_dofs_subdomain;
+    const auto         weights         = this->coarse_weights;
+    const unsigned int n_corner        = this->n_corner_local;
+
+    Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_device(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "edge_face_constraint_values"),
+      n_edge_face_local);
+
+    Kokkos::parallel_for(
+      "apply_edge_face_constraints", n_edge_face_local, KOKKOS_LAMBDA(const int l) {
+        const unsigned int k     = n_corner + l;
+        const unsigned int start = offsets(k);
+        const unsigned int end   = offsets(k + 1);
+
+        Number sum = 0;
+        for (unsigned int i = start; i < end; ++i)
+          sum += x_view(constraint_dofs(i));
+
+        out_device(l) = sum * weights(k);
+      });
+    Kokkos::fence();
+
+    auto out_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), out_device);
+    for (unsigned int l = 0; l < n_edge_face_local; ++l)
+      out(l) = out_host(l);
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::compute_local_edge_face_schur_complement()
+  {
+    Assert(subdomain_mg_preconditioner_corner_pinned != nullptr,
+           ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
+                     "A_RR MG preconditioner -- pass one to the constructor before calling "
+                     "compute_local_edge_face_schur_complement()."));
+
+    const auto &subdomain_dof_info = this->subdomain_dof_handler->get_dof_info();
+    n_corner_local                 = subdomain_dof_info.local_coarse_offsets[1];
+    AssertThrow(n_corner_local <= n_local_coarse_dofs, ExcInternalError());
+    n_edge_face_local = n_local_coarse_dofs - n_corner_local;
+
+    edge_face_basis_functions.resize(n_edge_face_local);
+    edge_face_schur_matrix.reinit(n_edge_face_local, n_edge_face_local);
+
+    // BDDCVariant::corner: the entire active primal set IS corners, so
+    // hard-pinning already handles everything -- no Lagrange system needed
+    // at all (this is exactly the case where hard-pin and Pi coincide
+    // exactly, singleton groups, see [[project-static-condensation-arr]]).
+    if (n_edge_face_local == 0)
+      {
+        edge_face_schur_computed = true;
+        return;
+      }
+
+    const auto         offsets         = this->primal_constraint_offsets;
+    const auto         constraint_dofs = this->primal_constraint_dofs_subdomain;
+    const auto         weights         = this->coarse_weights;
+    const unsigned int n_corner        = this->n_corner_local;
+
+    SubdomainVectorType c_l;
+    c_l.reinit(temp_subdomain_dst);
+
+    Vector<Number> schur_column(n_edge_face_local);
+
+    for (unsigned int i = 0; i < edge_face_setup_timings.size(); ++i)
+      edge_face_setup_timings[i] = 0.;
+
+    Timer time;
+
+    for (unsigned int l = 0; l < n_edge_face_local; ++l)
+      {
+        const unsigned int k = n_corner + l;
+
+        // Lift group k's constraint functional into subdomain-vector space:
+        // coarse_weights(k) at the group's dofs, zero elsewhere (c_l = row k
+        // of C_R, as a subdomain vector).
+        Kokkos::fence();
+        time.restart();
+        c_l = 0;
+        DeviceVector<Number> c_l_view(c_l.get_values(), n_subdomain_dofs);
+
+        Kokkos::parallel_for(
+          "build_edge_face_constraint_lift", 1, KOKKOS_LAMBDA(const int) {
+            const unsigned int start = offsets(k);
+            const unsigned int end   = offsets(k + 1);
+            const Number       w     = weights(k);
+            for (unsigned int i = start; i < end; ++i)
+              c_l_view(constraint_dofs(i)) = w;
+          });
+        Kokkos::fence();
+        edge_face_setup_timings[0] += time.wall_time();
+
+        // w_l = A_RR_corner_pinned^{-1} c_l.
+        edge_face_basis_functions[l].reinit(temp_subdomain_dst);
+        edge_face_basis_functions[l] = 0;
+
+        time.restart();
+        ReductionControl              control(c_l.size(), 1e-14, 1e-11);
+        SolverCG<SubdomainVectorType> solver(control);
+        solver.solve(this->subdomain_bddc_operator_corner,
+                     edge_face_basis_functions[l],
+                     c_l,
+                     *subdomain_mg_preconditioner_corner_pinned);
+        Kokkos::fence();
+        edge_face_setup_timings[1] += time.wall_time();
+
+        // Column l of edge_face_schur_matrix = C_R w_l (entry m = c_m . w_l).
+        time.restart();
+        apply_edge_face_constraints(schur_column, edge_face_basis_functions[l]);
+        for (unsigned int m = 0; m < n_edge_face_local; ++m)
+          edge_face_schur_matrix(m, l) = schur_column(m);
+        Kokkos::fence();
+        edge_face_setup_timings[2] += time.wall_time();
+      }
+
+    // compute_cholesky_factorization() asserts property == symmetric.
+    time.restart();
+    edge_face_schur_matrix.set_property(LAPACKSupport::symmetric);
+    edge_face_schur_matrix.compute_cholesky_factorization();
+    edge_face_setup_timings[3] += time.wall_time();
+
+    edge_face_schur_computed = true;
+  }
+
+  template <int dim, typename Number, typename BddcSmootherType>
+  void
+  BDDCPreconditioner<dim, Number, BddcSmootherType>::vmult_fine_correction_static_condensation(
+    SubdomainVectorType       &fine_solution,
+    const SubdomainVectorType &fine_residual) const
+  {
+    AssertDimension(fine_solution.size(), n_subdomain_dofs);
+    AssertDimension(fine_residual.size(), n_subdomain_dofs);
+    Assert(subdomain_mg_preconditioner_corner_pinned != nullptr,
+           ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
+                     "A_RR MG preconditioner -- pass one to the constructor to use "
+                     "vmult_fine_correction_static_condensation()."));
+
+    fine_solution = 0;
+
+    // t_R = A_RR_corner_pinned^{-1} fine_residual. subdomain_bddc_operator_
+    // corner.vmult() == vmult_corner_pinned() is symmetric and, thanks to
+    // the identity block at corner-pinned dofs baked into its dof mask,
+    // maps a vector that's zero there straight back to another vector
+    // that's zero there -- so plain CG works directly, same as
+    // vmult_fine_correction()'s Ahat solve.
+    //
+    // Precondition: fine_residual must already be zero at CORNER-pinned dof
+    // positions on entry (matching x_C = 0) -- this function does NOT zero
+    // it. Caller: vmult() zeros temp_subdomain_src in place (via
+    // zero_corner_pinned_dofs()) right before calling this, when
+    // use_static_condensation_fine_correction is true.
+    Timer time;
+
+    ReductionControl               solver_control(fine_residual.size(), 1e-12, 1e-9);
+    SolverCG<SubdomainVectorType>  solver(solver_control);
+    solver.solve(this->subdomain_bddc_operator_corner,
+                 fine_solution,
+                 fine_residual,
+                 *subdomain_mg_preconditioner_corner_pinned);
+    Kokkos::fence();
+    static_condensation_timings[0] += time.wall_time();
+
+    max_subdomain_mg_iterations =
+      std::max(max_subdomain_mg_iterations, static_cast<unsigned int>(solver_control.last_step()));
+
+    // BDDCVariant::corner: t_R alone is already the answer -- no Lagrange
+    // system was built (see compute_local_edge_face_schur_complement()).
+    if (n_edge_face_local == 0)
+      return;
+
+    // rhs_lambda = C_R t_R, then lambda = edge_face_schur_matrix^{-1}
+    // rhs_lambda (precomputed Cholesky factor, in-place triangular solve).
+    // Sign derived directly from the saddle-point system (19): row 4 is
+    // C_R x_R = 0; substituting x_R = t_R - A_RR^{-1} C_R^t lambda gives
+    // C_R A_RR^{-1} C_R^t lambda = +C_R t_R (the textbook version of this
+    // step is sometimes printed with the RHS negated -- checked against the
+    // derivation, that sign is wrong; this is the corrected version).
+    Vector<Number> lambda(n_edge_face_local);
+
+    time.restart();
+    apply_edge_face_constraints(lambda, fine_solution);
+    Kokkos::fence();
+    static_condensation_timings[1] += time.wall_time();
+
+    time.restart();
+    edge_face_schur_matrix.solve(lambda);
+    static_condensation_timings[2] += time.wall_time();
+
+    time.restart();
+    for (unsigned int l = 0; l < n_edge_face_local; ++l)
+      fine_solution.add(-lambda(l), edge_face_basis_functions[l]);
+    Kokkos::fence();
+    static_condensation_timings[3] += time.wall_time();
   }
 
   template <int dim, typename Number, typename BddcSmootherType>
@@ -1107,7 +1550,7 @@ namespace Portable
     for (unsigned int level = minlevel; level <= maxlevel; ++level)
       {
         const auto &concrete_matrix =
-          static_cast<const SubdomainBDDCOperatorWrapper<dim, Number> &>(
+          static_cast<const SubdomainBDDCOperator<dim, Number> &>(
             *level_bddc_matrices[level]);
 
         block_matrices[level] =

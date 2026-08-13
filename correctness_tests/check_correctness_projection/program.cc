@@ -1,14 +1,14 @@
 // Correctness check for Portable::internal::apply_block_group_mean_projection
 // (include/kernels/portable_block_group_mean_projection.h) -- the block
 // Pi (homogeneous primal-constraint projector) used by
-// SubdomainBDDCOperatorWrapper::project_block().
+// SubdomainBDDCOperator::project_block().
 //
 // Unlike the leaf matrix-free kernel and the block-CG solver, this
 // operation is purely index-based (group offsets/member dofs/weights),
 // with no mesh or matrix-free machinery involved at all -- so this test
 // uses synthetic constraint groups (sizes mimicking real vertex/edge/face
 // groups) and an independent plain-C++ host reference implementation,
-// rather than reconstructing SubdomainBDDCOperatorWrapper's full
+// rather than reconstructing SubdomainBDDCOperator's full
 // subdomain-triangulation setup.
 
 #include <deal.II/base/mpi.h>

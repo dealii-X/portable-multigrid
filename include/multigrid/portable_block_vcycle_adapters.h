@@ -28,7 +28,7 @@ namespace Portable
    * captures n_rhs at construction and forwards to the corresponding
    * `_block(..., n_rhs)` method added to the concrete operator/transfer
    * classes (see vmult_plain_block()/project_block() on
-   * SubdomainBDDCOperatorWrapper/SubdomainLaplaceOperator and
+   * SubdomainBDDCOperator/SubdomainLaplaceOperator and
    * restrict_and_add_block()/prolongate_and_add_block() on
    * PolynomialTransfer), rather than threading n_rhs through every
    * virtual signature in the codebase.
@@ -39,14 +39,14 @@ namespace Portable
   public:
     using VectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
 
-    BlockBDDCOperatorAdapter(const SubdomainBDDCOperatorWrapper<dim, Number> &op,
+    BlockBDDCOperatorAdapter(const SubdomainBDDCOperator<dim, Number> &op,
                              const unsigned int                               n_rhs)
       : op(&op)
       , n_rhs(n_rhs)
     {}
 
     // Ahat_block = Pi * A * Pi applied blockwise: matches
-    // SubdomainBDDCOperatorWrapper::vmult()'s own
+    // SubdomainBDDCOperator::vmult()'s own
     // vmult_plain()+project() composition, just on n_rhs blocks at once.
     void
     vmult(VectorType &dst, const VectorType &src) const
@@ -70,7 +70,7 @@ namespace Portable
     }
 
   private:
-    ObserverPointer<const SubdomainBDDCOperatorWrapper<dim, Number>> op;
+    ObserverPointer<const SubdomainBDDCOperator<dim, Number>> op;
     const unsigned int                                               n_rhs;
   };
 

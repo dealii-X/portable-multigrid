@@ -57,6 +57,15 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override;
 
     void
+    vmult_masked(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+        &copy_through_dof_indices) const override;
+
+    void
     vmult_plain_block(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
@@ -543,6 +552,84 @@ namespace Portable
       Kokkos::parallel_for(
         "work", boundary_dofs.size(), KOKKOS_LAMBDA(const int i) {
           const auto idx  = boundary_dofs(i);
+          dst_device(idx) = src_device(idx);
+        });
+  }
+
+  // Same kernel as vmult_plain() above, but scattering against a caller-
+  // supplied dof-index mask/boundary set instead of this operator's own
+  // plain_dof_indices_per_color/physical_boundary_dof_indices -- lets a
+  // fe_degree-erased caller (e.g. SubdomainBDDCOperator, which only knows
+  // *which* subdomain-local dofs it wants excluded, not fe_degree) reuse
+  // this class's concrete, fe_degree-aware kernel launch via virtual
+  // dispatch, without this operator needing to know anything about why the
+  // caller's mask differs from its own.
+  template <int dim, int fe_degree, typename Number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::vmult_masked(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+    const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      &dof_indices_per_color,
+    const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+      &copy_through_dof_indices) const
+  {
+    DeviceVector<Number> src_device(src.get_values(), src.size()),
+      dst_device(dst.get_values(), dst.size());
+
+    dst = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    AssertDimension(dof_indices_per_color.size(), n_colors);
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            Kokkos::fence();
+
+            constexpr bool is_serial =
+              std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+            unsigned int numBlocks       = numbers::invalid_unsigned_int;
+            unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+
+            if (is_serial)
+              {
+                numBlocks       = 1u;
+                threadsPerBlock = 1u;
+              }
+
+            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, Number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock,
+              BK3::Parallel::CellRangeIdView(),
+              precomputed_data.use_coloring);
+
+            Kokkos::fence();
+          }
+      }
+
+    // copy caller-designated constrained values through unchanged
+    const auto boundary_dofs_masked = copy_through_dof_indices;
+
+    if (boundary_dofs_masked.size() > 0)
+      Kokkos::parallel_for(
+        "work", boundary_dofs_masked.size(), KOKKOS_LAMBDA(const int i) {
+          const auto idx  = boundary_dofs_masked(i);
           dst_device(idx) = src_device(idx);
         });
   }

@@ -20,7 +20,7 @@ namespace Portable
      * occupies [k*dof_stride, (k+1)*dof_stride)).
      *
      * offsets/member_dofs/weights are exactly what
-     * SubdomainBDDCOperatorWrapper::project() and
+     * SubdomainBDDCOperator::project() and
      * BDDCPreconditioner::project_to_homogeneous_constraints_subdomain()
      * already build (primal_constraint_offsets /
      * primal_constraint_dofs_subdomain / coarse_weights) -- they don't
@@ -33,7 +33,7 @@ namespace Portable
     // offsets/member_dofs/weights are taken as deduced template types
     // (rather than fixed to Kokkos::View<const .../..., Default::kokkos_space>)
     // so callers can pass either a plain (non-const-element) View -- as
-    // SubdomainBDDCOperatorWrapper's own primal_constraint_offsets etc.
+    // SubdomainBDDCOperator's own primal_constraint_offsets etc.
     // are stored -- or an explicitly const one, without needing to
     // manually convert first: template argument deduction does not apply
     // Kokkos::View's own const-converting constructor, so a hard-coded
