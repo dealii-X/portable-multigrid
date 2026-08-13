@@ -32,6 +32,7 @@
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 
@@ -107,6 +108,20 @@ private:
 
   void
   matvec_ghost_timing();
+
+  // Microbenchmark isolating the cost of the individual kernels the fine-
+  // correction CG solve (and the V-cycle preconditioning it) is built
+  // from: the BDDC operator's vmult()/vmult_plain()/project(), each
+  // level's diagonal preconditioner vmult() (fused_scale() + project())
+  // and fused_scale() alone, the raw Dirichlet operator's vmult(), and the
+  // Neumann operator's vmult_neumann() -- looped over every MG level, not
+  // just the finest one, since the V-cycle applies all of these at every
+  // level. Calls each in isolation (outside any CG solve) n_mv times per
+  // rep -- same "best of n_reps" MPI-max pattern as matvec_ghost_timing()
+  // -- rather than instrumenting SolverCG's internals, so it approximates
+  // per-application cost without threading timers through dealii's solver.
+  void
+  fine_correction_component_timing(const unsigned int cycle);
 
   void
   postprocess_subdomain_solution();
@@ -209,6 +224,8 @@ private:
   ConvergenceTable timing_table_per_iteration;
 
   ConvergenceTable ghost_timing_table;
+
+  ConvergenceTable fine_correction_component_timing_table;
 
   ConvergenceTable bddc_setup_timing_table;
 
@@ -1259,6 +1276,194 @@ LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
 
 template <int dim, int fe_degree>
 void
+LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned int cycle)
+{
+  const unsigned int n_reps = 5;
+
+  Timer time;
+
+  // Times n_mv calls to op(), n_reps times, and returns the minimum
+  // per-call wall time across reps (as an MPI max across ranks) -- same
+  // "best of repeats" pattern matvec_ghost_timing() uses above.
+  auto time_op = [&](const std::function<void()> &op, unsigned int n_mv)
+    {
+      double best = 1e10;
+      for (unsigned int rep = 0; rep < n_reps; ++rep)
+        {
+          Kokkos::fence();
+          time.restart();
+          for (unsigned int i = 0; i < n_mv; ++i)
+            op();
+          Kokkos::fence();
+
+          const Utilities::MPI::MinMaxAvg stat =
+            Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+          best = std::min(best, stat.max);
+        }
+      return best;
+    };
+
+  // subdomain_mg_preconditioner_bddc's V-cycle applies exactly these
+  // per-level operators/diagonals during vmult_fine_correction()'s CG
+  // (smoothing at every level, the operator's own vmult() at every level
+  // via the V-cycle's residual/restrict/prolongate chain) -- looping over
+  // every level here, rather than just the finest one, is what actually
+  // reconstructs where the V-cycle spends its time, not just the top-level
+  // CG matvec cost.
+  for (unsigned int level = level_subdomain_matrices.min_level();
+       level <= level_subdomain_matrices.max_level();
+       ++level)
+    {
+      const unsigned int n_mv = level_subdomain_matrices[level]->m() < 1e6 ? 200 : 50;
+
+      VectorTypeMG dummy_src, dummy_dst;
+      level_subdomain_matrices[level]->initialize_dof_vector(dummy_src);
+      dummy_dst.reinit(dummy_src);
+      dummy_src = 1.;
+
+      // Built standalone purely to isolate its vmult()/fused_scale() cost
+      // outside the V-cycle -- subdomain_mg_smoothers_bddc[level] holds an
+      // equivalent instance internally (see setup_smoothers()).
+      BddcPreconditionerType diagonal_preconditioner(
+        *level_subdomain_bddc_matrices[level],
+        level_subdomain_bddc_matrices[level]->get_matrix_diagonal_inverse());
+
+      const double bddc_vmult =
+        time_op([&]() { level_subdomain_bddc_matrices[level]->vmult(dummy_dst, dummy_src); }, n_mv);
+
+      const double bddc_vmult_plain =
+        time_op([&]() { level_subdomain_bddc_matrices[level]->vmult_plain(dummy_dst, dummy_src); },
+                n_mv);
+
+      const double bddc_project =
+        time_op([&]() { level_subdomain_bddc_matrices[level]->project(dummy_dst); }, n_mv);
+
+      const double diag_precond_vmult =
+        time_op([&]() { diagonal_preconditioner.vmult(dummy_dst, dummy_src); }, n_mv);
+
+      const double diag_fused_scale = time_op(
+        [&]()
+          {
+            BddcPreconditionerType::fused_scale(
+              dummy_dst,
+              dummy_src,
+              level_subdomain_bddc_matrices[level]->get_matrix_diagonal_inverse()->get_vector());
+          },
+        n_mv);
+
+      // The Neumann Chebyshev smoother's preconditioner isn't a
+      // ProjectedDiagonalPreconditioner at all -- setup_smoothers() hands
+      // it dealii::DiagonalMatrix directly (get_matrix_diagonal_inverse_
+      // neumann()), since BNN's Neumann problem has no primal constraints
+      // to keep homogeneous. But note this number is NOT actually paid as
+      // a separate kernel by the real smoother: dealii::PreconditionChebyshev
+      // has a MemorySpace::Default + DiagonalMatrix specialization of its
+      // internal vector_updates() (see precondition.h) that reads the
+      // diagonal straight out of preconditioner.get_vector() *inside* the
+      // same Kokkos kernel that computes the Chebyshev recurrence update --
+      // DiagonalMatrix::vmult() itself is never called there. So this is a
+      // standalone reference number (what an unfused scale would cost), not
+      // a cost actually incurred in the Dirichlet/Neumann smoothers -- unlike
+      // BDDC's hand-rolled ProjectedChebyshevSmoother, which genuinely does
+      // call diagonal_preconditioner->vmult() as a separate step each
+      // iteration (see diag_precond_vmult/diag_fused_scale above), so those
+      // two numbers ARE real costs paid by the BDDC smoother.
+      const double neumann_diag_vmult_unfused_ref = time_op(
+        [&]()
+          {
+            level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann()->vmult(
+              dummy_dst, dummy_src);
+          },
+        n_mv);
+
+      const double dirichlet_vmult =
+        time_op([&]() { level_subdomain_matrices[level]->vmult(dummy_dst, dummy_src); }, n_mv);
+
+      const double neumann_vmult =
+        time_op([&]()
+                  { level_subdomain_neumann_matrices[level]->vmult_neumann(dummy_dst, dummy_src); },
+                n_mv);
+
+      // apply()'s per-iteration bookkeeping around the operator/precondi-
+      // tioner calls above: the residual sadd(), and the two recurrence-
+      // update variants (fused_update() for k=0, fused_recurrence_update()
+      // for k>=1). None of these have a Dirichlet/Neumann counterpart to
+      // compare against -- dealii::PreconditionChebyshev's GPU-specialized
+      // vector_updates() (see the neumann_diag_vmult_unfused_ref comment
+      // above) computes the residual and the recurrence combine *inside*
+      // the same fused kernel that also reads the diagonal, so it never
+      // pays a separate sadd() or update kernel either. These three
+      // columns are therefore exactly the extra per-iteration overhead our
+      // hand-rolled ProjectedChebyshevSmoother pays that the dealii-backed
+      // Dirichlet/Neumann smoothers avoid entirely.
+      VectorTypeMG dummy_x_prev;
+      dummy_x_prev.reinit(dummy_src);
+
+      const double bddc_sadd =
+        time_op([&]() { dummy_dst.sadd(-1.0, 1.0, dummy_src); }, n_mv);
+
+      const double bddc_fused_update = time_op(
+        [&]() { BddcSmootherType::fused_update(dummy_dst, dummy_x_prev, dummy_src, 1.0); },
+        n_mv);
+
+      const double bddc_recurrence_update = time_op(
+        [&]() {
+          BddcSmootherType::fused_recurrence_update(
+            dummy_dst, dummy_x_prev, dummy_src, 1.0, 1.0);
+        },
+        n_mv);
+
+      // MG transfer cost between this level and level-1 -- the one part of
+      // the V-cycle none of the columns above touch at all. There's no
+      // transfer object below the coarsest level, so these are left at 0
+      // there (no level-1 to transfer to/from).
+      double bddc_prolongate = 0.;
+      double bddc_restrict   = 0.;
+
+      if (level > level_subdomain_matrices.min_level())
+        {
+          VectorTypeMG dummy_coarse_src, dummy_coarse_dst;
+          level_subdomain_matrices[level - 1]->initialize_dof_vector(dummy_coarse_src);
+          dummy_coarse_dst.reinit(dummy_coarse_src);
+          dummy_coarse_src = 1.;
+
+          bddc_prolongate = time_op(
+            [&]() {
+              subdomain_mg_transfers_bddc[level]->prolongate_and_add(dummy_dst, dummy_coarse_src);
+            },
+            n_mv);
+
+          bddc_restrict = time_op(
+            [&]() {
+              subdomain_mg_transfers_bddc[level]->restrict_and_add(dummy_coarse_dst, dummy_src);
+            },
+            n_mv);
+        }
+
+      fine_correction_component_timing_table.add_value("cycle", cycle);
+      fine_correction_component_timing_table.add_value("level", level);
+      fine_correction_component_timing_table.add_value("subdomain_dofs",
+                                                       level_subdomain_matrices[level]->m());
+      fine_correction_component_timing_table.add_value("bddc_vmult", bddc_vmult);
+      fine_correction_component_timing_table.add_value("bddc_vmult_plain", bddc_vmult_plain);
+      fine_correction_component_timing_table.add_value("bddc_project", bddc_project);
+      fine_correction_component_timing_table.add_value("diag_precond_vmult", diag_precond_vmult);
+      fine_correction_component_timing_table.add_value("diag_fused_scale", diag_fused_scale);
+      fine_correction_component_timing_table.add_value("neumann_diag_vmult_unfused_ref",
+                                                       neumann_diag_vmult_unfused_ref);
+      fine_correction_component_timing_table.add_value("dirichlet_vmult", dirichlet_vmult);
+      fine_correction_component_timing_table.add_value("neumann_vmult", neumann_vmult);
+      fine_correction_component_timing_table.add_value("bddc_sadd", bddc_sadd);
+      fine_correction_component_timing_table.add_value("bddc_fused_update", bddc_fused_update);
+      fine_correction_component_timing_table.add_value("bddc_recurrence_update",
+                                                       bddc_recurrence_update);
+      fine_correction_component_timing_table.add_value("bddc_prolongate", bddc_prolongate);
+      fine_correction_component_timing_table.add_value("bddc_restrict", bddc_restrict);
+    }
+}
+
+template <int dim, int fe_degree>
+void
 LaplaceProblem<dim, fe_degree>::postprocess_subdomain_solution()
 {
   const auto &subdomain_dof_handler_fine = level_subdomain_dof_handlers.back();
@@ -1531,6 +1736,8 @@ LaplaceProblem<dim, fe_degree>::run()
 
       solve_interface();
 
+      fine_correction_component_timing(cycle);
+
       // matvec_ghost_timing();
 
       // // test_coarse_problem();
@@ -1599,6 +1806,30 @@ LaplaceProblem<dim, fe_degree>::run()
                     << "BDDC interface-solve timings per CG iteration (seconds):" << std::endl;
           timing_table_per_iteration.write_text(std::cout);
           std::cout << std::endl;
+
+          for (const char *column : {"bddc_vmult",
+                                     "bddc_vmult_plain",
+                                     "bddc_project",
+                                     "diag_precond_vmult",
+                                     "diag_fused_scale",
+                                     "neumann_diag_vmult_unfused_ref",
+                                     "dirichlet_vmult",
+                                     "neumann_vmult",
+                                     "bddc_sadd",
+                                     "bddc_fused_update",
+                                     "bddc_recurrence_update",
+                                     "bddc_prolongate",
+                                     "bddc_restrict"})
+            {
+              fine_correction_component_timing_table.set_scientific(column, true);
+              fine_correction_component_timing_table.set_precision(column, 3);
+            }
+
+          std::cout << std::endl
+                    << "Fine-correction component timings, per MG level, best-of-"
+                    << "5x50 (seconds/call):" << std::endl;
+          fine_correction_component_timing_table.write_text(std::cout);
+          std::cout << std::endl;
         }
     }
 }
@@ -1635,13 +1866,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 4;
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 4;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
 
 
       // {
@@ -1665,13 +1896,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 4;
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
     }
   catch (std::exception &exc)
     {
