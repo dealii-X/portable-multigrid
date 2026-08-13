@@ -5,6 +5,10 @@
 
 #include <deal.II/lac/la_parallel_vector.h>
 
+#include <deal.II/matrix_free/portable_matrix_free.h>
+
+#include <Kokkos_Core.hpp>
+
 #include <cmath>
 #include <memory>
 
@@ -80,20 +84,19 @@ namespace Portable
       matrix_in.initialize_dof_vector(r);
       matrix_in.initialize_dof_vector(z);
       matrix_in.initialize_dof_vector(x_prev);
-      matrix_in.initialize_dof_vector(diff);
     }
 
     void
     vmult(VectorType &dst, const VectorType &src) const
     {
       dst = 0;
-      apply(dst, src);
+      apply(dst, src, /* zero_out_dst */ true);
     }
 
     void
     step(VectorType &dst, const VectorType &src) const
     {
-      apply(dst, src);
+      apply(dst, src, /* zero_out_dst */ false);
     }
 
     const AdditionalData &
@@ -102,20 +105,91 @@ namespace Portable
       return data;
     }
 
+    // x_prev[i] = x[i] (save old x for the caller's next iteration);
+    // x[i] = x[i] + factor * z[i]. Replaces "x_prev = x; x.add(factor, z);".
+    // Public (not private) because it contains a KOKKOS_LAMBDA -- nvcc's
+    // extended-lambda rule requires the enclosing function to not have
+    // private/protected access within its class.
+    static void
+    fused_update(VectorType &x, VectorType &x_prev, const VectorType &z, const double factor)
+    {
+      using Number          = typename VectorType::value_type;
+      const unsigned int n = x.locally_owned_size();
+
+      DeviceVector<Number>       x_view(x.get_values(), n);
+      DeviceVector<Number>       x_prev_view(x_prev.get_values(), n);
+      DeviceVector<const Number> z_view(z.get_values(), n);
+      const Number               f = static_cast<Number>(factor);
+
+      Kokkos::parallel_for(
+        "chebyshev_fused_update", n, KOKKOS_LAMBDA(const int i) {
+          const Number old_x = x_view(i);
+          x_prev_view(i)     = old_x;
+          x_view(i)          = old_x + f * z_view(i);
+        });
+      Kokkos::fence();
+    }
+
+    // diff[i] = x[i] - x_prev[i] (implicit, never materialized);
+    // x_prev[i] = x[i] (save old x); x[i] = x[i] + c1*diff[i] + c2*z[i].
+    // Replaces "diff = x; diff -= x_prev; x_prev = x; x.add(c1, diff);
+    // x.add(c2, z);" -- 5 kernel launches down to 1, and drops the diff
+    // scratch vector entirely. Public for the same nvcc extended-lambda
+    // reason as fused_update() above.
+    static void
+    fused_recurrence_update(VectorType       &x,
+                            VectorType       &x_prev,
+                            const VectorType &z,
+                            const double      c1,
+                            const double      c2)
+    {
+      using Number          = typename VectorType::value_type;
+      const unsigned int n = x.locally_owned_size();
+
+      DeviceVector<Number>       x_view(x.get_values(), n);
+      DeviceVector<Number>       x_prev_view(x_prev.get_values(), n);
+      DeviceVector<const Number> z_view(z.get_values(), n);
+      const Number               C1 = static_cast<Number>(c1);
+      const Number               C2 = static_cast<Number>(c2);
+
+      Kokkos::parallel_for(
+        "chebyshev_fused_recurrence_update", n, KOKKOS_LAMBDA(const int i) {
+          const Number old_x     = x_view(i);
+          const Number old_xprev = x_prev_view(i);
+          x_prev_view(i)         = old_x;
+          x_view(i)              = old_x + C1 * (old_x - old_xprev) + C2 * z_view(i);
+        });
+      Kokkos::fence();
+    }
+
   private:
     void
-    apply(VectorType &x, const VectorType &b) const
+    apply(VectorType &x, const VectorType &b, const bool zero_out_dst) const
     {
       if (data.degree == 0 || theta <= 0.)
         return;
 
-      // k = 0: first-order correction, no (x_k - x_{k-1}) history yet
-      matrix->vmult(r, x);
-      r.sadd(-1.0, 1.0, b);
-      data.preconditioner->vmult(z, r);
+      // k = 0: first-order correction, no (x_k - x_{k-1}) history yet.
+      // When called from vmult() (zero_out_dst == true), x is identically
+      // zero on entry, so matrix->vmult(r, x) is a wasted operator
+      // application that always produces r = 0 -- skip it and read the
+      // preconditioner straight off b, matching
+      // dealii::PreconditionChebyshev's iteration_index == 0 fast path
+      // (internal::PreconditionChebyshevImplementation::vector_updates()
+      // in precondition.h). step() (post-smoothing) still needs the real
+      // matvec, since x there is whatever the caller already has.
+      if (zero_out_dst)
+        data.preconditioner->vmult(z, b);
+      else
+        {
+          matrix->vmult(r, x);
+          r.sadd(-1.0, 1.0, b);
+          data.preconditioner->vmult(z, r);
+        }
 
-      x_prev = x;
-      x.add(1.0 / theta, z);
+      // x_prev = x; x += (1/theta) z -- one fused kernel instead of a copy
+      // plus an axpy (2 separate dealii::Vector calls / kernel launches).
+      fused_update(x, x_prev, z, 1.0 / theta);
 
       if (data.degree < 2 || std::abs(delta) < 1e-40)
         return;
@@ -131,12 +205,15 @@ namespace Portable
           r.sadd(-1.0, 1.0, b);
           data.preconditioner->vmult(z, r);
 
-          diff = x;
-          diff -= x_prev;
-
-          x_prev = x;
-          x.add(rho_new * rho, diff);
-          x.add(rho_new * 2.0 / delta, z);
+          // Was 5 separate dealii::Vector calls (diff = x; diff -= x_prev;
+          // x_prev = x; x.add(c1, diff); x.add(c2, z)) -- each its own
+          // kernel launch. diff is only ever x - x_prev consumed
+          // immediately, so it doesn't need to be materialized as a
+          // standalone vector at all: one fused kernel reads x[i] and
+          // x_prev[i] once each, computes the diff in a register, and
+          // writes both x_prev (= old x, for next iteration) and the new x
+          // in the same pass.
+          fused_recurrence_update(x, x_prev, z, rho_new * rho, rho_new * 2.0 / delta);
 
           rho = rho_new;
         }
@@ -153,7 +230,7 @@ namespace Portable
     // members: a given instance corresponds to one V-cycle level, and the
     // caller only ever invokes vmult()/step() on it sequentially, never
     // concurrently or recursively onto itself.
-    mutable VectorType r, z, x_prev, diff;
+    mutable VectorType r, z, x_prev;
   };
 
 } // namespace Portable

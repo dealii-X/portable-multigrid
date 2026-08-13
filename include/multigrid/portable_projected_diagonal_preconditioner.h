@@ -8,6 +8,10 @@
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_control.h>
 
+#include <deal.II/matrix_free/portable_matrix_free.h>
+
+#include <Kokkos_Core.hpp>
+
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -44,10 +48,35 @@ namespace Portable
     void
     vmult(VectorType &dst, const VectorType &src) const
     {
-      dst = src;
-      // matrix->project(dst);
-      dst.scale(inverse_diagonal->get_vector());
+      // Was "dst = src; dst.scale(inv_diag);" -- an unconditional copy
+      // followed by a separate elementwise multiply, two kernel launches
+      // for something that's really one elementwise expression. project()
+      // still has to stay a separate call: it averages across groups of
+      // dofs (see SubdomainBDDCOperatorWrapper::project()), so it can only
+      // run once every dof's scaled value is fully written, not fused into
+      // the same pass that produces them.
+      fused_scale(dst, src, inverse_diagonal->get_vector());
       matrix->project(dst);
+    }
+
+    // dst[i] = src[i] * diag[i]. Public (not private) because it contains a
+    // KOKKOS_LAMBDA -- nvcc's extended-lambda rule requires the enclosing
+    // function to not have private/protected access within its class.
+    static void
+    fused_scale(VectorType &dst, const VectorType &src, const VectorType &diag)
+    {
+      using Number          = typename VectorType::value_type;
+      const unsigned int n = dst.locally_owned_size();
+
+      DeviceVector<Number>       dst_view(dst.get_values(), n);
+      DeviceVector<const Number> src_view(src.get_values(), n);
+      DeviceVector<const Number> diag_view(diag.get_values(), n);
+
+      Kokkos::parallel_for(
+        "projected_diagonal_preconditioner_fused_scale",
+        n,
+        KOKKOS_LAMBDA(const int i) { dst_view(i) = src_view(i) * diag_view(i); });
+      Kokkos::fence();
     }
 
   private:
