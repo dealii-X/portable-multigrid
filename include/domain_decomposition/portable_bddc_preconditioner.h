@@ -65,7 +65,7 @@ namespace Portable
       // compute_local_edge_face_schur_complement() to be called once during
       // setup before set_fine_correction_mode(true) is used.
       const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned = nullptr,
-      const BDDCVariant variant = BDDCVariant::corner_edge_face);
+      const BDDCVariant              variant = BDDCVariant::corner_edge_face);
 
     // Selects which algorithm vmult()'s fine-correction step uses:
     // false (default) = CG against Ahat = Pi*A*Pi (the original, project()-
@@ -156,9 +156,10 @@ namespace Portable
     // ("R") dofs via the classical corner-pin + edge/face-Lagrange-multiplier
     // construction (see set_fine_correction_mode()'s class-level comment):
     //   t_R = A_RR_corner_pinned^{-1} fine_residual                 (CG, MG-preconditioned)
-    //   rhs_lambda = C_R t_R                                        (small dense, apply_edge_face_constraints())
-    //   lambda = edge_face_schur_matrix^{-1} rhs_lambda              (small dense, precomputed Cholesky factor)
-    //   fine_solution = t_R - sum_l lambda(l) * edge_face_basis_functions[l]
+    //   rhs_lambda = C_R t_R                                        (small dense,
+    //   apply_edge_face_constraints()) lambda = edge_face_schur_matrix^{-1} rhs_lambda (small
+    //   dense, precomputed Cholesky factor) fine_solution = t_R - sum_l lambda(l) *
+    //   edge_face_basis_functions[l]
     // Corner dofs end up exactly zero in fine_solution automatically (no
     // special-casing needed): both t_R and every basis function are zero
     // there by construction of the corner-pinned operator's identity block.
@@ -196,6 +197,21 @@ namespace Portable
     weight_local_interface_and_scatter(InterfaceVectorType       &dst,
                                        const SubdomainVectorType &src) const;
 
+
+
+    // C_R applied to x: for each active edge/face primal constraint group l
+    // (group indices [n_corner_local, n_local_coarse_dofs) -- corners are
+    // excluded, see n_corner_local's class-level comment), out(l) =
+    // coarse_weights(n_corner_local + l) * sum over the group's dofs of
+    // x(dof) -- the group's weighted average, i.e. the same per-group
+    // reduction project()/vmult_coarse_correction() already do, just written
+    // into a small Vector<Number> (size n_edge_face_local) instead of
+    // subtracted back into x. Shared by compute_local_edge_face_schur_
+    // complement() (forming a column of edge_face_schur_matrix per basis
+    // vector) and vmult_fine_correction_static_condensation() (forming
+    // rhs_lambda = C_R t_R).
+    void
+    apply_edge_face_constraints(Vector<Number> &out, const SubdomainVectorType &x) const;
 
 
     void
@@ -264,24 +280,11 @@ namespace Portable
     unsigned int
     get_maximum_subdomain_mg_iterations() const;
 
+
+
   private:
     void
     setup_primal_constraint_views();
-
-    // C_R applied to x: for each active edge/face primal constraint group l
-    // (group indices [n_corner_local, n_local_coarse_dofs) -- corners are
-    // excluded, see n_corner_local's class-level comment), out(l) =
-    // coarse_weights(n_corner_local + l) * sum over the group's dofs of
-    // x(dof) -- the group's weighted average, i.e. the same per-group
-    // reduction project()/vmult_coarse_correction() already do, just written
-    // into a small Vector<Number> (size n_edge_face_local) instead of
-    // subtracted back into x. Shared by compute_local_edge_face_schur_
-    // complement() (forming a column of edge_face_schur_matrix per basis
-    // vector) and vmult_fine_correction_static_condensation() (forming
-    // rhs_lambda = C_R t_R).
-    void
-    apply_edge_face_constraints(Vector<Number> &out, const SubdomainVectorType &x) const;
-
 
 
     ObserverPointer<const SchurInterfaceOperator<dim, Number>>       interface_operator;
@@ -626,11 +629,11 @@ namespace Portable
   {
     Assert(!use_static_condensation || subdomain_mg_preconditioner_corner_pinned != nullptr,
            ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
-                     "A_RR MG preconditioner -- pass one to the constructor before "
-                     "enabling the static-condensation fine correction."));
+                      "A_RR MG preconditioner -- pass one to the constructor before "
+                      "enabling the static-condensation fine correction."));
     Assert(!use_static_condensation || edge_face_schur_computed,
            ExcMessage("compute_local_edge_face_schur_complement() must be called before "
-                     "enabling the static-condensation fine correction."));
+                      "enabling the static-condensation fine correction."));
     use_static_condensation_fine_correction = use_static_condensation;
   }
 
@@ -765,17 +768,19 @@ namespace Portable
         const Number rhs_norm    = fine_residual.l2_norm();
         const Number rel_tol_abs = 1e-12 * rhs_norm;
         std::cout << "[fine-correction RHS trace] ||fine_residual||_2 = " << rhs_norm
-                   << ", n_subdomain_dofs = " << n_subdomain_dofs
-                   << ", interface_vector_size = " << interface_vector_size
-                   << ", sqrt(n_subdomain_dofs) = " << std::sqrt(static_cast<double>(n_subdomain_dofs))
-                   << ", sqrt(interface_vector_size) = "
-                   << std::sqrt(static_cast<double>(interface_vector_size))
-                   << ", 1e-12*||rhs|| = " << rel_tol_abs
-                   << ", floor (1e-15) active = " << (rel_tol_abs < 1e-15 ? "YES" : "no") << std::endl;
+                  << ", n_subdomain_dofs = " << n_subdomain_dofs
+                  << ", interface_vector_size = " << interface_vector_size
+                  << ", sqrt(n_subdomain_dofs) = "
+                  << std::sqrt(static_cast<double>(n_subdomain_dofs))
+                  << ", sqrt(interface_vector_size) = "
+                  << std::sqrt(static_cast<double>(interface_vector_size))
+                  << ", 1e-12*||rhs|| = " << rel_tol_abs
+                  << ", floor (1e-15) active = " << (rel_tol_abs < 1e-15 ? "YES" : "no")
+                  << std::endl;
         printed_fine_correction_diagnostics = true;
       }
-    ReductionControl               solver_control(fine_residual.size(), 1e-12, 1e-9);
-    SolverCG<SubdomainVectorType>  solver(solver_control);
+    ReductionControl              solver_control(fine_residual.size(), 1e-12, 1e-9);
+    SolverCG<SubdomainVectorType> solver(solver_control);
     solver.solve(this->subdomain_bddc_operator,
                  fine_solution,
                  fine_residual,
@@ -837,8 +842,8 @@ namespace Portable
   {
     Assert(subdomain_mg_preconditioner_corner_pinned != nullptr,
            ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
-                     "A_RR MG preconditioner -- pass one to the constructor before calling "
-                     "compute_local_edge_face_schur_complement()."));
+                      "A_RR MG preconditioner -- pass one to the constructor before calling "
+                      "compute_local_edge_face_schur_complement()."));
 
     const auto &subdomain_dof_info = this->subdomain_dof_handler->get_dof_info();
     n_corner_local                 = subdomain_dof_info.local_coarse_offsets[1];
@@ -938,8 +943,8 @@ namespace Portable
     AssertDimension(fine_residual.size(), n_subdomain_dofs);
     Assert(subdomain_mg_preconditioner_corner_pinned != nullptr,
            ExcMessage("This BDDCPreconditioner was constructed without a corner-pinned "
-                     "A_RR MG preconditioner -- pass one to the constructor to use "
-                     "vmult_fine_correction_static_condensation()."));
+                      "A_RR MG preconditioner -- pass one to the constructor to use "
+                      "vmult_fine_correction_static_condensation()."));
 
     fine_solution = 0;
 
@@ -957,8 +962,8 @@ namespace Portable
     // use_static_condensation_fine_correction is true.
     Timer time;
 
-    ReductionControl               solver_control(fine_residual.size(), 1e-12, 1e-9);
-    SolverCG<SubdomainVectorType>  solver(solver_control);
+    ReductionControl              solver_control(fine_residual.size(), 1e-12, 1e-9);
+    SolverCG<SubdomainVectorType> solver(solver_control);
     solver.solve(this->subdomain_bddc_operator_corner,
                  fine_solution,
                  fine_residual,
@@ -1550,8 +1555,7 @@ namespace Portable
     for (unsigned int level = minlevel; level <= maxlevel; ++level)
       {
         const auto &concrete_matrix =
-          static_cast<const SubdomainBDDCOperator<dim, Number> &>(
-            *level_bddc_matrices[level]);
+          static_cast<const SubdomainBDDCOperator<dim, Number> &>(*level_bddc_matrices[level]);
 
         block_matrices[level] =
           std::make_unique<BlockOperatorType>(concrete_matrix, n_coarse_local);
