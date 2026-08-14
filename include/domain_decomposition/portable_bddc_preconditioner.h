@@ -944,6 +944,7 @@ namespace Portable
                                         static_cast<typename SubdomainVectorType::size_type>(
                                           n_edge_face_local) *
                                           n_subdomain_dofs);
+      const unsigned int n_dofs = this->n_subdomain_dofs;
 
       Kokkos::fence();
       time.restart();
@@ -954,7 +955,7 @@ namespace Portable
           const unsigned int end   = offsets(k + 1);
           const Number       w     = weights(k);
           for (unsigned int i = start; i < end; ++i)
-            c_block_view(static_cast<std::size_t>(l) * n_subdomain_dofs + constraint_dofs(i)) = w;
+            c_block_view(static_cast<std::size_t>(l) * n_dofs + constraint_dofs(i)) = w;
         });
       Kokkos::fence();
       edge_face_setup_timings[0] += time.wall_time();
