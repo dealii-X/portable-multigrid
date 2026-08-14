@@ -138,7 +138,8 @@ namespace Portable
     // subdomain_mg_preconditioner_corner_pinned, where c_l is group l's
     // constraint functional lifted into subdomain-vector space (coarse_
     // weights(l) at the group's dofs, zero elsewhere). Stores the w_l in
-    // edge_face_basis_functions and forms/factorizes the small, dense,
+    // edge_face_basis_block (packed blocks, one per l) and forms/factorizes
+    // the small, dense,
     // LOCAL (no MPI -- unlike the global coarse matrix) SPD Schur matrix
     // edge_face_schur_matrix(k,l) = c_k . w_l = C_R A_RR_corner_pinned^{-1}
     // C_R^t, safe to factorize locally because corner-only pinning already
@@ -159,7 +160,7 @@ namespace Portable
     //   rhs_lambda = C_R t_R                                        (small dense,
     //   apply_edge_face_constraints()) lambda = edge_face_schur_matrix^{-1} rhs_lambda (small
     //   dense, precomputed Cholesky factor) fine_solution = t_R - sum_l lambda(l) *
-    //   edge_face_basis_functions[l]
+    //   w_l (block l of edge_face_basis_block), fused into one kernel
     // Corner dofs end up exactly zero in fine_solution automatically (no
     // special-casing needed): both t_R and every basis function are zero
     // there by construction of the corner-pinned operator's identity block.
@@ -394,11 +395,17 @@ namespace Portable
     // edge/face correction instead of producing a clear error.
     bool edge_face_schur_computed = false;
 
-    // w_l = A_RR_corner_pinned^{-1} c_l for each active edge/face group l
-    // (size n_edge_face_local), where c_l is that group's constraint
-    // functional lifted into subdomain-vector space. See
-    // compute_local_edge_face_schur_complement()'s class-level comment.
-    std::vector<SubdomainVectorType> edge_face_basis_functions;
+    // w_l = A_RR_corner_pinned^{-1} c_l for each active edge/face group l,
+    // where c_l is that group's constraint functional lifted into
+    // subdomain-vector space. Packed as n_edge_face_local blocks of
+    // n_subdomain_dofs each in ONE contiguous vector (block l occupies
+    // [l*n_subdomain_dofs, (l+1)*n_subdomain_dofs)) -- the same block-vector
+    // convention compute_local_coarse_matrix()'s lifted_block uses. This
+    // lets vmult_fine_correction_static_condensation()'s recombination step
+    // read all blocks from one fused kernel instead of n_edge_face_local
+    // separate AXPY launches. See compute_local_edge_face_schur_
+    // complement()'s class-level comment.
+    SubdomainVectorType edge_face_basis_block;
 
     // C_R A_RR_corner_pinned^{-1} C_R^t (size n_edge_face_local), Cholesky-
     // factorized in place by compute_local_edge_face_schur_complement() --
@@ -850,7 +857,9 @@ namespace Portable
     AssertThrow(n_corner_local <= n_local_coarse_dofs, ExcInternalError());
     n_edge_face_local = n_local_coarse_dofs - n_corner_local;
 
-    edge_face_basis_functions.resize(n_edge_face_local);
+    edge_face_basis_block.reinit(static_cast<typename SubdomainVectorType::size_type>(
+                                    n_edge_face_local) *
+                                  n_subdomain_dofs);
     edge_face_schur_matrix.reinit(n_edge_face_local, n_edge_face_local);
 
     // BDDCVariant::corner: the entire active primal set IS corners, so
@@ -870,6 +879,12 @@ namespace Portable
 
     SubdomainVectorType c_l;
     c_l.reinit(temp_subdomain_dst);
+
+    // Scratch for this iteration's w_l, copied into edge_face_basis_block's
+    // packed layout below once converged -- reused across l rather than
+    // allocated per-l (edge_face_basis_block owns the persistent storage).
+    SubdomainVectorType w_l;
+    w_l.reinit(temp_subdomain_dst);
 
     Vector<Number> schur_column(n_edge_face_local);
 
@@ -902,14 +917,13 @@ namespace Portable
         edge_face_setup_timings[0] += time.wall_time();
 
         // w_l = A_RR_corner_pinned^{-1} c_l.
-        edge_face_basis_functions[l].reinit(temp_subdomain_dst);
-        edge_face_basis_functions[l] = 0;
+        w_l = 0;
 
         time.restart();
         ReductionControl              control(c_l.size(), 1e-14, 1e-11);
         SolverCG<SubdomainVectorType> solver(control);
         solver.solve(this->subdomain_bddc_operator_corner,
-                     edge_face_basis_functions[l],
+                     w_l,
                      c_l,
                      *subdomain_mg_preconditioner_corner_pinned);
         Kokkos::fence();
@@ -917,11 +931,21 @@ namespace Portable
 
         // Column l of edge_face_schur_matrix = C_R w_l (entry m = c_m . w_l).
         time.restart();
-        apply_edge_face_constraints(schur_column, edge_face_basis_functions[l]);
+        apply_edge_face_constraints(schur_column, w_l);
         for (unsigned int m = 0; m < n_edge_face_local; ++m)
           edge_face_schur_matrix(m, l) = schur_column(m);
         Kokkos::fence();
         edge_face_setup_timings[2] += time.wall_time();
+
+        // Pack w_l into block l of edge_face_basis_block (same packing
+        // idiom compute_local_coarse_matrix() uses for lifted_block).
+        DeviceVector<Number> w_l_view(w_l.get_values(), n_subdomain_dofs);
+        DeviceVector<Number> block_view(edge_face_basis_block.get_values() +
+                                          static_cast<typename SubdomainVectorType::size_type>(l) *
+                                            n_subdomain_dofs,
+                                        n_subdomain_dofs);
+        Kokkos::deep_copy(block_view, w_l_view);
+        Kokkos::fence();
       }
 
     // compute_cholesky_factorization() asserts property == symmetric.
@@ -998,8 +1022,33 @@ namespace Portable
     static_condensation_timings[2] += time.wall_time();
 
     time.restart();
-    for (unsigned int l = 0; l < n_edge_face_local; ++l)
-      fine_solution.add(-lambda(l), edge_face_basis_functions[l]);
+
+    // Copy lambda to device once (tiny, ~n_edge_face_local doubles), then
+    // fuse the whole recombination into ONE kernel over n_subdomain_dofs
+    // with an inner loop over the small n_edge_face_local dimension --
+    // replaces n_edge_face_local separate full-vector AXPY kernel launches,
+    // same fusion idea as fused_recurrence_update() in
+    // portable_projected_chebyshev_smoother.h.
+    const Kokkos::View<const Number *, Kokkos::HostSpace> lambda_host_view(lambda.data(),
+                                                                           n_edge_face_local);
+    auto lambda_device_view =
+      Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(), lambda_host_view);
+
+    DeviceVector<Number>       fine_solution_view(fine_solution.get_values(), n_subdomain_dofs);
+    DeviceVector<const Number> basis_block_view(edge_face_basis_block.get_values(),
+                                                static_cast<typename SubdomainVectorType::size_type>(
+                                                  n_edge_face_local) *
+                                                  n_subdomain_dofs);
+    const unsigned int n_edge_face = this->n_edge_face_local;
+    const unsigned int n_dofs      = this->n_subdomain_dofs;
+
+    Kokkos::parallel_for(
+      "static_condensation_recombine", n_subdomain_dofs, KOKKOS_LAMBDA(const int i) {
+        Number sum = fine_solution_view(i);
+        for (unsigned int l = 0; l < n_edge_face; ++l)
+          sum -= lambda_device_view(l) * basis_block_view(l * n_dofs + i);
+        fine_solution_view(i) = sum;
+      });
     Kokkos::fence();
     static_condensation_timings[3] += time.wall_time();
   }
@@ -1497,179 +1546,275 @@ namespace Portable
     Kokkos::fence();
     setup_timings[0] += time.wall_time();
 
-    // Pack the n_coarse_local lifted constraint vectors into one block
-    // vector (n_coarse_local blocks of n_subdomain_dofs each -- the same
-    // layout vmult_plain_block()/project_block()/SolverBlockCG use
-    // throughout). phi_j starts out equal to lifted_constraints[j] before
-    // any fine correction is added (see the old per-j loop this replaces),
-    // so this block vector is both the "phi_j at block-solve time" input
-    // to vmult_plain_block() below *and*, unpacked back out further down,
-    // becomes coarse_basis_functions' initial value.
-    SubdomainVectorType lifted_block;
-    lifted_block.reinit(static_cast<typename SubdomainVectorType::size_type>(n_coarse_local) *
-                        n_subdomain_dofs);
-
-    for (unsigned int k = 0; k < n_coarse_local; ++k)
+    // Two ways to extend each l_j into a coarse basis function phi_j =
+    // l_j + correction_j, selected by the SAME flag vmult()'s fine
+    // correction uses. See [[project-static-condensation-arr]] for the
+    // derivation of why both are valid: Pi's correction_j lies in ker(C)
+    // because Ahat = Pi*A*Pi always maps into range(Pi) = ker(C), while
+    // static condensation's correction_j lies in ker(C) because corners
+    // are hard-pinned and the Lagrange constraint enforces C_R x_R = 0 --
+    // so C(phi_j) = C(l_j) + C(correction_j) = C(l_j) is IDENTICAL either
+    // way (the reproduction property that makes phi_j a valid BDDC coarse
+    // basis function), even though the two algorithms solve genuinely
+    // different linear systems for correction_j.
+    if (use_static_condensation_fine_correction)
       {
-        DeviceVector<Number> src_view(lifted_constraints[k].get_values(), n_subdomain_dofs);
-        DeviceVector<Number> dst_view(lifted_block.get_values() + k * n_subdomain_dofs,
-                                      n_subdomain_dofs);
-        Kokkos::deep_copy(dst_view, src_view);
-      }
-    Kokkos::fence();
+        // Static-condensation path: reuses vmult_fine_correction_static_
+        // condensation() (and the edge_face_schur_matrix/edge_face_basis_
+        // block it depends on, already built by compute_local_edge_face_
+        // schur_complement() before this function runs) instead of the
+        // Pi-projected block V-cycle below. Eliminates project_block()'s
+        // expensive group-mean reduction from a SECOND (setup-time) call
+        // site -- replacing it with the much cheaper, purely structural
+        // zero_corner_pinned_dofs() -- on top of the per-iteration call
+        // site vmult_fine_correction_static_condensation() already
+        // replaces it at.
+        SubdomainVectorType rhs_j, correction_j;
+        rhs_j.reinit(temp_subdomain_dst);
+        correction_j.reinit(temp_subdomain_dst);
 
-    SubdomainVectorType rhs_block;
-    rhs_block.reinit(lifted_block, true);
+        time.restart();
+        for (unsigned int j = 0; j < n_coarse_local; ++j)
+          {
+            this->subdomain_bddc_operator.vmult_plain(rhs_j, lifted_constraints[j]);
+            rhs_j *= Number(-1);
+            this->subdomain_bddc_operator.zero_corner_pinned_dofs(rhs_j);
 
-    time.restart();
-    this->subdomain_bddc_operator.vmult_plain_block(rhs_block, lifted_block, n_coarse_local);
-    Kokkos::fence();
-    setup_timings[1] += time.wall_time();
+            correction_j = 0;
+            this->vmult_fine_correction_static_condensation(correction_j, rhs_j);
 
-    rhs_block *= Number(-1);
+            SubdomainVectorType &phi_j = coarse_basis_functions[j];
+            phi_j                      = lifted_constraints[j];
+            phi_j.add(Number(1), correction_j);
+          }
+        Kokkos::fence();
+        setup_timings[2] += time.wall_time();
 
-    this->subdomain_bddc_operator.project_block(rhs_block, n_coarse_local);
-
-    // Build a block-shaped V-cycle over the same per-level BDDC matrices/
-    // transfers/smoothers the scalar subdomain_mg_preconditioner above was
-    // built from (see the class-level comment on BddcSmootherType), via
-    // the adapter classes in portable_block_vcycle_adapters.h. Eigenvalue
-    // bounds are read back from each level's already-initialized scalar
-    // smoother rather than re-estimated: they depend only on the
-    // operator/preconditioner pair, not on how many RHS columns are
-    // solved at once.
-    using BlockOperatorType = BlockBDDCOperatorAdapter<dim, Number>;
-    using BlockTransferType = BlockTransferAdapter<dim, Number>;
-    using BlockPreconditionerType =
-      BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
-    using BlockSmootherType =
-      ProjectedChebyshevSmoother<BlockOperatorType, BlockPreconditionerType, SubdomainVectorType>;
-
-    const unsigned int minlevel = level_bddc_matrices.min_level();
-    const unsigned int maxlevel = level_bddc_matrices.max_level();
-
-    MGLevelObject<std::unique_ptr<BlockOperatorType>> block_matrices(minlevel, maxlevel);
-    MGLevelObject<std::unique_ptr<BlockTransferType>> block_transfers(minlevel, maxlevel);
-    MGLevelObject<BlockSmootherType>                  block_smoothers(minlevel, maxlevel);
-
-    for (unsigned int level = minlevel; level <= maxlevel; ++level)
-      {
-        const auto &concrete_matrix =
-          static_cast<const SubdomainBDDCOperator<dim, Number> &>(*level_bddc_matrices[level]);
-
-        block_matrices[level] =
-          std::make_unique<BlockOperatorType>(concrete_matrix, n_coarse_local);
-
-        if (level > minlevel)
-          block_transfers[level] =
-            std::make_unique<BlockTransferType>(*level_bddc_transfers[level], n_coarse_local);
-
-        typename BlockSmootherType::AdditionalData smoother_data;
-        const auto &scalar_data       = level_bddc_smoothers[level].get_additional_data();
-        smoother_data.degree          = scalar_data.degree;
-        smoother_data.max_eigenvalue  = scalar_data.max_eigenvalue;
-        smoother_data.smoothing_range = scalar_data.smoothing_range;
-        smoother_data.preconditioner  = std::make_shared<BlockPreconditionerType>(
-          *block_matrices[level],
-          level_bddc_matrices[level]->get_matrix_diagonal_inverse(),
-          n_coarse_local);
-
-        block_smoothers[level].initialize(*block_matrices[level], smoother_data);
-      }
-
-    SubdomainVCycleMultigrid<dim, Number, BlockOperatorType, BlockTransferType, BlockSmootherType>
-      block_mg_preconditioner(block_matrices, block_transfers, block_smoothers);
-
-    SubdomainVectorType correction_block;
-    correction_block.reinit(rhs_block);
-
-    // Same interface-derived-RHS/precision-floor reasoning as
-    // vmult_fine_correction() above -- rhs_block is n_coarse_local stacked
-    // lifted-constraint RHS's, same BC-only origin, so it's exposed to the
-    // same shrinking-norm-under-refinement effect.
-    ReductionControl                   solver_control(rhs_block.size(), 1e-15, 1e-12);
-    SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
-
-    time.restart();
-    block_solver.solve_block(*block_matrices[maxlevel],
-                             correction_block,
-                             rhs_block,
-                             block_mg_preconditioner,
-                             n_coarse_local);
-    Kokkos::fence();
-    setup_timings[2] += time.wall_time();
-
-    // std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
-    //           << solver_control.last_step() << " iterations." << std::endl;
-
-    // max_subdomain_mg_iterations =
-    //   std::max(max_subdomain_mg_iterations, static_cast<unsigned
-    //   int>(solver_control.last_step()));
-
-    // phi_j = lifted_constraints[j] + correction_j, unpacked straight into
-    // coarse_basis_functions (matches the old loop's
-    // `phi_j = lifted_constraints[j]; ...; phi_j.add(1., temp_subdomain_dst);`).
-    for (unsigned int j = 0; j < n_coarse_local; ++j)
-      {
-        SubdomainVectorType &phi_j = coarse_basis_functions[j];
-
-        DeviceVector<Number> lifted_view(lifted_block.get_values() + j * n_subdomain_dofs,
-                                         n_subdomain_dofs);
-        DeviceVector<Number> correction_view(correction_block.get_values() + j * n_subdomain_dofs,
-                                             n_subdomain_dofs);
-        DeviceVector<Number> phi_view(phi_j.get_values(), n_subdomain_dofs);
-
-        Kokkos::parallel_for(
-          "unpack_phi_j", n_subdomain_dofs, KOKKOS_LAMBDA(const int i) {
-            phi_view(i) = lifted_view(i) + correction_view(i);
-          });
-      }
-    Kokkos::fence();
-
-    // Verification: recompute phi_j via the old sequential
-    // vmult_fine_correction() loop the block path above replaces, and diff
-    // against the block result. Kept permanently (not a one-shot check to
-    // delete once confirmed) as a running correctness guard on the block
-    // coarse-solve path, since compute_local_coarse_matrix() only runs
-    // once per preconditioner setup -- the extra n_coarse_local sequential
-    // solves cost comparatively little next to that.
-    //
-    // Disabled (#if 0) for the Jupiter GPU perf run: it doubles the coarse-
-    // solve cost (a full sequential re-solve alongside the block one),
-    // which would confound a clean block-vs-sequential timing comparison.
-    // Already confirmed at machine precision on CPU -- re-enable once the
-    // GPU run itself needs a correctness re-check.
-#if 0
-    {
-      std::vector<SubdomainVectorType> phi_ref(n_coarse_local);
-      SubdomainVectorType              rhs_ref, correction_ref;
-      rhs_ref.reinit(temp_subdomain_src);
-      correction_ref.reinit(temp_subdomain_dst);
-
-      Number max_phi_diff = 0;
-
-      for (unsigned int j = 0; j < n_coarse_local; ++j)
+        // Verification: recompute phi_j via the Pi-projected sequential
+        // path (project() + solve_fine_correction(), the same reference
+        // machinery the block-Pi verification below uses) and diff against
+        // the static-condensation result above -- confirms the
+        // [[project-static-condensation-arr]] derivation numerically, not
+        // just structurally. Cheap enough (one extra sequential CG solve
+        // per primal group) to leave on by default; disable (#if 0) like
+        // the block-Pi check below if a clean timing run of the static-
+        // condensation setup path is needed later.
+#if 1
         {
-          phi_ref[j] = lifted_constraints[j];
+          SubdomainVectorType phi_ref, rhs_ref, correction_ref;
+          phi_ref.reinit(temp_subdomain_dst);
+          rhs_ref.reinit(temp_subdomain_src);
+          correction_ref.reinit(temp_subdomain_dst);
 
-          this->subdomain_bddc_operator.vmult_plain(rhs_ref, phi_ref[j]);
-          rhs_ref *= Number(-1);
-          this->subdomain_bddc_operator.project(rhs_ref);
+          Number max_phi_diff = 0;
+          Number max_phi_norm = 0;
 
-          correction_ref = 0;
-          this->solve_fine_correction(correction_ref, rhs_ref);
+          for (unsigned int j = 0; j < n_coarse_local; ++j)
+            {
+              phi_ref = lifted_constraints[j];
 
-          phi_ref[j].add(Number(1), correction_ref);
+              this->subdomain_bddc_operator.vmult_plain(rhs_ref, phi_ref);
+              rhs_ref *= Number(-1);
+              this->subdomain_bddc_operator.project(rhs_ref);
 
-          SubdomainVectorType diff = phi_ref[j];
-          diff -= coarse_basis_functions[j];
-          max_phi_diff = std::max(max_phi_diff, diff.linfty_norm());
+              correction_ref = 0;
+              this->solve_fine_correction(correction_ref, rhs_ref);
+
+              phi_ref.add(Number(1), correction_ref);
+
+              SubdomainVectorType diff = phi_ref;
+              diff -= coarse_basis_functions[j];
+              max_phi_diff = std::max(max_phi_diff, diff.linfty_norm());
+              max_phi_norm = std::max(max_phi_norm, phi_ref.linfty_norm());
+            }
+
+          std::cout << "[static-condensation coarse-matrix verification] subdomain "
+                    << this_subdomain << ": max |phi_sc - phi_pi| = " << max_phi_diff
+                    << ", max |phi_pi| = " << max_phi_norm << std::endl;
         }
-
-      std::cout << "[block coarse-matrix verification] subdomain " << this_subdomain
-                << ": max |phi_block - phi_sequential| = " << max_phi_diff << std::endl;
-    }
 #endif
+      }
+    else
+      {
+        // Pack the n_coarse_local lifted constraint vectors into one block
+        // vector (n_coarse_local blocks of n_subdomain_dofs each -- the
+        // same layout vmult_plain_block()/project_block()/SolverBlockCG
+        // use throughout). phi_j starts out equal to lifted_constraints[j]
+        // before any fine correction is added (see the old per-j loop this
+        // replaces), so this block vector is both the "phi_j at
+        // block-solve time" input to vmult_plain_block() below *and*,
+        // unpacked back out further down, becomes coarse_basis_functions'
+        // initial value.
+        SubdomainVectorType lifted_block;
+        lifted_block.reinit(static_cast<typename SubdomainVectorType::size_type>(n_coarse_local) *
+                            n_subdomain_dofs);
+
+        for (unsigned int k = 0; k < n_coarse_local; ++k)
+          {
+            DeviceVector<Number> src_view(lifted_constraints[k].get_values(), n_subdomain_dofs);
+            DeviceVector<Number> dst_view(lifted_block.get_values() + k * n_subdomain_dofs,
+                                          n_subdomain_dofs);
+            Kokkos::deep_copy(dst_view, src_view);
+          }
+        Kokkos::fence();
+
+        SubdomainVectorType rhs_block;
+        rhs_block.reinit(lifted_block, true);
+
+        time.restart();
+        this->subdomain_bddc_operator.vmult_plain_block(rhs_block, lifted_block, n_coarse_local);
+        Kokkos::fence();
+        setup_timings[1] += time.wall_time();
+
+        rhs_block *= Number(-1);
+
+        this->subdomain_bddc_operator.project_block(rhs_block, n_coarse_local);
+
+        // Build a block-shaped V-cycle over the same per-level BDDC
+        // matrices/transfers/smoothers the scalar subdomain_mg_
+        // preconditioner above was built from (see the class-level
+        // comment on BddcSmootherType), via the adapter classes in
+        // portable_block_vcycle_adapters.h. Eigenvalue bounds are read
+        // back from each level's already-initialized scalar smoother
+        // rather than re-estimated: they depend only on the
+        // operator/preconditioner pair, not on how many RHS columns are
+        // solved at once.
+        using BlockOperatorType = BlockBDDCOperatorAdapter<dim, Number>;
+        using BlockTransferType = BlockTransferAdapter<dim, Number>;
+        using BlockPreconditionerType =
+          BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
+        using BlockSmootherType =
+          ProjectedChebyshevSmoother<BlockOperatorType, BlockPreconditionerType, SubdomainVectorType>;
+
+        const unsigned int minlevel = level_bddc_matrices.min_level();
+        const unsigned int maxlevel = level_bddc_matrices.max_level();
+
+        MGLevelObject<std::unique_ptr<BlockOperatorType>> block_matrices(minlevel, maxlevel);
+        MGLevelObject<std::unique_ptr<BlockTransferType>> block_transfers(minlevel, maxlevel);
+        MGLevelObject<BlockSmootherType>                  block_smoothers(minlevel, maxlevel);
+
+        for (unsigned int level = minlevel; level <= maxlevel; ++level)
+          {
+            const auto &concrete_matrix =
+              static_cast<const SubdomainBDDCOperator<dim, Number> &>(*level_bddc_matrices[level]);
+
+            block_matrices[level] =
+              std::make_unique<BlockOperatorType>(concrete_matrix, n_coarse_local);
+
+            if (level > minlevel)
+              block_transfers[level] =
+                std::make_unique<BlockTransferType>(*level_bddc_transfers[level], n_coarse_local);
+
+            typename BlockSmootherType::AdditionalData smoother_data;
+            const auto &scalar_data       = level_bddc_smoothers[level].get_additional_data();
+            smoother_data.degree          = scalar_data.degree;
+            smoother_data.max_eigenvalue  = scalar_data.max_eigenvalue;
+            smoother_data.smoothing_range = scalar_data.smoothing_range;
+            smoother_data.preconditioner  = std::make_shared<BlockPreconditionerType>(
+              *block_matrices[level],
+              level_bddc_matrices[level]->get_matrix_diagonal_inverse(),
+              n_coarse_local);
+
+            block_smoothers[level].initialize(*block_matrices[level], smoother_data);
+          }
+
+        SubdomainVCycleMultigrid<dim, Number, BlockOperatorType, BlockTransferType, BlockSmootherType>
+          block_mg_preconditioner(block_matrices, block_transfers, block_smoothers);
+
+        SubdomainVectorType correction_block;
+        correction_block.reinit(rhs_block);
+
+        // Same interface-derived-RHS/precision-floor reasoning as
+        // vmult_fine_correction() above -- rhs_block is n_coarse_local
+        // stacked lifted-constraint RHS's, same BC-only origin, so it's
+        // exposed to the same shrinking-norm-under-refinement effect.
+        ReductionControl                   solver_control(rhs_block.size(), 1e-15, 1e-12);
+        SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
+
+        time.restart();
+        block_solver.solve_block(*block_matrices[maxlevel],
+                                 correction_block,
+                                 rhs_block,
+                                 block_mg_preconditioner,
+                                 n_coarse_local);
+        Kokkos::fence();
+        setup_timings[2] += time.wall_time();
+
+        // std::cout << "On subdomain " << this_subdomain << ", block coarse solve converged in "
+        //           << solver_control.last_step() << " iterations." << std::endl;
+
+        // max_subdomain_mg_iterations =
+        //   std::max(max_subdomain_mg_iterations, static_cast<unsigned
+        //   int>(solver_control.last_step()));
+
+        // phi_j = lifted_constraints[j] + correction_j, unpacked straight
+        // into coarse_basis_functions (matches the old loop's
+        // `phi_j = lifted_constraints[j]; ...; phi_j.add(1., temp_subdomain_dst);`).
+        for (unsigned int j = 0; j < n_coarse_local; ++j)
+          {
+            SubdomainVectorType &phi_j = coarse_basis_functions[j];
+
+            DeviceVector<Number> lifted_view(lifted_block.get_values() + j * n_subdomain_dofs,
+                                             n_subdomain_dofs);
+            DeviceVector<Number> correction_view(correction_block.get_values() +
+                                                   j * n_subdomain_dofs,
+                                                 n_subdomain_dofs);
+            DeviceVector<Number> phi_view(phi_j.get_values(), n_subdomain_dofs);
+
+            Kokkos::parallel_for(
+              "unpack_phi_j", n_subdomain_dofs, KOKKOS_LAMBDA(const int i) {
+                phi_view(i) = lifted_view(i) + correction_view(i);
+              });
+          }
+        Kokkos::fence();
+
+        // Verification: recompute phi_j via the old sequential
+        // vmult_fine_correction() loop the block path above replaces, and
+        // diff against the block result. Kept permanently (not a one-shot
+        // check to delete once confirmed) as a running correctness guard
+        // on the block coarse-solve path, since compute_local_coarse_
+        // matrix() only runs once per preconditioner setup -- the extra
+        // n_coarse_local sequential solves cost comparatively little next
+        // to that.
+        //
+        // Disabled (#if 0) for the Jupiter GPU perf run: it doubles the
+        // coarse-solve cost (a full sequential re-solve alongside the
+        // block one), which would confound a clean block-vs-sequential
+        // timing comparison. Already confirmed at machine precision on
+        // CPU -- re-enable once the GPU run itself needs a correctness
+        // re-check.
+#if 0
+        {
+          std::vector<SubdomainVectorType> phi_ref(n_coarse_local);
+          SubdomainVectorType              rhs_ref, correction_ref;
+          rhs_ref.reinit(temp_subdomain_src);
+          correction_ref.reinit(temp_subdomain_dst);
+
+          Number max_phi_diff = 0;
+
+          for (unsigned int j = 0; j < n_coarse_local; ++j)
+            {
+              phi_ref[j] = lifted_constraints[j];
+
+              this->subdomain_bddc_operator.vmult_plain(rhs_ref, phi_ref[j]);
+              rhs_ref *= Number(-1);
+              this->subdomain_bddc_operator.project(rhs_ref);
+
+              correction_ref = 0;
+              this->solve_fine_correction(correction_ref, rhs_ref);
+
+              phi_ref[j].add(Number(1), correction_ref);
+
+              SubdomainVectorType diff = phi_ref[j];
+              diff -= coarse_basis_functions[j];
+              max_phi_diff = std::max(max_phi_diff, diff.linfty_norm());
+            }
+
+          std::cout << "[block coarse-matrix verification] subdomain " << this_subdomain
+                    << ": max |phi_block - phi_sequential| = " << max_phi_diff << std::endl;
+        }
+#endif
+      }
 
     for (unsigned int j = 0; j < n_coarse_local; ++j)
       {
