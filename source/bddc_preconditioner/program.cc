@@ -53,7 +53,6 @@
 #include "multigrid/portable_subdomain_v_cycle_multigrid.h"
 #include "operators/portable_subdomain_bddc_operator_wrapper.h"
 #include "operators/portable_subdomain_laplace_operator.h"
-#include "operators/portable_subdomain_neumann_operator_wrapper.h"
 
 
 
@@ -223,8 +222,6 @@ private:
 
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_matrices;
 
-  MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_neumann_matrices;
-
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_bddc_matrices;
 
   // A_RR (static-condensation) hierarchy: thin adapters (see
@@ -251,8 +248,6 @@ private:
 
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_dirichlet;
 
-  MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_neumann;
-
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_bddc;
 
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_primal_pinned;
@@ -261,8 +256,6 @@ private:
 
   MGLevelObject<SmootherType> subdomain_mg_smoothers_dirichlet;
 
-  MGLevelObject<SmootherType> subdomain_mg_smoothers_neumann;
-
   MGLevelObject<BddcSmootherType> subdomain_mg_smoothers_bddc;
 
   MGLevelObject<SmootherType> subdomain_mg_smoothers_primal_pinned;
@@ -270,7 +263,6 @@ private:
   MGLevelObject<SmootherType> subdomain_mg_smoothers_corner_pinned;
 
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_dirichlet;
-  std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_neumann;
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_bddc;
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>>
     subdomain_mg_preconditioner_primal_pinned;
@@ -365,11 +357,6 @@ private:
         std::make_unique<Portable::SubdomainLaplaceOperator<dim, degree, double>>(
           subomain_dof_handler, constraints, constraints_physical, use_coloring);
 
-
-      parent_problem.level_subdomain_neumann_matrices[level] =
-        std::make_unique<typename Portable::SubdomainNeumannOperatorWrapper<dim, degree, double>>(
-          *parent_problem.level_subdomain_matrices[level]);
-
       parent_problem.level_subdomain_bddc_matrices[level] =
         std::make_unique<typename Portable::SubdomainBDDCOperator<dim, double>>(
           *parent_problem.level_subdomain_matrices[level]);
@@ -409,16 +396,6 @@ private:
                                                                      mf_fine,
                                                                      constraints_coarse,
                                                                      constraints_fine);
-
-      parent_problem.subdomain_mg_transfers_neumann[level] =
-        std::make_unique<Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
-
-
-      parent_problem.subdomain_mg_transfers_neumann[level]->reinit(mf_coarse,
-                                                                   mf_fine,
-                                                                   physical_constraints_coarse,
-                                                                   physical_constraints_fine);
-
 
       parent_problem.subdomain_mg_transfers_bddc[level] =
         std::make_unique<Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
@@ -736,8 +713,6 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
 
   level_subdomain_matrices.resize(0, level_subdomain_dof_handlers.max_level());
 
-  level_subdomain_neumann_matrices.resize(0, level_subdomain_dof_handlers.max_level());
-
   level_subdomain_bddc_matrices.resize(0, level_subdomain_dof_handlers.max_level());
 
   level_subdomain_primal_pinned_matrices.resize(0, level_subdomain_dof_handlers.max_level());
@@ -755,11 +730,6 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
               level_subdomain_constraints[level],
               level_subdomain_constraints_physical[level],
               use_coloring_for_subdomain_solvers);
-
-
-          level_subdomain_neumann_matrices[level] =
-            std::make_unique<typename Portable::SubdomainNeumannOperatorWrapper<dim, 1, double>>(
-              *level_subdomain_matrices[level]);
 
           level_subdomain_bddc_matrices[level] =
             std::make_unique<typename Portable::SubdomainBDDCOperator<dim, double>>(
@@ -813,10 +783,6 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
   subdomain_mg_transfers_dirichlet.resize(level_subdomain_matrices.min_level(),
                                           level_subdomain_matrices.max_level());
 
-  subdomain_mg_transfers_neumann.resize(level_subdomain_matrices.min_level(),
-                                        level_subdomain_matrices.max_level());
-
-
   subdomain_mg_transfers_bddc.resize(level_subdomain_matrices.min_level(),
                                      level_subdomain_matrices.max_level());
 
@@ -839,14 +805,6 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
             level_subdomain_matrices[level]->get_matrix_free(),
             level_subdomain_constraints[level - 1],
             level_subdomain_constraints[level]);
-
-          subdomain_mg_transfers_neumann[level] =
-            std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
-          subdomain_mg_transfers_neumann[level]->reinit(
-            level_subdomain_matrices[level - 1]->get_matrix_free(),
-            level_subdomain_matrices[level]->get_matrix_free(),
-            level_subdomain_constraints_physical[level - 1],
-            level_subdomain_constraints_physical[level]);
 
           subdomain_mg_transfers_bddc[level] =
             std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
@@ -932,10 +890,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
   subdomain_mg_smoothers_dirichlet.resize(level_subdomain_matrices.min_level(),
                                           level_subdomain_matrices.max_level());
 
-  subdomain_mg_smoothers_neumann.resize(level_subdomain_matrices.min_level(),
-                                        level_subdomain_matrices.max_level());
-
-
   subdomain_mg_smoothers_bddc.resize(level_subdomain_matrices.min_level(),
                                      level_subdomain_matrices.max_level());
 
@@ -950,7 +904,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
        ++level)
     {
       typename SmootherType::AdditionalData     smoother_data_dirichlet;
-      typename SmootherType::AdditionalData     smoother_data_neumann;
       typename SmootherType::AdditionalData     smoother_data_primal_pinned;
       typename SmootherType::AdditionalData     smoother_data_corner_pinned;
       typename BddcSmootherType::AdditionalData smoother_data_bddc;
@@ -962,10 +915,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
           smoother_data_dirichlet.smoothing_range     = 15.;
           smoother_data_dirichlet.degree              = n_pre_smooth;
           smoother_data_dirichlet.eig_cg_n_iterations = 10;
-
-          smoother_data_neumann.smoothing_range     = 15.;
-          smoother_data_neumann.degree              = n_pre_smooth;
-          smoother_data_neumann.eig_cg_n_iterations = 10;
 
           // A_RR is nonsingular (pinning the primal dofs removes exactly
           // the null space a floating subdomain's plain Neumann operator
@@ -998,10 +947,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
           smoother_data_dirichlet.degree              = numbers::invalid_unsigned_int;
           smoother_data_dirichlet.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
 
-          smoother_data_neumann.smoothing_range     = 1e-3;
-          smoother_data_neumann.degree              = numbers::invalid_unsigned_int;
-          smoother_data_neumann.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
-
           smoother_data_primal_pinned.smoothing_range     = 1e-3;
           smoother_data_primal_pinned.degree              = numbers::invalid_unsigned_int;
           smoother_data_primal_pinned.eig_cg_n_iterations = level_subdomain_matrices[0]->m();
@@ -1026,9 +971,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
 
       smoother_data_dirichlet.preconditioner =
         level_subdomain_matrices[level]->get_matrix_diagonal_inverse();
-
-      smoother_data_neumann.preconditioner =
-        level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann();
 
       // Reads the *primal-pinned* diagonal SubdomainBDDCOperator::
       // compute_diagonal() (called above) also builds -- diag=1 forced at
@@ -1082,9 +1024,6 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
       subdomain_mg_smoothers_dirichlet[level].initialize(*level_subdomain_matrices[level],
                                                          smoother_data_dirichlet);
 
-      subdomain_mg_smoothers_neumann[level].initialize(*level_subdomain_neumann_matrices[level],
-                                                       smoother_data_neumann);
-
       subdomain_mg_smoothers_bddc[level].initialize(*level_subdomain_bddc_matrices[level],
                                                     smoother_data_bddc);
 
@@ -1124,13 +1063,6 @@ LaplaceProblem<dim, fe_degree>::setup_mg_preconditioners()
 
   const bool impose_zero_mean =
     level_subdomain_matrices.back()->get_physical_boundary_dof_indices_subdomain().size() == 0;
-
-  subdomain_mg_preconditioner_neumann = std::make_unique<
-    Portable::SubdomainVCycleMultigrid<dim, double, LevelMatrixType, TransferType, SmootherType>>(
-    level_subdomain_neumann_matrices,
-    subdomain_mg_transfers_neumann,
-    subdomain_mg_smoothers_neumann,
-    impose_zero_mean);
 
   subdomain_mg_preconditioner_bddc = std::make_unique<
     Portable::
@@ -1366,6 +1298,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
   bddc_preconditioner->reset_timings();
   bddc_preconditioner->reset_static_condensation_timings();
+  interface_operator->reset_maximum_subdomain_mg_iterations();
 
   solution_interface_device = 0.;
   cg.solve_dd(*interface_operator,
@@ -1675,38 +1608,8 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned 
           },
         n_mv);
 
-      // The Neumann Chebyshev smoother's preconditioner isn't a
-      // ProjectedDiagonalPreconditioner at all -- setup_smoothers() hands
-      // it dealii::DiagonalMatrix directly (get_matrix_diagonal_inverse_
-      // neumann()), since BNN's Neumann problem has no primal constraints
-      // to keep homogeneous. But note this number is NOT actually paid as
-      // a separate kernel by the real smoother: dealii::PreconditionChebyshev
-      // has a MemorySpace::Default + DiagonalMatrix specialization of its
-      // internal vector_updates() (see precondition.h) that reads the
-      // diagonal straight out of preconditioner.get_vector() *inside* the
-      // same Kokkos kernel that computes the Chebyshev recurrence update --
-      // DiagonalMatrix::vmult() itself is never called there. So this is a
-      // standalone reference number (what an unfused scale would cost), not
-      // a cost actually incurred in the Dirichlet/Neumann smoothers -- unlike
-      // BDDC's hand-rolled ProjectedChebyshevSmoother, which genuinely does
-      // call diagonal_preconditioner->vmult() as a separate step each
-      // iteration (see diag_precond_vmult/diag_fused_scale above), so those
-      // two numbers ARE real costs paid by the BDDC smoother.
-      const double neumann_diag_vmult_unfused_ref = time_op(
-        [&]()
-          {
-            level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann()->vmult(
-              dummy_dst, dummy_src);
-          },
-        n_mv);
-
       const double dirichlet_vmult =
         time_op([&]() { level_subdomain_matrices[level]->vmult(dummy_dst, dummy_src); }, n_mv);
-
-      const double neumann_vmult =
-        time_op([&]()
-                  { level_subdomain_neumann_matrices[level]->vmult_neumann(dummy_dst, dummy_src); },
-                n_mv);
 
       // apply()'s per-iteration bookkeeping around the operator/precondi-
       // tioner calls above: the residual sadd(), and the two recurrence-
@@ -1774,10 +1677,7 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned 
       fine_correction_component_timing_table.add_value("bddc_project", bddc_project);
       fine_correction_component_timing_table.add_value("diag_precond_vmult", diag_precond_vmult);
       fine_correction_component_timing_table.add_value("diag_fused_scale", diag_fused_scale);
-      fine_correction_component_timing_table.add_value("neumann_diag_vmult_unfused_ref",
-                                                       neumann_diag_vmult_unfused_ref);
       fine_correction_component_timing_table.add_value("dirichlet_vmult", dirichlet_vmult);
-      fine_correction_component_timing_table.add_value("neumann_vmult", neumann_vmult);
       fine_correction_component_timing_table.add_value("bddc_sadd", bddc_sadd);
       fine_correction_component_timing_table.add_value("bddc_fused_update", bddc_fused_update);
       fine_correction_component_timing_table.add_value("bddc_recurrence_update",
@@ -2244,9 +2144,9 @@ LaplaceProblem<dim, fe_degree>::run()
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {
-          std::cout << std::endl << "Per-subdomain DoF distribution:" << std::endl;
-          per_rank_dof_table.write_text(std::cout);
-          std::cout << std::endl;
+          // std::cout << std::endl << "Per-subdomain DoF distribution:" << std::endl;
+          // per_rank_dof_table.write_text(std::cout);
+          // std::cout << std::endl;
 
           std::cout << "Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
           per_rank_load_table.write_text(std::cout);
@@ -2317,9 +2217,7 @@ LaplaceProblem<dim, fe_degree>::run()
                                      "bddc_project",
                                      "diag_precond_vmult",
                                      "diag_fused_scale",
-                                     "neumann_diag_vmult_unfused_ref",
                                      "dirichlet_vmult",
-                                     "neumann_vmult",
                                      "bddc_sadd",
                                      "bddc_fused_update",
                                      "bddc_recurrence_update",
@@ -2366,8 +2264,8 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
 
-      const unsigned int n_pre_smooth  = 7;
-      const unsigned int n_post_smooth = 7;
+      const unsigned int n_pre_smooth  = 5;
+      const unsigned int n_post_smooth = 5;
 
       // {
       //   constexpr int dim       = 2;

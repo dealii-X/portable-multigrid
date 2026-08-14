@@ -179,6 +179,9 @@ private:
 
   ConvergenceTable vanilla_timing_table_per_iteration;
 
+  ConvergenceTable per_rank_load_table;
+
+
   unsigned int n_cells_total;
 
   struct SubdomainLaplaceOperatorRunner
@@ -842,6 +845,8 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
       cg(solver_control);
 
+    interface_operator->reset_maximum_subdomain_mg_iterations();
+
     solution_interface_device = 0.;
 
     cg.solve_enhanced(*interface_operator,
@@ -890,6 +895,32 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
     timing_table_per_iteration.add_value("dirichlet_mg_its", max_mg_iterations_dirichlet);
     timing_table_per_iteration.add_value("neumann_mg_its", max_mg_iterations_neumann);
+
+    const auto all_mg_iterations_dirichlet =
+      Utilities::MPI::gather(mpi_communicator,
+                             interface_operator->get_maximum_subdomain_mg_iterations(),
+                             0);
+    const auto all_mg_iterations_neumann =
+      Utilities::MPI::gather(mpi_communicator,
+                             bnn_preconditioner->get_maximum_subdomain_mg_iterations(),
+                             0);
+
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+      {
+        const std::string mode_suffix = "_enh";
+
+        per_rank_load_table.clear();
+
+        for (unsigned int rank = 0; rank < all_mg_iterations_dirichlet.size(); ++rank)
+          {
+            per_rank_load_table.add_value("rank", rank);
+
+            per_rank_load_table.add_value("dirichlet_mg_its" + mode_suffix,
+                                          all_mg_iterations_dirichlet[rank]);
+            per_rank_load_table.add_value("neumann_mg_its" + mode_suffix,
+                                          all_mg_iterations_neumann[rank]);
+          }
+      }
   }
 
   // Vanilla BNN: the same preconditioner action (BNNPreconditioner::vmult()),
@@ -904,11 +935,9 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
       cg(solver_control);
 
-    // solve_dd() now balances r_0 itself (via BNNPreconditioner::
-    // project_initial_residual(), called once right after r_0 = b - A*x_0
-    // is computed) regardless of the initial guess -- no longer needs
-    // x_0 := Q*b set up here first, unlike before.
     solution_interface_device = 0.;
+
+    interface_operator->reset_maximum_subdomain_mg_iterations();
 
     bnn_preconditioner->reset_timings();
 
@@ -930,6 +959,17 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
 
     const std::array<double, 4> &timings = bnn_preconditioner->get_timings();
 
+    const unsigned int max_mg_iterations_dirichlet =
+      Utilities::MPI::max(interface_operator->get_maximum_subdomain_mg_iterations(),
+                          mpi_communicator);
+    const unsigned int max_mg_iterations_neumann =
+      Utilities::MPI::max(bnn_preconditioner->get_maximum_subdomain_mg_iterations(),
+                          mpi_communicator);
+
+    pcout << "                      Subdomain Dirichlet/Neumann MG iterations: "
+          << max_mg_iterations_dirichlet << "   /    " << max_mg_iterations_neumann << std::endl;
+
+
     vanilla_timing_table.add_value("cells", n_cells_total);
     vanilla_timing_table.add_value("dofs", dof_handler_fine.n_dofs());
     vanilla_timing_table.add_value("Dirichlet", timings[0]);
@@ -946,6 +986,30 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     vanilla_timing_table_per_iteration.add_value("Crs_per_iter", timings[2] / iterations);
     vanilla_timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
     vanilla_timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
+    vanilla_timing_table_per_iteration.add_value("dirichlet_mg_its", max_mg_iterations_dirichlet);
+    vanilla_timing_table_per_iteration.add_value("neumann_mg_its", max_mg_iterations_neumann);
+
+    const auto all_mg_iterations_dirichlet =
+      Utilities::MPI::gather(mpi_communicator,
+                             interface_operator->get_maximum_subdomain_mg_iterations(),
+                             0);
+    const auto all_mg_iterations_neumann =
+      Utilities::MPI::gather(mpi_communicator,
+                             bnn_preconditioner->get_maximum_subdomain_mg_iterations(),
+                             0);
+
+    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+      {
+        const std::string mode_suffix = "_van";
+
+        for (unsigned int rank = 0; rank < all_mg_iterations_dirichlet.size(); ++rank)
+          {
+            per_rank_load_table.add_value("dirichlet_mg_its" + mode_suffix,
+                                          all_mg_iterations_dirichlet[rank]);
+            per_rank_load_table.add_value("neumann_mg_its" + mode_suffix,
+                                          all_mg_iterations_neumann[rank]);
+          }
+      }
   }
 }
 
@@ -1111,6 +1175,10 @@ LaplaceProblem<dim, fe_degree>::run()
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {
+          std::cout << "Per-subdomain BDDC coarse-matrix setup load:" << std::endl;
+          per_rank_load_table.write_text(std::cout);
+          std::cout << std::endl;
+
           for (const char *column : {"Dirichlet", "Neumann", "Coarse", "Project", "CG_time"})
             {
               timing_table.set_scientific(column, true);
@@ -1191,13 +1259,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      {
-        constexpr int dim       = 2;
-        constexpr int fe_degree = 4;
+      // {
+      //   constexpr int dim       = 2;
+      //   constexpr int fe_degree = 4;
 
-        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-        laplace_problem.run();
-      }
+      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+      //   laplace_problem.run();
+      // }
 
 
       // {
@@ -1221,13 +1289,13 @@ main(int argc, char *argv[])
       //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
       //   laplace_problem.run();
       // }
-      // {
-      //   constexpr int dim       = 3;
-      //   constexpr int fe_degree = 4;
+      {
+        constexpr int dim       = 3;
+        constexpr int fe_degree = 4;
 
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
+      }
     }
   catch (std::exception &exc)
     {

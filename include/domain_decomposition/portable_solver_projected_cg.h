@@ -243,7 +243,8 @@ namespace Portable
     // through the timed preconditioner.vmult_interface() wrapper.
     if (!x.all_zero())
       {
-        A.vmult(r, x);
+        // A.vmult(r, x);
+        preconditioner.vmult_interface(r, x);
         r.sadd(-1., 1., b);
       }
     else
