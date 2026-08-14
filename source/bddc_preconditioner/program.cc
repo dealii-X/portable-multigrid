@@ -68,8 +68,9 @@ template <int dim>
 std::vector<unsigned int>
 primal_pinned_dofs_host(const Portable::SubdomainBDDCOperator<dim, double> &op)
 {
-  auto host_view = Kokkos::create_mirror_view_and_copy(
-    Kokkos::HostSpace(), op.get_primal_pinned_dof_indices_subdomain());
+  auto host_view =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+                                        op.get_primal_pinned_dof_indices_subdomain());
 
   std::vector<unsigned int> result(host_view.extent(0));
   for (unsigned int i = 0; i < result.size(); ++i)
@@ -83,8 +84,9 @@ template <int dim>
 std::vector<unsigned int>
 corner_pinned_dofs_host(const Portable::SubdomainBDDCOperator<dim, double> &op)
 {
-  auto host_view = Kokkos::create_mirror_view_and_copy(
-    Kokkos::HostSpace(), op.get_corner_pinned_dof_indices_subdomain());
+  auto host_view =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+                                        op.get_corner_pinned_dof_indices_subdomain());
 
   std::vector<unsigned int> result(host_view.extent(0));
   for (unsigned int i = 0; i < result.size(); ++i)
@@ -768,10 +770,10 @@ LaplaceProblem<dim, fe_degree>::setup_matrix_free()
               static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
                 *level_subdomain_bddc_matrices[level]));
 
-          level_subdomain_corner_pinned_matrices[level] =
-            std::make_unique<typename Portable::SubdomainBDDCOperatorCornerPinnedAdapter<dim, double>>(
-              static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
-                *level_subdomain_bddc_matrices[level]));
+          level_subdomain_corner_pinned_matrices[level] = std::make_unique<
+            typename Portable::SubdomainBDDCOperatorCornerPinnedAdapter<dim, double>>(
+            static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
+              *level_subdomain_bddc_matrices[level]));
         }
       else
         {
@@ -855,10 +857,12 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
             level_subdomain_constraints_physical[level]);
 
           {
-            const auto &bddc_coarse = static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
-              *level_subdomain_bddc_matrices[level - 1]);
-            const auto &bddc_fine = static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
-              *level_subdomain_bddc_matrices[level]);
+            const auto &bddc_coarse =
+              static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
+                *level_subdomain_bddc_matrices[level - 1]);
+            const auto &bddc_fine =
+              static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
+                *level_subdomain_bddc_matrices[level]);
 
             auto transfer = std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
             transfer->reinit_primal_pinned(level_subdomain_matrices[level - 1]->get_matrix_free(),
@@ -871,10 +875,12 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
           }
 
           {
-            const auto &bddc_coarse = static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
-              *level_subdomain_bddc_matrices[level - 1]);
-            const auto &bddc_fine = static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
-              *level_subdomain_bddc_matrices[level]);
+            const auto &bddc_coarse =
+              static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
+                *level_subdomain_bddc_matrices[level - 1]);
+            const auto &bddc_fine =
+              static_cast<const Portable::SubdomainBDDCOperator<dim, double> &>(
+                *level_subdomain_bddc_matrices[level]);
 
             auto transfer = std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
             transfer->reinit_primal_pinned(level_subdomain_matrices[level - 1]->get_matrix_free(),
@@ -1213,8 +1219,8 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
   {
     const std::array<double, 4> &edge_face_timings =
       this->bddc_preconditioner->get_edge_face_setup_timings();
-    const double edge_face_total = edge_face_timings[0] + edge_face_timings[1] +
-                                   edge_face_timings[2] + edge_face_timings[3];
+    const double edge_face_total =
+      edge_face_timings[0] + edge_face_timings[1] + edge_face_timings[2] + edge_face_timings[3];
 
     edge_face_setup_timing_table.add_value("cells", n_cells_total);
     edge_face_setup_timing_table.add_value("dofs", level_distributed_dof_handlers.back().n_dofs());
@@ -1367,10 +1373,11 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
               rhs_schur_device,
               *bddc_preconditioner);
 
-  solution_interface_device.update_ghost_values();
-
   Kokkos::fence();
   const double time_solve = time.wall_time();
+
+  solution_interface_device.update_ghost_values();
+
 
   pcout << "                      Interface solver converged in " << solver_control.last_step()
         << " iterations.    (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time() << 's'
@@ -1716,18 +1723,17 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned 
       VectorTypeMG dummy_x_prev;
       dummy_x_prev.reinit(dummy_src);
 
-      const double bddc_sadd =
-        time_op([&]() { dummy_dst.sadd(-1.0, 1.0, dummy_src); }, n_mv);
+      const double bddc_sadd = time_op([&]() { dummy_dst.sadd(-1.0, 1.0, dummy_src); }, n_mv);
 
-      const double bddc_fused_update = time_op(
-        [&]() { BddcSmootherType::fused_update(dummy_dst, dummy_x_prev, dummy_src, 1.0); },
-        n_mv);
+      const double bddc_fused_update =
+        time_op([&]() { BddcSmootherType::fused_update(dummy_dst, dummy_x_prev, dummy_src, 1.0); },
+                n_mv);
 
       const double bddc_recurrence_update = time_op(
-        [&]() {
-          BddcSmootherType::fused_recurrence_update(
-            dummy_dst, dummy_x_prev, dummy_src, 1.0, 1.0);
-        },
+        [&]()
+          {
+            BddcSmootherType::fused_recurrence_update(dummy_dst, dummy_x_prev, dummy_src, 1.0, 1.0);
+          },
         n_mv);
 
       // MG transfer cost between this level and level-1 -- the one part of
@@ -1745,15 +1751,17 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing(const unsigned 
           dummy_coarse_src = 1.;
 
           bddc_prolongate = time_op(
-            [&]() {
-              subdomain_mg_transfers_bddc[level]->prolongate_and_add(dummy_dst, dummy_coarse_src);
-            },
+            [&]()
+              {
+                subdomain_mg_transfers_bddc[level]->prolongate_and_add(dummy_dst, dummy_coarse_src);
+              },
             n_mv);
 
           bddc_restrict = time_op(
-            [&]() {
-              subdomain_mg_transfers_bddc[level]->restrict_and_add(dummy_coarse_dst, dummy_src);
-            },
+            [&]()
+              {
+                subdomain_mg_transfers_bddc[level]->restrict_and_add(dummy_coarse_dst, dummy_src);
+              },
             n_mv);
         }
 
@@ -1829,8 +1837,10 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing_static_condensa
       dummy_dst.reinit(dummy_src);
       dummy_src = 1.;
 
-      const double matvec = time_op(
-        [&]() { level_subdomain_corner_pinned_matrices[level]->vmult(dummy_dst, dummy_src); }, n_mv);
+      const double matvec =
+        time_op([&]()
+                  { level_subdomain_corner_pinned_matrices[level]->vmult(dummy_dst, dummy_src); },
+                n_mv);
 
       // dealii::PreconditionChebyshev is a fused black box (see the class-
       // level comment on fine_correction_component_timing_table_sc) --
@@ -1838,8 +1848,9 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing_static_condensa
       // isolate the way the hand-rolled BDDC smoother above has, so this
       // one number (a full vmult(), i.e. the whole degree-n_pre_smooth
       // smoothing pass) stands in for all of those columns at once.
-      const double smoother_vmult = time_op(
-        [&]() { subdomain_mg_smoothers_corner_pinned[level].vmult(dummy_dst, dummy_src); }, n_mv);
+      const double smoother_vmult =
+        time_op([&]() { subdomain_mg_smoothers_corner_pinned[level].vmult(dummy_dst, dummy_src); },
+                n_mv);
 
       double corner_pinned_prolongate = 0.;
       double corner_pinned_restrict   = 0.;
@@ -1852,17 +1863,19 @@ LaplaceProblem<dim, fe_degree>::fine_correction_component_timing_static_condensa
           dummy_coarse_src = 1.;
 
           corner_pinned_prolongate = time_op(
-            [&]() {
-              subdomain_mg_transfers_corner_pinned[level]->prolongate_and_add(dummy_dst,
-                                                                              dummy_coarse_src);
-            },
+            [&]()
+              {
+                subdomain_mg_transfers_corner_pinned[level]->prolongate_and_add(dummy_dst,
+                                                                                dummy_coarse_src);
+              },
             n_mv);
 
           corner_pinned_restrict = time_op(
-            [&]() {
-              subdomain_mg_transfers_corner_pinned[level]->restrict_and_add(dummy_coarse_dst,
-                                                                            dummy_src);
-            },
+            [&]()
+              {
+                subdomain_mg_transfers_corner_pinned[level]->restrict_and_add(dummy_coarse_dst,
+                                                                              dummy_src);
+              },
             n_mv);
         }
 
@@ -2176,10 +2189,11 @@ LaplaceProblem<dim, fe_degree>::run()
       // correctness_tests/check_correctness_bddc_static_condensation/ for
       // the standalone version of this same comparison.
       LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_pi, solution_sc;
-      unsigned int                                                    iterations_pi = 0;
-      unsigned int                                                    iterations_sc = 0;
+      unsigned int                                                     iterations_pi = 0;
+      unsigned int                                                     iterations_sc = 0;
 
-      for (const bool use_static_condensation : {false, true})
+      // for (const bool use_static_condensation : {false, true})
+      for (const bool use_static_condensation : {true})
         {
           use_static_condensation_fine_correction = use_static_condensation;
           bddc_preconditioner->set_fine_correction_mode(use_static_condensation);
@@ -2352,8 +2366,8 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
 
-      const unsigned int n_pre_smooth  = 5;
-      const unsigned int n_post_smooth = 5;
+      const unsigned int n_pre_smooth  = 7;
+      const unsigned int n_post_smooth = 7;
 
       // {
       //   constexpr int dim       = 2;

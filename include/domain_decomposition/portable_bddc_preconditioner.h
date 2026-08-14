@@ -88,8 +88,8 @@ namespace Portable
       // face_schur_complement() actually runs the block solve (see its
       // Assert).
       const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>>
-                        *level_corner_pinned_transfers = nullptr,
-      const BDDCVariant variant                        = BDDCVariant::corner_edge_face);
+                       *level_corner_pinned_transfers = nullptr,
+      const BDDCVariant variant                       = BDDCVariant::corner_edge_face);
 
     // Selects which algorithm vmult()'s fine-correction step uses:
     // false (default) = CG against Ahat = Pi*A*Pi (the original, project()-
@@ -347,7 +347,8 @@ namespace Portable
     // of the Pi-projected one; that block V-cycle's matrices/diagonal come
     // from level_bddc_matrices instead (see the constructor's comment for
     // why), so no separate corner-pinned matrices array is stored here.
-    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> *level_corner_pinned_transfers;
+    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>>
+      *level_corner_pinned_transfers;
 
     SubdomainBDDCOperator<dim, Number> subdomain_bddc_operator;
 
@@ -522,7 +523,7 @@ namespace Portable
     const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
     const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned,
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>>
-                      *level_corner_pinned_transfers,
+                     *level_corner_pinned_transfers,
     const BDDCVariant variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
@@ -806,23 +807,24 @@ namespace Portable
     // that 1e-16 -- one order of magnitude of headroom above double epsilon
     // for CG's accumulated round-off, still to be checked against 1e-16
     // empirically via the Dirichlet trace.
-    if (!printed_fine_correction_diagnostics &&
-        Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) == 0)
-      {
-        const Number rhs_norm    = fine_residual.l2_norm();
-        const Number rel_tol_abs = 1e-12 * rhs_norm;
-        std::cout << "[fine-correction RHS trace] ||fine_residual||_2 = " << rhs_norm
-                  << ", n_subdomain_dofs = " << n_subdomain_dofs
-                  << ", interface_vector_size = " << interface_vector_size
-                  << ", sqrt(n_subdomain_dofs) = "
-                  << std::sqrt(static_cast<double>(n_subdomain_dofs))
-                  << ", sqrt(interface_vector_size) = "
-                  << std::sqrt(static_cast<double>(interface_vector_size))
-                  << ", 1e-12*||rhs|| = " << rel_tol_abs
-                  << ", floor (1e-15) active = " << (rel_tol_abs < 1e-15 ? "YES" : "no")
-                  << std::endl;
-        printed_fine_correction_diagnostics = true;
-      }
+    // if (!printed_fine_correction_diagnostics &&
+    //     Utilities::MPI::this_mpi_process(this->subdomain_dof_handler->get_mpi_communicator()) ==
+    //     0)
+    //   {
+    //     const Number rhs_norm    = fine_residual.l2_norm();
+    //     const Number rel_tol_abs = 1e-12 * rhs_norm;
+    //     std::cout << "[fine-correction RHS trace] ||fine_residual||_2 = " << rhs_norm
+    //               << ", n_subdomain_dofs = " << n_subdomain_dofs
+    //               << ", interface_vector_size = " << interface_vector_size
+    //               << ", sqrt(n_subdomain_dofs) = "
+    //               << std::sqrt(static_cast<double>(n_subdomain_dofs))
+    //               << ", sqrt(interface_vector_size) = "
+    //               << std::sqrt(static_cast<double>(interface_vector_size))
+    //               << ", 1e-12*||rhs|| = " << rel_tol_abs
+    //               << ", floor (1e-15) active = " << (rel_tol_abs < 1e-15 ? "YES" : "no")
+    //               << std::endl;
+    //     printed_fine_correction_diagnostics = true;
+    //   }
     ReductionControl              solver_control(fine_residual.size(), 1e-12, 1e-9);
     SolverCG<SubdomainVectorType> solver(solver_control);
     solver.solve(this->subdomain_bddc_operator,
@@ -894,9 +896,8 @@ namespace Portable
     AssertThrow(n_corner_local <= n_local_coarse_dofs, ExcInternalError());
     n_edge_face_local = n_local_coarse_dofs - n_corner_local;
 
-    edge_face_basis_block.reinit(static_cast<typename SubdomainVectorType::size_type>(
-                                    n_edge_face_local) *
-                                  n_subdomain_dofs);
+    edge_face_basis_block.reinit(
+      static_cast<typename SubdomainVectorType::size_type>(n_edge_face_local) * n_subdomain_dofs);
     edge_face_schur_matrix.reinit(n_edge_face_local, n_edge_face_local);
 
     // BDDCVariant::corner: the entire active primal set IS corners, so
@@ -940,10 +941,9 @@ namespace Portable
     c_block = 0;
 
     {
-      DeviceVector<Number> c_block_view(c_block.get_values(),
-                                        static_cast<typename SubdomainVectorType::size_type>(
-                                          n_edge_face_local) *
-                                          n_subdomain_dofs);
+      DeviceVector<Number> c_block_view(
+        c_block.get_values(),
+        static_cast<typename SubdomainVectorType::size_type>(n_edge_face_local) * n_subdomain_dofs);
       const unsigned int n_dofs = this->n_subdomain_dofs;
 
       Kokkos::fence();
@@ -980,7 +980,8 @@ namespace Portable
     using BlockTransferType = BlockTransferAdapter<dim, Number>;
     using BlockPreconditionerType =
       BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
-    using BlockSmootherType = PreconditionChebyshev<BlockOperatorType, SubdomainVectorType, BlockPreconditionerType>;
+    using BlockSmootherType =
+      PreconditionChebyshev<BlockOperatorType, SubdomainVectorType, BlockPreconditionerType>;
 
     const unsigned int minlevel = level_bddc_matrices.min_level();
     const unsigned int maxlevel = level_bddc_matrices.max_level();
@@ -998,8 +999,9 @@ namespace Portable
           std::make_unique<BlockOperatorType>(concrete_matrix, n_edge_face_local);
 
         if (level > minlevel)
-          block_transfers[level] = std::make_unique<BlockTransferType>(
-            *(*level_corner_pinned_transfers)[level], n_edge_face_local);
+          block_transfers[level] =
+            std::make_unique<BlockTransferType>(*(*level_corner_pinned_transfers)[level],
+                                                n_edge_face_local);
 
         typename BlockSmootherType::AdditionalData smoother_data;
         // degree/smoothing_range mirror the corner-pinned SCALAR hierarchy's
@@ -1021,8 +1023,8 @@ namespace Portable
           }
         else
           {
-            smoother_data.smoothing_range     = 15.;
-            smoother_data.degree              = level_bddc_smoothers[level].get_additional_data().degree;
+            smoother_data.smoothing_range = 15.;
+            smoother_data.degree = level_bddc_smoothers[level].get_additional_data().degree;
             smoother_data.eig_cg_n_iterations = 10;
           }
         smoother_data.preconditioner = std::make_shared<BlockPreconditionerType>(
@@ -1043,11 +1045,8 @@ namespace Portable
     SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
 
     time.restart();
-    block_solver.solve_block(*block_matrices[maxlevel],
-                             w_block,
-                             c_block,
-                             block_mg_preconditioner,
-                             n_edge_face_local);
+    block_solver.solve_block(
+      *block_matrices[maxlevel], w_block, c_block, block_mg_preconditioner, n_edge_face_local);
     Kokkos::fence();
     edge_face_setup_timings[1] += time.wall_time();
 
@@ -1071,11 +1070,10 @@ namespace Portable
     time.restart();
     for (unsigned int l = 0; l < n_edge_face_local; ++l)
       {
-        DeviceVector<const Number> block_view(edge_face_basis_block.get_values() +
-                                                static_cast<typename SubdomainVectorType::size_type>(
-                                                  l) *
-                                                  n_subdomain_dofs,
-                                              n_subdomain_dofs);
+        DeviceVector<const Number> block_view(
+          edge_face_basis_block.get_values() +
+            static_cast<typename SubdomainVectorType::size_type>(l) * n_subdomain_dofs,
+          n_subdomain_dofs);
         DeviceVector<Number> w_l_view(w_l_scratch.get_values(), n_subdomain_dofs);
         Kokkos::deep_copy(w_l_view, block_view);
 
@@ -1169,14 +1167,13 @@ namespace Portable
     // portable_projected_chebyshev_smoother.h.
     const Kokkos::View<const Number *, Kokkos::HostSpace> lambda_host_view(lambda.data(),
                                                                            n_edge_face_local);
-    auto lambda_device_view =
+    auto                                                  lambda_device_view =
       Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(), lambda_host_view);
 
     DeviceVector<Number>       fine_solution_view(fine_solution.get_values(), n_subdomain_dofs);
-    DeviceVector<const Number> basis_block_view(edge_face_basis_block.get_values(),
-                                                static_cast<typename SubdomainVectorType::size_type>(
-                                                  n_edge_face_local) *
-                                                  n_subdomain_dofs);
+    DeviceVector<const Number> basis_block_view(
+      edge_face_basis_block.get_values(),
+      static_cast<typename SubdomainVectorType::size_type>(n_edge_face_local) * n_subdomain_dofs);
     const unsigned int n_edge_face = this->n_edge_face_local;
     const unsigned int n_dofs      = this->n_subdomain_dofs;
 
@@ -1737,7 +1734,7 @@ namespace Portable
         // per primal group) to leave on by default; disable (#if 0) like
         // the block-Pi check below if a clean timing run of the static-
         // condensation setup path is needed later.
-#if 1
+#if 0
         {
           SubdomainVectorType phi_ref, rhs_ref, correction_ref;
           phi_ref.reinit(temp_subdomain_dst);
@@ -1821,8 +1818,9 @@ namespace Portable
         using BlockTransferType = BlockTransferAdapter<dim, Number>;
         using BlockPreconditionerType =
           BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
-        using BlockSmootherType =
-          ProjectedChebyshevSmoother<BlockOperatorType, BlockPreconditionerType, SubdomainVectorType>;
+        using BlockSmootherType = ProjectedChebyshevSmoother<BlockOperatorType,
+                                                             BlockPreconditionerType,
+                                                             SubdomainVectorType>;
 
         const unsigned int minlevel = level_bddc_matrices.min_level();
         const unsigned int maxlevel = level_bddc_matrices.max_level();
@@ -1856,7 +1854,11 @@ namespace Portable
             block_smoothers[level].initialize(*block_matrices[level], smoother_data);
           }
 
-        SubdomainVCycleMultigrid<dim, Number, BlockOperatorType, BlockTransferType, BlockSmootherType>
+        SubdomainVCycleMultigrid<dim,
+                                 Number,
+                                 BlockOperatorType,
+                                 BlockTransferType,
+                                 BlockSmootherType>
           block_mg_preconditioner(block_matrices, block_transfers, block_smoothers);
 
         SubdomainVectorType correction_block;
