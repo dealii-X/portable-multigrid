@@ -98,9 +98,6 @@ private:
   solve_interface();
 
   void
-  matvec_ghost_timing();
-
-  void
   postprocess_subdomain_solution();
 
   void
@@ -129,7 +126,12 @@ private:
   AffineConstraints<double>                subdomain_constraints_fine;
   AffineConstraints<double>                subdomain_constraints_physical_fine;
 
-  using VectorTypeMG = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+  using VectorTypeHost = LinearAlgebra::distributed::Vector<double, MemorySpace::Host>;
+  using VectorTypeMG   = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+  using VectorType     = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+
+  using SubdomainVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
+  using InterfaceVectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
   using LevelMatrixType = Portable::SubdomainLaplaceOperatorBase<dim, double>;
 
@@ -138,34 +140,27 @@ private:
   using TransferType = Portable::MGTransferBase<dim, double>;
 
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_matrices;
-
   MGLevelObject<std::unique_ptr<LevelMatrixType>> level_subdomain_neumann_matrices;
 
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_dirichlet;
-
   MGLevelObject<std::unique_ptr<TransferType>> subdomain_mg_transfers_neumann;
 
   MGLevelObject<SmootherType> subdomain_mg_smoothers_dirichlet;
-
   MGLevelObject<SmootherType> subdomain_mg_smoothers_neumann;
 
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_dirichlet;
-
   std::unique_ptr<Portable::VCycleMultigridBase<dim, double>> subdomain_mg_preconditioner_neumann;
 
   std::unique_ptr<Portable::SchurInterfaceOperator<dim, double>> interface_operator;
 
   std::unique_ptr<Portable::BNNPreconditioner<dim, double>> bnn_preconditioner;
 
+  VectorTypeHost      global_solution_host, subdomain_solution_host;
+  VectorType          subdomain_solution_device;
+  SubdomainVectorType subdomain_rhs_device;
 
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_solution_host,
-    subdomain_solution_host;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> subdomain_solution_device;
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> subdomain_rhs_device, schur_rhs;
-
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> rhs_schur_device;
-
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_interface_device;
+  InterfaceVectorType solution_interface_device;
+  InterfaceVectorType rhs_schur_device;
 
   LinearAlgebra::distributed::Vector<double, MemorySpace::Host> global_interface_weights;
 
@@ -180,24 +175,15 @@ private:
 
   ConvergenceTable timing_table_per_iteration;
 
-  // Vanilla (non-enhanced) BNN, driven through SolverProjectedCG::solve_dd()
-  // instead of solve_enhanced() -- same preconditioner action, but paying
-  // for the outer Dirichlet-based S application separately every iteration
-  // instead of reusing the precomputed coarse basis actions. Populated
-  // alongside timing_table/timing_table_per_iteration in solve_interface()
-  // so the two can be compared side by side.
   ConvergenceTable vanilla_timing_table;
 
   ConvergenceTable vanilla_timing_table_per_iteration;
-
-  ConvergenceTable ghost_timing_table;
 
   unsigned int n_cells_total;
 
   struct SubdomainLaplaceOperatorRunner
   {
-    const unsigned int level;
-    // SubdomainDoFHandler<dim>       &subomain_dof_handler;
+    const unsigned int              level;
     DoFHandler<dim>                &subomain_plain_dof_handler;
     AffineConstraints<double>      &constraints;
     AffineConstraints<double>      &constraints_physical;
@@ -723,7 +709,7 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
         level_subdomain_matrices[level]->get_matrix_diagonal_inverse();
 
       smoother_data_neumann.preconditioner =
-        level_subdomain_matrices[level]->get_matrix_diagonal_inverse_neumann();
+        level_subdomain_neumann_matrices[level]->get_matrix_diagonal_inverse();
 
       subdomain_mg_smoothers_dirichlet[level].initialize(*level_subdomain_matrices[level],
                                                          smoother_data_dirichlet);
@@ -822,16 +808,6 @@ LaplaceProblem<dim, fe_degree>::assemble_rhs()
   Timer time;
   Kokkos::fence();
 
-  // Matrix-free, device-side replacement for the host FEValues cell loop +
-  // Host-vector-then-import_elements-to-device pattern this used to be:
-  // level_subdomain_matrices.back() is guaranteed to be a
-  // SubdomainLaplaceOperator<dim, fe_degree, double> (the finest p-level
-  // always uses degree == fe_degree, this class's own template parameter --
-  // see setup_dofs()'s p_level_fes construction), so the downcast here is
-  // safe. compute_rhs() already skips constrained dofs the same way
-  // vmult_plain() does (plain_dof_indices_per_color marks them invalid),
-  // which is exactly equivalent to the old code's explicit
-  // subdomain_physical_boundary_dofs zeroing pass.
   static_cast<const Portable::SubdomainLaplaceOperator<dim, fe_degree, double> &>(
     *level_subdomain_matrices.back())
     .compute_rhs(subdomain_rhs_device, 1.0);
@@ -882,9 +858,6 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
           << solver_control.last_step() << " iterations.    (CPU/wall) " << time.cpu_time() << "s/"
           << time.wall_time() << 's' << std::endl;
 
-    // interface_operator only tracks the Dirichlet solve now (shared with
-    // BDDC); the Neumann solve's own iteration count lives on
-    // bnn_preconditioner since vmult_fine_correction() moved there.
     const unsigned int max_mg_iterations_dirichlet =
       Utilities::MPI::max(interface_operator->get_maximum_subdomain_mg_iterations(),
                           mpi_communicator);
@@ -922,9 +895,7 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
   // Vanilla BNN: the same preconditioner action (BNNPreconditioner::vmult()),
   // but driven through solve_dd() -- the same generic PCG BDDC now uses --
   // which applies the outer S operator via vmult_interface() every
-  // iteration instead of reusing a precomputed coarse-basis action. Lets
-  // the enhanced variant's savings be read off directly by comparing this
-  // block's timings/iteration count against the one above.
+  // iteration instead of reusing a precomputed coarse-basis action.
   {
     Timer time;
     Kokkos::fence();
@@ -933,15 +904,11 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     Portable::SolverProjectedCG<LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>
       cg(solver_control);
 
-    // vmult() requires a balanced residual (zero coarse component) to use
-    // its cheaper 1-Dirichlet-solve form -- establish that once here (same
-    // pattern solve_enhanced() already uses for the enhanced path) rather
-    // than every iteration. solve_dd()'s own initial-residual computation
-    // (A.vmult(r, x) for nonzero x) then produces r_0 = b - S(Q b), which
-    // is exactly the balanced residual the invariant needs; it stays
-    // balanced automatically afterwards (see vmult()'s comment).
+    // solve_dd() now balances r_0 itself (via BNNPreconditioner::
+    // project_initial_residual(), called once right after r_0 = b - A*x_0
+    // is computed) regardless of the initial guess -- no longer needs
+    // x_0 := Q*b set up here first, unlike before.
     solution_interface_device = 0.;
-    bnn_preconditioner->vmult_coarse_correction(solution_interface_device, rhs_schur_device);
 
     bnn_preconditioner->reset_timings();
 
@@ -980,141 +947,6 @@ LaplaceProblem<dim, fe_degree>::solve_interface()
     vanilla_timing_table_per_iteration.add_value("Prj_per_iter", timings[3] / iterations);
     vanilla_timing_table_per_iteration.add_value("CG_per_iter", time_solve / iterations);
   }
-}
-
-
-template <int dim, int fe_degree>
-void
-LaplaceProblem<dim, fe_degree>::matvec_ghost_timing()
-{
-  const bool communication_on = true;
-  const bool computation_on   = true;
-
-  LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dummy_solution, dummy_rhs;
-  subdomain_dof_handler_fine.initialize_interface_dof_vector(dummy_solution);
-  dummy_rhs.reinit(dummy_solution);
-
-  dummy_rhs = 1.;
-
-  Timer time;
-
-
-  std::array<double, 2> best_mv_both{{1e10, 1e10}};
-  std::array<double, 2> best_only_ghost{{1e10, 1e10}};
-  std::array<double, 2> best_only_comp{{1e10, 1e10}};
-
-  for (unsigned int i = 0; i < 5; ++i)
-    {
-      const unsigned int n_mv = 50;
-
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          interface_operator->vmult_dummy(dummy_solution,
-                                          dummy_rhs,
-                                          communication_on,
-                                          communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_mv_both[0] = std::min(best_mv_both[0], stat.max);
-      }
-
-
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                                            dummy_rhs,
-                                                            computation_on,
-                                                            communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_mv_both[1] = std::min(best_mv_both[1], stat.max);
-      }
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          interface_operator->vmult_dummy(dummy_solution,
-                                          dummy_rhs,
-                                          !computation_on,
-                                          communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_only_ghost[0] = std::min(best_only_ghost[0], stat.max);
-      }
-
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                                            dummy_rhs,
-                                                            !computation_on,
-                                                            communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_only_ghost[1] = std::min(best_only_ghost[1], stat.max);
-      }
-
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          interface_operator->vmult_dummy(dummy_solution,
-                                          dummy_rhs,
-                                          computation_on,
-                                          !communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_only_comp[0] = std::min(best_only_comp[0], stat.max);
-      }
-
-      {
-        Kokkos::fence();
-        time.restart();
-        for (unsigned int i = 0; i < n_mv; ++i)
-          bnn_preconditioner->vmult_coarse_correction_dummy(dummy_solution,
-                                                            dummy_rhs,
-                                                            computation_on,
-                                                            !communication_on);
-        Kokkos::fence();
-
-        Utilities::MPI::MinMaxAvg stat =
-          Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
-
-        best_only_comp[1] = std::min(best_only_comp[1], stat.max);
-      }
-    }
-
-
-  ghost_timing_table.add_value("cells", n_cells_total);
-  ghost_timing_table.add_value("dofs", dof_handler_fine.n_dofs());
-
-  ghost_timing_table.add_value("subdomain_total", best_mv_both[0]);
-  ghost_timing_table.add_value("subdomain_compute", best_only_comp[0]);
-  ghost_timing_table.add_value("subdomain_communicate", best_only_ghost[0]);
-
-  ghost_timing_table.add_value("coarse_total", best_mv_both[1]);
-  ghost_timing_table.add_value("coarse_compute", best_only_comp[1]);
-  ghost_timing_table.add_value("coarse_communicate", best_only_ghost[1]);
 }
 
 template <int dim, int fe_degree>
@@ -1271,11 +1103,6 @@ LaplaceProblem<dim, fe_degree>::run()
 
       solve_interface();
 
-      // matvec_ghost_timing() runs the balance()/vmult() communication-vs-
-      // computation overlap microbenchmark independently of the interface
-      // solve above; left disabled here for a plain convergence/timing run.
-      // matvec_ghost_timing();
-
       postprocess_subdomain_solution();
 
       output_results(cycle);
@@ -1367,10 +1194,10 @@ main(int argc, char *argv[])
       {
         constexpr int dim       = 2;
         constexpr int fe_degree = 4;
+
+        LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
+        laplace_problem.run();
       }
-      //   LaplaceProblem<dim, fe_degree> laplace_problem(n_pre_smooth, n_post_smooth);
-      //   laplace_problem.run();
-      // }
 
 
       // {

@@ -43,10 +43,9 @@ namespace Portable
      * KokkosKernelBlock()/SolverBlockCG use.
      */
     virtual void
-    vmult_plain_block(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-      const unsigned int                                                     n_rhs) const = 0;
+    vmult_plain_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+                      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+                      const unsigned int n_rhs) const = 0;
 
     /**
      * Block project(): applies project() independently to each of n_rhs
@@ -57,28 +56,12 @@ namespace Portable
                   const unsigned int n_rhs) const = 0;
 
     virtual void
-    vmult_bk3(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
-
-    virtual void
-    vmult_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-                const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-                const bool ghost_exchange_on,
-                const bool computation_on) const = 0;
-
-    virtual void
     vmult_interface_cell_range(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
-    virtual void
-    vmult_neumann(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
-
     /**
-     * Same tensor-product cell-loop kernel as vmult_plain()/vmult_neumann(),
+     * Same tensor-product cell-loop kernel as vmult_plain(),
      * but scattering against a caller-supplied dof-index mask instead of one
      * of this operator's own precomputed ones -- lets a caller that only
      * knows *which* subdomain-local dofs it wants excluded (not the fe_degree
@@ -134,7 +117,7 @@ namespace Portable
 
     virtual std::shared_ptr<
       DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
-    get_matrix_diagonal_inverse_neumann() const = 0;
+    get_matrix_diagonal_inverse_plain() const = 0;
 
     virtual types::global_dof_index
     m() const = 0;

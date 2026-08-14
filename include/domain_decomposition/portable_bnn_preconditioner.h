@@ -4,6 +4,7 @@
 
 #include <set>
 
+#include "base/portable_dd_preconditioner_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "base/portable_v_cycle_multigrid_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
@@ -15,92 +16,92 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
 
-  template <int dim, typename number>
-  class BNNPreconditioner
+  template <int dim, typename Number>
+  class BNNPreconditioner : public DDPreconditionerBase<dim, Number>
   {
   public:
-    BNNPreconditioner(const SchurInterfaceOperator<dim, number>       &interface_operator,
-                      const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator,
-                      const VCycleMultigridBase<dim, number>          &neumann_preconditioner);
+    using InterfaceVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
+    using SubdomainVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
 
-    // Vanilla (non-enhanced) BNN preconditioner action -- combines
-    // vmult_fine_correction() and vmult_coarse_correction() the same way
-    // BDDCPreconditioner::vmult() combines its own fine and coarse
-    // corrections, so both can be driven through
-    // SolverProjectedCG::solve_dd() for a like-for-like comparison.
+    using SubdomainOperatorType = SubdomainLaplaceOperatorBase<dim, Number>;
+    using InterfaceOperatorType = SchurInterfaceOperator<dim, Number>;
+
+    using SubdomainPreconditionerType = VCycleMultigridBase<dim, Number>;
+
+    BNNPreconditioner(const InterfaceOperatorType       &interface_operator,
+                      const SubdomainOperatorType       &subdomain_operator,
+                      const SubdomainPreconditionerType &neumann_preconditioner);
+
+    /** Vanilla (non-enhanced) BNN preconditioner action:
+     * P * vmult_fine_correction(src),
+     * where P := project() = I - Q S
+     * with Q := vmult_coarse_correction and S := the Schur operator.
+     * This is the full symmetric sandwich
+     *      M_BNN^{-1} = P M_NN^{-1} P^T + Q,
+     * simplified: valid whenever src is a "balanced" residual
+     * (R_0 src = 0, i.e. src = P^T src),
+     * since then
+     *  (a) P^T src = src (idempotence),
+     *      dropping the outer P^T entirely,
+     *  (b) Q src = R_0^T S_0^{-1}(R_0 src) = 0 identically,
+     *      dropping the "+ Q src" term too.
+     * project_initial_residual() balances r_0 once outside the loop.
+     */
     void
-    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const override;
+
+    /** r := P^T r = (I - S Q) r,
+     * so that R_0 r = 0 -- the "balanced residual"
+     * precondition vmult() above relies on.
+     */
+    void
+    project_initial_residual(InterfaceVectorType &r) const override;
 
     // Local Neumann-Neumann correction: a subdomain Neumann solve with the
     // mean subtracted before/after (the subdomain problem is only defined
-    // up to a constant when it has no physical boundary). Analogous to
-    // BDDCPreconditioner::vmult_fine_correction(), which is likewise a
-    // local, floating/constrained subdomain solve.
+    // up to a constant when it has no physical boundary)
     void
-    vmult_fine_correction(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult_fine_correction(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
     void
-    project(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    project(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
-    // Balancing step R_0^T*S_0^{-1}*R_0. Analogous to
-    // BDDCPreconditioner::vmult_coarse_correction() (same role: the global
-    // coarse-space correction), even though the two coarse spaces and coarse
-    // solves are constructed differently.
+    // Balancing step R_0^T*S_0^{-1}*R_0.
     void
-    vmult_coarse_correction(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult_coarse_correction(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
+    // Balancing step R_0^T*S_0^{-1}*R_0 for enhanced BNN: reuses precomputed S*phi_i for the coarse
+    // basis
     void
-    vmult_coarse_correction_dummy(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
-      const bool                                                              computation_on,
-      const bool communication_on) const;
-
-    void
-    vmult_coarse_correction_and_S_update(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &S_per_dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult_coarse_correction_and_S_update(InterfaceVectorType       &dst,
+                                         InterfaceVectorType       &S_per_dst,
+                                         const InterfaceVectorType &src) const;
 
     void
     setup_coarse_matrix();
 
     void
-    coarse_to_global_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-      const Vector<number>                                             &coarse_vector) const;
-
-
+    coarse_to_global_interface(InterfaceVectorType  &interface_vector,
+                               const Vector<Number> &coarse_vector) const;
 
     void
-    coarse_to_global_interface_and_S_update(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
-      const Vector<number>                                             &coarse_vector) const;
+    coarse_to_global_interface_and_S_update(InterfaceVectorType  &interface_vector,
+                                            InterfaceVectorType  &S_per_interface_vector,
+                                            const Vector<Number> &coarse_vector) const;
 
 
     // Enhanced BNN preconditioner action: returns both the correction z and
     // S*z (s_tilde) together, reusing the coarse basis functions' S*phi_i
     // precomputed in setup_coarse_matrix() instead of a fresh Dirichlet
-    // solve for the coarse contribution to S*z -- the "spared Dirichlet
-    // solve" enhancement over vmult().
+    // solve for the coarse contribution to S*z
     void
-    vmult_and_S_update(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &z,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &s_tilde,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r) const;
+    vmult_and_S_update(InterfaceVectorType       &z,
+                       InterfaceVectorType       &s_tilde,
+                       const InterfaceVectorType &r) const;
 
     void
-    global_interface_to_coarse(
-      Vector<number>                                                         &coarse_vector,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector)
-      const;
+    global_interface_to_coarse(Vector<Number>            &coarse_vector,
+                               const InterfaceVectorType &interface_vector) const;
 
     void
     reset_timings() const;
@@ -112,38 +113,35 @@ namespace Portable
     get_maximum_subdomain_mg_iterations() const;
 
     void
-    vmult_interface(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult_interface(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
 
   private:
     struct NeumannSubdomainOperator
     {
-      NeumannSubdomainOperator(const SubdomainLaplaceOperatorBase<dim, number> &op)
+      NeumannSubdomainOperator(const SubdomainOperatorType &op)
         : op(op)
       {}
 
       void
-      vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-            const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+      vmult(SubdomainVectorType &dst, const SubdomainVectorType &src) const
       {
-        op.vmult_neumann(dst, src);
+        op.vmult_plain(dst, src);
       }
 
-      const SubdomainLaplaceOperatorBase<dim, number> &op;
+      const SubdomainOperatorType &op;
     };
 
-    ObserverPointer<const SchurInterfaceOperator<dim, number>>       interface_operator;
-    ObserverPointer<const SubdomainLaplaceOperatorBase<dim, number>> subdomain_operator;
-    ObserverPointer<const SubdomainDoFHandler<dim>>                  subdomain_dof_handler;
-    ObserverPointer<const VCycleMultigridBase<dim, number>>          neumann_preconditioner;
+    ObserverPointer<const InterfaceOperatorType>       interface_operator;
+    ObserverPointer<const SubdomainOperatorType>       subdomain_operator;
+    ObserverPointer<const SubdomainDoFHandler<dim>>    subdomain_dof_handler;
+    ObserverPointer<const SubdomainPreconditionerType> neumann_preconditioner;
 
-    LAPACKFullMatrix<number> coarse_matrix;
+    LAPACKFullMatrix<Number> coarse_matrix;
 
     const unsigned int n_subdomains;
     const unsigned int this_subdomain;
 
-    const DeviceVector<const number> interface_weights;
+    const DeviceVector<const Number> interface_weights;
 
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
       interface_dof_indices_subdomain;
@@ -153,46 +151,44 @@ namespace Portable
 
     NeumannSubdomainOperator subdomain_neumann_operator;
 
-    // Subdomain-space scratch buffers for vmult_fine_correction()'s Neumann
-    // solve -- this rank's own local piece, not to be confused with
-    // temp_interface below (interface-partitioner-shaped).
-    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      temp_subdomain_vector_src, temp_subdomain_vector_dst;
+    // Subdomain-space scratch buffers for vmult_fine_correction()'s Neumann solve.
+    mutable SubdomainVectorType temp_subdomain_vector_src, temp_subdomain_vector_dst;
 
-    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default> temp_interface, z0,
-      S_z0;
+    mutable InterfaceVectorType temp_interface, z0, S_z0;
 
     // Scratch for the vanilla vmult() combine.
-    mutable LinearAlgebra::distributed::Vector<number, MemorySpace::Default> temp_vmult_fine,
-      temp_vmult_coarse;
+    mutable InterfaceVectorType temp_vmult_fine, temp_vmult_coarse;
 
-    // Global coarse indices whose coarse basis function phi_i has a
-    // nonzero-support S*phi_i on this rank: this_subdomain itself, plus
-    // every subdomain this rank shares an interface dof with. A single
-    // vmult()'s cell loops only ever touch interface-adjacent cells (see
-    // setup_coarse_matrix()), so S*phi_i never spreads further than that --
-    // for any other global index, S_per_coarse_basis_local would just be
-    // all zero on this rank, so it isn't computed or stored at all.
+    /**
+     * Global coarse indices whose coarse basis function phi_i has a
+     * nonzero-support S*phi_i on this rank: this_subdomain itself, plus
+     * every subdomain this rank shares an interface dof with. A single
+     * vmult()'s cell loops only ever touch interface-adjacent cells (see
+     * setup_coarse_matrix()), so S*phi_i never spreads further than that --
+     * for any other global index, S_per_coarse_basis_local would just be
+     * all zero on this rank, so it isn't computed or stored at all.
+     */
     std::vector<unsigned int> relevant_coarse_indices;
 
-    // S_per_coarse_basis_local[m] == S * phi_{relevant_coarse_indices[m]},
-    // already cross-rank-merged (post-compress()) at this rank's own
-    // interface entries -- computed once in setup_coarse_matrix() and
-    // linearly recombined at solve time in
-    // coarse_to_global_interface_and_S_update() to reconstruct S*z0
-    // without an extra Dirichlet solve.
-    std::vector<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
-      S_per_coarse_basis_local;
+    /** S_per_coarse_basis_local[m] == S * phi_{relevant_coarse_indices[m]},
+     * already cross-rank-merged (post-compress()) at this rank's own
+     * interface entries -- computed once in setup_coarse_matrix() and
+     * linearly recombined at solve time in
+     * coarse_to_global_interface_and_S_update() to reconstruct S*z0
+     * without an extra Dirichlet solve.
+     */
+    std::vector<InterfaceVectorType> S_per_coarse_basis_local;
 
-    // Send/receive buffer for the allreduce in global_interface_to_coarse():
-    // every rank contributes its own scalar at index this_subdomain (zero
-    // elsewhere) and ends up with the fully assembled length-n_subdomains
-    // vector -- replicated identically everywhere, so no follow-up
-    // scatter/broadcast is needed by callers.
-    mutable std::vector<number> temp_coarse_allreduce;
+    /** Send/receive buffer for the allreduce in global_interface_to_coarse():
+     * every rank contributes its own scalar at index this_subdomain (zero
+     * elsewhere) and ends up with the fully assembled length-n_subdomains
+     * vector -- replicated identically everywhere, so no follow-up
+     * scatter/broadcast is needed by callers.
+     */
+    mutable std::vector<Number> temp_coarse_allreduce;
 
-    mutable Vector<number> temp_coarse_rhs;
-    mutable Vector<number> temp_coarse_solution;
+    mutable Vector<Number> temp_coarse_rhs;
+    mutable Vector<Number> temp_coarse_solution;
 
     /**
      * timings[0] = Dirichlet solve (S application, via vmult_interface())
@@ -202,18 +198,18 @@ namespace Portable
      */
     mutable std::array<double, 4> timings;
 
-    // Max CG iterations across calls to vmult_fine_correction()'s Neumann
-    // solve on this rank -- the counterpart to
-    // SchurInterfaceOperator::get_maximum_subdomain_mg_iterations(), which
-    // now only tracks the Dirichlet solve (shared with BDDC).
+    /**
+     * Max CG iterations across calls to vmult_fine_correction()'s Neumann
+     * solve on this rank.
+     */
     mutable unsigned int max_subdomain_mg_iterations;
   };
 
-  template <int dim, typename number>
-  BNNPreconditioner<dim, number>::BNNPreconditioner(
-    const SchurInterfaceOperator<dim, number>       &interface_operator,
-    const SubdomainLaplaceOperatorBase<dim, number> &subdomain_operator,
-    const VCycleMultigridBase<dim, number>          &neumann_preconditioner)
+  template <int dim, typename Number>
+  BNNPreconditioner<dim, Number>::BNNPreconditioner(
+    const InterfaceOperatorType       &interface_operator,
+    const SubdomainOperatorType       &subdomain_operator,
+    const SubdomainPreconditionerType &neumann_preconditioner)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
@@ -253,7 +249,7 @@ namespace Portable
       // neighbors via compress(), so the true support of S*phi_i is the
       // 2-hop neighborhood of i, not just its direct neighbors. Gather
       // every rank's own 1-hop neighbor list so each rank can compute its
-      // 2-hop closure locally -- a small, one-time setup cost.
+      // 2-hop closure locally.
       const std::vector<unsigned int> own_one_hop_neighbors(one_hop_neighbors.begin(),
                                                             one_hop_neighbors.end());
 
@@ -284,35 +280,34 @@ namespace Portable
     max_subdomain_mg_iterations = 0;
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::reset_timings() const
+  BNNPreconditioner<dim, Number>::reset_timings() const
   {
     for (unsigned int i = 0; i < timings.size(); ++i)
       timings[i] = 0.;
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   const std::array<double, 4> &
-  BNNPreconditioner<dim, number>::get_timings() const
+  BNNPreconditioner<dim, Number>::get_timings() const
   {
     return timings;
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   unsigned int
-  BNNPreconditioner<dim, number>::get_maximum_subdomain_mg_iterations() const
+  BNNPreconditioner<dim, Number>::get_maximum_subdomain_mg_iterations() const
   {
     return max_subdomain_mg_iterations;
   }
 
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult_and_S_update(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &z,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &s_tilde,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &r) const
+  BNNPreconditioner<dim, Number>::vmult_and_S_update(InterfaceVectorType       &z,
+                                                     InterfaceVectorType       &s_tilde,
+                                                     const InterfaceVectorType &r) const
   {
     Assert(z.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
@@ -320,7 +315,6 @@ namespace Portable
     Assert(r.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
             interface vector partitioner."));
-
 
     // local NN preconditioner
     this->vmult_fine_correction(z, r);
@@ -342,11 +336,10 @@ namespace Portable
     z += z0;
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::vmult(InterfaceVectorType       &dst,
+                                        const InterfaceVectorType &src) const
   {
     Assert(
       dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -357,31 +350,18 @@ namespace Portable
       ExcMessage(
         "This function expects a vector initialized by SubdomainDoFHandler's interface vector partitioner."));
 
-    // Vanilla (non-enhanced) BNN preconditioner action, written as the
-    // symmetric sandwich (Q := vmult_coarse_correction, S := the Schur
-    // operator applied via vmult_interface(), both symmetric;
-    // P := project() = I - Q S, so P^T = I - S Q since Q and S are
-    // symmetric):
-    //   M_BNN^{-1} = P * vmult_fine_correction * P^T + Q
-    //              = (I - Q S) M_NN^{-1} (I - S Q) + Q
-    // Both the left *and* right projection are required for M_BNN^{-1}
-    // itself to be symmetric -- CG needs that, and dropping the right-hand
-    // (I - S Q) factor (applying vmult_fine_correction to the raw residual
-    // instead of to (I - S Q) r) breaks symmetry and stalls convergence.
-    // That right-hand factor costs one extra Dirichlet solve here, plus
-    // another one inside project() for the left-hand factor -- exactly the
-    // per-application Dirichlet-solve cost vmult_and_S_update() (the
-    // enhanced variant) avoids by reusing precomputed coarse-basis actions
-    // instead, so comparing solve_dd()+vmult() against
-    // solve_enhanced()+vmult_and_S_update() gives a direct vanilla-vs-
-    // enhanced timing comparison.
-    this->vmult_coarse_correction(temp_vmult_coarse, src);     // w = Q r
-    this->vmult_interface(temp_vmult_fine, temp_vmult_coarse); // temp_vmult_fine = S w
-    temp_interface = src;
-    temp_interface -= temp_vmult_fine;                            // temp_interface = (I - S Q) r
-    this->vmult_fine_correction(temp_vmult_fine, temp_interface); // z = M_NN^{-1} (I - S Q) r
-    this->project(dst, temp_vmult_fine);                          // dst = (I - Q S) z
-    dst += temp_vmult_coarse;                                     // dst += Q r
+    this->vmult_fine_correction(temp_vmult_fine, src); // z = M_NN^{-1} r
+    this->project(dst, temp_vmult_fine);               // dst = P z
+  }
+
+  template <int dim, typename Number>
+  void
+  BNNPreconditioner<dim, Number>::project_initial_residual(InterfaceVectorType &r) const
+  {
+    // r := P^T r = (I-SQ)r = r - S(Q r).
+    this->vmult_coarse_correction(temp_vmult_coarse, r);      // temp_vmult_coarse = Q r
+    this->vmult_interface(temp_interface, temp_vmult_coarse); // temp_interface = S Q r
+    r -= temp_interface;
   }
 
   /**
@@ -393,11 +373,10 @@ namespace Portable
    * compatible for Neumann solve, but it is still good to keep it for numerical
    * stability.
    */
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult_fine_correction(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::vmult_fine_correction(InterfaceVectorType       &dst,
+                                                        const InterfaceVectorType &src) const
   {
     Assert(
       dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -415,12 +394,12 @@ namespace Portable
 
     dst = 0.;
 
-    DeviceVector<number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
+    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
       dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
 
     const auto &weights_view = interface_weights;
 
-    DeviceVector<number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
+    DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
                                               temp_subdomain_vector_src.size()),
       t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
                            temp_subdomain_vector_dst.size());
@@ -437,12 +416,12 @@ namespace Portable
 
     if (physical_boundary_dof_indices_subdomain.size() == 0)
       {
-        number mean_value_src = temp_subdomain_vector_src.mean_value();
+        Number mean_value_src = temp_subdomain_vector_src.mean_value();
         temp_subdomain_vector_src.add(-mean_value_src);
       }
 
     SolverControl solver_control(temp_subdomain_vector_src.size(), 1e-12 * src.l2_norm());
-    SolverCG<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>> cg(solver_control);
+    SolverCG<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>> cg(solver_control);
     temp_subdomain_vector_dst = 0.;
     cg.solve(this->subdomain_neumann_operator,
              temp_subdomain_vector_dst,
@@ -456,7 +435,7 @@ namespace Portable
 
     if (physical_boundary_dof_indices_subdomain.size() == 0)
       {
-        number mean_value_dst = temp_subdomain_vector_dst.mean_value();
+        Number mean_value_dst = temp_subdomain_vector_dst.mean_value();
         temp_subdomain_vector_dst.add(-mean_value_dst);
       }
 
@@ -473,11 +452,10 @@ namespace Portable
     timings[1] += time.wall_time();
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult_interface(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::vmult_interface(InterfaceVectorType       &dst,
+                                                  const InterfaceVectorType &src) const
   {
     Assert(
       dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -497,19 +475,18 @@ namespace Portable
   }
 
   /**
-   * Schwarz projection step Id-(R_0^T*S_0^{-1}*R_0)*S :
+   * Schwarz projection step Id - QS = Id-(R_0^T*S_0^{-1}*R_0)*S :
    *    1. Apply interface operator S (maps values into flux)
-   *    2. vmult_coarse_correction (i.e, apply R_0^T*S_0^{-1}*R_0) to retrive mean value
+   *    2. vmult_coarse_correction (i.e, apply Q= R_0^T*S_0^{-1}*R_0) to retrive mean value
    *    3. Id-(R_0^T*S_0^{-1}*R_0)*S - gives compatible vector for subdomain
    * Neumann solve Result: retrieved values in the kernel space (i.e., mean
    * values) (Id - R_0^T*S_0^{-1}*R_0) -- returns balanced vector, i.e.
    * compatible for the subdomain Neumann solve
    */
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::project(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::project(InterfaceVectorType       &dst,
+                                          const InterfaceVectorType &src) const
   {
     Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
@@ -530,12 +507,13 @@ namespace Portable
     timings[0] += time_dirichlet;
 
     time.restart();
-    // tmp = R0^T*S_0^{-1}*R0*dst
+    // tmp = Q*tmp = Q*(S*dst) = R0^T*S_0^{-1}*R0*dst
     this->vmult_coarse_correction(dst, temp_interface);
 
     Kokkos::fence();
     timings[2] += time.wall_time();
 
+    // dst = (Id-Q*S)*src
     dst.sadd(-1., src);
 
     Kokkos::fence();
@@ -553,15 +531,12 @@ namespace Portable
    *
    * The coarse matrix is replicated and factorized identically on every
    * rank (see setup_coarse_matrix()), so the coarse solve below runs
-   * redundantly on every rank against an already-replicated RHS -- no
-   * elected "coarse_problem_rank" gather/scatter/broadcast is needed
-   * anywhere in this step.
+   * redundantly on every rank.
    */
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult_coarse_correction(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::vmult_coarse_correction(InterfaceVectorType       &dst,
+                                                          const InterfaceVectorType &src) const
   {
     Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
@@ -581,12 +556,12 @@ namespace Portable
     this->coarse_to_global_interface(dst, this->temp_coarse_solution);
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::vmult_coarse_correction_and_S_update(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &S_per_dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  BNNPreconditioner<dim, Number>::vmult_coarse_correction_and_S_update(
+    InterfaceVectorType       &dst,
+    InterfaceVectorType       &S_per_dst,
+    const InterfaceVectorType &src) const
   {
     Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
@@ -606,81 +581,6 @@ namespace Portable
     this->coarse_to_global_interface_and_S_update(dst, S_per_dst, this->temp_coarse_solution);
   }
 
-
-  template <int dim, typename number>
-  void
-  BNNPreconditioner<dim, number>::vmult_coarse_correction_dummy(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
-    const bool                                                              computation_on,
-    const bool                                                              communication_on) const
-  {
-    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
-             interface vector partitioner."));
-    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
-            interface vector partitioner."));
-
-    DeviceVector<number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
-      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
-
-    const auto &weights_view = interface_weights;
-
-    // project from global interface to coarse space: local weighted
-    // reduction (computation) followed by an allreduce (communication)
-    if (computation_on)
-      {
-        number subdomain_coarse_value = 0.;
-        Kokkos::parallel_reduce(
-          "vmult_coarse_correction_dummy_local_reduce",
-          interface_dof_indices_subdomain.size(),
-          KOKKOS_LAMBDA(const unsigned int i, number &coarse_value) {
-            coarse_value += src_view(i) * weights_view(i);
-          },
-          subdomain_coarse_value);
-
-        std::fill(this->temp_coarse_allreduce.begin(),
-                  this->temp_coarse_allreduce.end(),
-                  number(0));
-        this->temp_coarse_allreduce[this_subdomain] = subdomain_coarse_value;
-      }
-
-    if (communication_on)
-      Utilities::MPI::sum(this->temp_coarse_allreduce,
-                          this->subdomain_dof_handler->get_mpi_communicator(),
-                          this->temp_coarse_allreduce);
-
-    // solve coarse problem redundantly on every rank (computation only)
-    if (computation_on)
-      {
-        for (unsigned int i = 0; i < this->n_subdomains; ++i)
-          this->temp_coarse_rhs[i] = this->temp_coarse_allreduce[i];
-
-        this->temp_coarse_solution = 0.;
-        this->coarse_matrix.vmult(this->temp_coarse_solution, this->temp_coarse_rhs);
-      }
-
-    // project back to the global interface space: local lift (computation),
-    // shared-dof reconciliation (communication)
-    if (computation_on)
-      {
-        const number subdomain_coarse_value = this->temp_coarse_solution[this_subdomain];
-
-        dst = 0.;
-        Kokkos::parallel_for(
-          "vmult_coarse_correction_dummy_local_lift",
-          interface_dof_indices_subdomain.size(),
-          KOKKOS_LAMBDA(const unsigned int i) {
-            dst_view(i) = subdomain_coarse_value * weights_view(i);
-          });
-      }
-
-    if (communication_on)
-      dst.compress(VectorOperation::add);
-  }
-
-
   /**
    * Projects a length-n_subdomains vector, already replicated identically
    * on every rank (as produced by global_interface_to_coarse() or a coarse
@@ -688,23 +588,23 @@ namespace Portable
    * interface entries. this_subdomain's own entry is read directly -- no
    * scatter/broadcast needed, since the caller already has the full vector.
    */
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::coarse_to_global_interface(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-    const Vector<number>                                             &coarse_vector) const
+  BNNPreconditioner<dim, Number>::coarse_to_global_interface(
+    InterfaceVectorType  &interface_vector,
+    const Vector<Number> &coarse_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("Interface vector is not initialized correctly."));
     AssertDimension(coarse_vector.size(), this->n_subdomains);
 
-    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+    DeviceVector<Number> interface_vector_view(interface_vector.get_values(),
                                                interface_dof_indices_subdomain.size());
 
     const auto &weights_view = interface_weights;
 
-    const number subdomain_coarse_value = coarse_vector[this_subdomain];
+    const Number subdomain_coarse_value = coarse_vector[this_subdomain];
 
     // propagate coarse value to the interface by applying weights
     interface_vector = 0.;
@@ -720,25 +620,25 @@ namespace Portable
     interface_vector.update_ghost_values();
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::coarse_to_global_interface_and_S_update(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &S_per_interface_vector,
-    const Vector<number>                                             &coarse_vector) const
+  BNNPreconditioner<dim, Number>::coarse_to_global_interface_and_S_update(
+    InterfaceVectorType  &interface_vector,
+    InterfaceVectorType  &S_per_interface_vector,
+    const Vector<Number> &coarse_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
            ExcMessage("Interface vector is not initialized correctly."));
     AssertDimension(coarse_vector.size(), this->n_subdomains);
 
-    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+    DeviceVector<Number> interface_vector_view(interface_vector.get_values(),
                                                interface_dof_indices_subdomain.size());
 
 
     const auto &weights_view = interface_weights;
 
-    const number subdomain_coarse_value = coarse_vector[this_subdomain];
+    const Number subdomain_coarse_value = coarse_vector[this_subdomain];
 
     // propagate coarse value to the interface by applying weights
     interface_vector = 0.;
@@ -766,11 +666,11 @@ namespace Portable
     S_per_interface_vector.compress(VectorOperation::add);
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::global_interface_to_coarse(
-    Vector<number>                                                         &coarse_vector,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &interface_vector) const
+  BNNPreconditioner<dim, Number>::global_interface_to_coarse(
+    Vector<Number>            &coarse_vector,
+    const InterfaceVectorType &interface_vector) const
   {
     Assert(interface_vector.get_partitioner() ==
              this->subdomain_dof_handler->get_interface_vector_partitioner(),
@@ -779,17 +679,17 @@ namespace Portable
 
     interface_vector.update_ghost_values();
 
-    DeviceVector<number> interface_vector_view(interface_vector.get_values(),
+    DeviceVector<Number> interface_vector_view(interface_vector.get_values(),
                                                interface_dof_indices_subdomain.size());
 
     const auto &weights_view = interface_weights;
 
     // retrieve subdomain coarse value by the interface weighted sum
-    number subdomain_coarse_value = 0.;
+    Number subdomain_coarse_value = 0.;
     Kokkos::parallel_reduce(
       "global_interface_to_coarse",
       interface_dof_indices_subdomain.size(),
-      KOKKOS_LAMBDA(const unsigned int i, number &coarse_value) {
+      KOKKOS_LAMBDA(const unsigned int i, Number &coarse_value) {
         coarse_value += interface_vector_view(i) * weights_view(i);
       },
       subdomain_coarse_value);
@@ -799,7 +699,7 @@ namespace Portable
     // elected rank, leaves every rank holding the same fully assembled
     // length-n_subdomains vector directly, so callers never need a
     // separate scatter/broadcast afterwards.
-    std::fill(this->temp_coarse_allreduce.begin(), this->temp_coarse_allreduce.end(), number(0));
+    std::fill(this->temp_coarse_allreduce.begin(), this->temp_coarse_allreduce.end(), Number(0));
     this->temp_coarse_allreduce[this_subdomain] = subdomain_coarse_value;
 
     Utilities::MPI::sum(this->temp_coarse_allreduce,
@@ -813,17 +713,16 @@ namespace Portable
     interface_vector.zero_out_ghost_values();
   }
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   void
-  BNNPreconditioner<dim, number>::setup_coarse_matrix()
+  BNNPreconditioner<dim, Number>::setup_coarse_matrix()
   {
     coarse_matrix.reinit(this->n_subdomains, this->n_subdomains);
 
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> phi_j(
-      this->subdomain_dof_handler->get_interface_vector_partitioner()),
+    InterfaceVectorType phi_j(this->subdomain_dof_handler->get_interface_vector_partitioner()),
       S_phi_j(this->subdomain_dof_handler->get_interface_vector_partitioner());
 
-    Vector<number> e_j(this->n_subdomains), coarse_column(this->n_subdomains);
+    Vector<Number> e_j(this->n_subdomains), coarse_column(this->n_subdomains);
 
     // relevant_coarse_indices is sorted ascending (built from a std::set in
     // the constructor), matching the ascending j below, so a single
@@ -860,10 +759,15 @@ namespace Portable
 
     coarse_matrix.compute_inverse_svd(1e-12);
 
-    // std::cout << "Singular values of the coarse matrix: " << std::endl;
-    // for (unsigned int i = 0; i < this->n_subdomains; ++i)
-    //   std::cout << coarse_matrix.singular_value(i) << " ";
-    // std::cout << std::endl;
+#ifdef DEBUG
+    if (this->this_subdomain == 0)
+      {
+        std::cout << "Singular values of the coarse matrix: " << std::endl;
+        for (unsigned int i = 0; i < this->n_subdomains; ++i)
+          std::cout << coarse_matrix.singular_value(i) << " ";
+        std::cout << std::endl;
+      }
+#endif
   }
 
 } // namespace Portable

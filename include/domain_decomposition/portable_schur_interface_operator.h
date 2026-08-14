@@ -33,12 +33,6 @@ namespace Portable
           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
 
     void
-    vmult_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-                const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-                const bool computation_on,
-                const bool communication_on) const;
-
-    void
     Tvmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
            const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const;
 
@@ -340,83 +334,6 @@ namespace Portable
     dst.compress(VectorOperation::add);
     src.zero_out_ghost_values();
   }
-
-
-  template <int dim, typename Number>
-  void
-  SchurInterfaceOperator<dim, Number>::vmult_dummy(
-    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-    const bool                                                              computation_on,
-    const bool                                                              communication_on) const
-  {
-    Assert(dst.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
-             interface vector partitioner."));
-    Assert(src.get_partitioner() == this->subdomain_dof_handler->get_interface_vector_partitioner(),
-           ExcMessage("This function expects a vector initialized by SubdomainDoFHandler's \
-            interface vector partitioner."));
-
-    dst = 0.;
-
-    if (communication_on)
-      src.update_ghost_values();
-
-    DeviceVector<Number> src_view(src.get_values(), interface_dof_indices_subdomain.size()),
-      dst_view(dst.get_values(), interface_dof_indices_subdomain.size());
-
-    DeviceVector<Number> t_subdomain_src_view(temp_subdomain_vector_src.get_values(),
-                                              temp_subdomain_vector_src.size()),
-      t_subdomain_dst_view(temp_subdomain_vector_dst.get_values(),
-                           temp_subdomain_vector_dst.size()),
-      t_subdomain_work_view(temp_subdomain_vector_work.get_values(),
-                            temp_subdomain_vector_work.size());
-
-
-    if (computation_on)
-      {
-        const auto interface_dofs = this->interface_dof_indices_subdomain;
-
-        // read interface values into the subdomain vector
-        temp_subdomain_vector_src = 0.;
-        Kokkos::parallel_for(
-          "read_src_interface", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
-            t_subdomain_src_view(interface_dofs(i)) = src_view(i);
-          });
-
-        // Apply Schur complement operators w = A_GG*x and v = A_IG *x
-        this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_dst,
-                                                             temp_subdomain_vector_src);
-
-        // solve interior z = A_II^{-1} * v
-        this->dirichlet_solve_subdomain(temp_subdomain_vector_work, temp_subdomain_vector_dst);
-
-        // zero out entries of z corresponding to interface dofs
-        Kokkos::parallel_for(
-          "zero_out_interface_work", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
-            t_subdomain_work_view(interface_dofs(i)) = 0.;
-          });
-
-        // apply vv = A_GI * z
-        this->subdomain_operator->vmult_interface_cell_range(temp_subdomain_vector_src,
-                                                             temp_subdomain_vector_work);
-
-        // write result y = w-vv
-        Kokkos::parallel_for(
-          "distribute_interface_dofs", interface_dofs.size(), KOKKOS_LAMBDA(const int i) {
-            const auto idx          = interface_dofs(i);
-            Number     output_value = t_subdomain_dst_view(idx) - t_subdomain_src_view(idx);
-            dst_view(i) += output_value;
-          });
-      }
-
-    if (communication_on)
-      {
-        dst.compress(VectorOperation::add);
-        src.zero_out_ghost_values();
-      }
-  }
-
 
   template <int dim, typename Number>
   void

@@ -249,6 +249,15 @@ namespace Portable
     else
       r.equ(1., b);
 
+    // Balance the initial residual once, before the loop starts -- a
+    // no-op for preconditioners without a "balanced residual" notion
+    // (e.g. BDDC). Whatever balancedness this establishes then propagates
+    // to every later r_k on its own under a matching preconditioner (see
+    // BNNPreconditioner::vmult()'s class-level comment), so this is never
+    // called again for the rest of the solve.
+    if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
+      preconditioner.project_initial_residual(r);
+
     double residual_norm = r.l2_norm();
     solver_state         = this->iteration_status(0, residual_norm, x);
 

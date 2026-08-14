@@ -12,6 +12,7 @@
 
 #include <cmath>
 
+#include "base/portable_dd_preconditioner_base.h"
 #include "base/portable_mg_transfer_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
@@ -40,12 +41,23 @@ namespace Portable
    * has no way to expose the individual levels a block V-cycle needs.
    */
   template <int dim, typename Number, typename BddcSmootherType>
-  class BDDCPreconditioner
+  class BDDCPreconditioner : public DDPreconditionerBase<dim, Number>
   {
   public:
     using InterfaceVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
     using SubdomainVectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
     using SubdomainPreconditioner = VCycleMultigridBase<dim, Number>;
+
+    // DDPreconditionerBase override: BDDC's vmult() has no "balanced
+    // residual" precondition to set up (unlike BNN's, see
+    // BNNPreconditioner::vmult()'s class-level comment) -- a no-op, so
+    // SolverProjectedCG::solve_dd() can call it unconditionally on either
+    // preconditioner without needing to know which one it's driving.
+    void
+    project_initial_residual(InterfaceVectorType &r) const override
+    {
+      (void)r;
+    }
 
 
     BDDCPreconditioner(
@@ -119,7 +131,7 @@ namespace Portable
     set_fine_correction_mode(bool use_static_condensation);
 
     void
-    vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const;
+    vmult(InterfaceVectorType &dst, const InterfaceVectorType &src) const override;
 
     // Timed wrapper around interface_operator->vmult() -- the same Schur-
     // complement action (a subdomain Dirichlet solve under the hood) that

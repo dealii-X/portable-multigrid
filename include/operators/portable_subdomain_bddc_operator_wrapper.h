@@ -315,45 +315,12 @@ namespace Portable
     }
 
     void
-    vmult_bk3(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
-    {
-      (void)dst;
-      (void)src;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
-    vmult_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-                const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-                const bool ghost_exchange_on,
-                const bool computation_on) const override
-    {
-      (void)dst;
-      (void)src;
-      (void)ghost_exchange_on;
-      (void)computation_on;
-
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
     vmult_interface_cell_range(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
     {
       dirichlet_operator->vmult_interface_cell_range(dst, src);
     }
-
-    void
-    vmult_neumann(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const override
-    {
-      dirichlet_operator->vmult_neumann(dst, src);
-    }
-
 
     void
     Tvmult(
@@ -374,7 +341,7 @@ namespace Portable
     compute_diagonal() override
     {
       inverse_diagonal_entries->reinit(
-        dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+        dirichlet_operator->get_matrix_diagonal_inverse_plain()->get_vector());
 
       // Same values everywhere except diag=1 at primal-pinned dofs (see
       // primal_pinned_inverse_diagonal_entries's class-level comment for
@@ -383,7 +350,7 @@ namespace Portable
       // primal-pinned entries directly with 1.0 (no need to re-invert:
       // 1/1 == 1).
       primal_pinned_inverse_diagonal_entries->reinit(
-        dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+        dirichlet_operator->get_matrix_diagonal_inverse_plain()->get_vector());
 
       Number *raw_diagonal = primal_pinned_inverse_diagonal_entries->get_vector().get_values();
       const auto primal_pinned_dofs = this->primal_pinned_boundary_dof_indices;
@@ -397,7 +364,7 @@ namespace Portable
       // Same identity-block convention as primal_pinned_inverse_diagonal_entries
       // above, but for the corner-only mask.
       corner_pinned_inverse_diagonal_entries->reinit(
-        dirichlet_operator->get_matrix_diagonal_inverse_neumann()->get_vector());
+        dirichlet_operator->get_matrix_diagonal_inverse_plain()->get_vector());
 
       Number *raw_diagonal_corner = corner_pinned_inverse_diagonal_entries->get_vector().get_values();
       const auto corner_pinned_dofs = this->corner_pinned_boundary_dof_indices;
@@ -440,9 +407,9 @@ namespace Portable
 
     std::shared_ptr<
       DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
-    get_matrix_diagonal_inverse_neumann() const override
+    get_matrix_diagonal_inverse_plain() const override
     {
-      return dirichlet_operator->get_matrix_diagonal_inverse_neumann();
+      return dirichlet_operator->get_matrix_diagonal_inverse_plain();
     }
 
     types::global_dof_index
@@ -543,7 +510,7 @@ namespace Portable
       inverse_diagonal_entries;
 
     // Separate from inverse_diagonal_entries above: that one is the plain
-    // Neumann diagonal (diag=1 at physical boundary only), correct for the
+    // diagonal (diag=1 at physical boundary only), correct for the
     // Pi-projected vmult()'s own ProjectedDiagonalPreconditioner, which
     // re-zeros primal dofs via project() regardless of what raw diagonal
     // value sits there. vmult_primal_pinned()'s smoother has no such
@@ -889,36 +856,7 @@ namespace Portable
     }
 
     void
-    vmult_bk3(VectorType &dst, const VectorType &src) const override
-    {
-      (void)dst;
-      (void)src;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
-    vmult_dummy(VectorType &dst,
-               const VectorType &src,
-               const bool        ghost_exchange_on,
-               const bool        computation_on) const override
-    {
-      (void)dst;
-      (void)src;
-      (void)ghost_exchange_on;
-      (void)computation_on;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
     vmult_interface_cell_range(VectorType &dst, const VectorType &src) const override
-    {
-      (void)dst;
-      (void)src;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
-    vmult_neumann(VectorType &dst, const VectorType &src) const override
     {
       (void)dst;
       (void)src;
@@ -977,9 +915,9 @@ namespace Portable
     }
 
     std::shared_ptr<DiagonalMatrix<VectorType>>
-    get_matrix_diagonal_inverse_neumann() const override
+    get_matrix_diagonal_inverse_plain() const override
     {
-      return op->get_matrix_diagonal_inverse_neumann();
+      return op->get_matrix_diagonal_inverse_plain();
     }
 
     types::global_dof_index
@@ -1104,36 +1042,7 @@ namespace Portable
     }
 
     void
-    vmult_bk3(VectorType &dst, const VectorType &src) const override
-    {
-      (void)dst;
-      (void)src;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
-    vmult_dummy(VectorType &dst,
-               const VectorType &src,
-               const bool        ghost_exchange_on,
-               const bool        computation_on) const override
-    {
-      (void)dst;
-      (void)src;
-      (void)ghost_exchange_on;
-      (void)computation_on;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
     vmult_interface_cell_range(VectorType &dst, const VectorType &src) const override
-    {
-      (void)dst;
-      (void)src;
-      DEAL_II_NOT_IMPLEMENTED();
-    }
-
-    void
-    vmult_neumann(VectorType &dst, const VectorType &src) const override
     {
       (void)dst;
       (void)src;
@@ -1184,9 +1093,9 @@ namespace Portable
     }
 
     std::shared_ptr<DiagonalMatrix<VectorType>>
-    get_matrix_diagonal_inverse_neumann() const override
+    get_matrix_diagonal_inverse_plain() const override
     {
-      return op->get_matrix_diagonal_inverse_neumann();
+      return op->get_matrix_diagonal_inverse_plain();
     }
 
     types::global_dof_index
