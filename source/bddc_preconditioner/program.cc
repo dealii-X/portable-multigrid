@@ -1195,7 +1195,8 @@ LaplaceProblem<dim, fe_degree>::setup_bddc_preconditioner()
       level_subdomain_bddc_matrices,
       subdomain_mg_transfers_bddc,
       subdomain_mg_smoothers_bddc,
-      subdomain_mg_preconditioner_corner_pinned.get());
+      subdomain_mg_preconditioner_corner_pinned.get(),
+      &subdomain_mg_transfers_corner_pinned);
 
   // Needed before set_fine_correction_mode(true) can be used -- see its
   // Assert. Cheap to always call (once per preconditioner setup, not per

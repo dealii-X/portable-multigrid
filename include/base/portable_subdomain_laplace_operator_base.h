@@ -98,6 +98,20 @@ namespace Portable
       const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
         &copy_through_dof_indices) const = 0;
 
+    /**
+     * Block vmult_masked(): applies vmult_masked() independently to each of
+     * n_rhs blocks of dst/src, same layout convention as vmult_plain_block().
+     */
+    virtual void
+    vmult_masked_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const = 0;
+
     // virtual void
     // vmult_bddc_preconditioner(
     //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,

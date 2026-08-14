@@ -74,6 +74,58 @@ namespace Portable
     const unsigned int                                               n_rhs;
   };
 
+  /**
+   * Corner-pinned counterpart of BlockBDDCOperatorAdapter: presents
+   * SubdomainBDDCOperator::vmult_corner_pinned_block() (A_RR, corners
+   * hard-pinned via the dof mask -- no projection step, unlike Ahat) as
+   * vmult() for a block-shaped V-cycle. Lets BDDCPreconditioner::
+   * compute_local_edge_face_schur_complement() batch its n_edge_face_local
+   * sequential w_l = A_RR^{-1} c_l solves into one SolverBlockCG call, the
+   * same way BlockBDDCOperatorAdapter already lets compute_local_coarse_
+   * matrix() batch its Pi-projected correction solves. project() is a
+   * no-op (matching SubdomainBDDCOperatorCornerPinnedAdapter's scalar
+   * project()) so the existing, generic BlockProjectedDiagonalPreconditioner
+   * template is directly reusable here too -- its unconditional
+   * matrix->project(dst) call at the end of vmult() becomes a harmless
+   * no-op instead of needing a separate preconditioner class.
+   */
+  template <int dim, typename Number>
+  class BlockCornerPinnedOperatorAdapter : public EnableObserverPointer
+  {
+  public:
+    using VectorType = LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>;
+
+    BlockCornerPinnedOperatorAdapter(const SubdomainBDDCOperator<dim, Number> &op,
+                                     const unsigned int                        n_rhs)
+      : op(&op)
+      , n_rhs(n_rhs)
+    {}
+
+    void
+    vmult(VectorType &dst, const VectorType &src) const
+    {
+      op->vmult_corner_pinned_block(dst, src, n_rhs);
+    }
+
+    void
+    project(VectorType &dst) const
+    {
+      (void)dst;
+    }
+
+    void
+    initialize_dof_vector(VectorType &vec) const
+    {
+      VectorType single;
+      op->initialize_dof_vector(single);
+      vec.reinit(static_cast<typename VectorType::size_type>(n_rhs) * single.size());
+    }
+
+  private:
+    ObserverPointer<const SubdomainBDDCOperator<dim, Number>> op;
+    const unsigned int                                        n_rhs;
+  };
+
   template <int dim, typename Number>
   class BlockTransferAdapter : public EnableObserverPointer
   {

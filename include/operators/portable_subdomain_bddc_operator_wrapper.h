@@ -244,6 +244,22 @@ namespace Portable
         dst, src, corner_pinned_dof_indices_per_color, corner_pinned_boundary_dof_indices);
     }
 
+    // Block counterpart of vmult_corner_pinned() above: applies
+    // A_RR_corner_pinned independently to each of n_rhs blocks -- lets
+    // BDDCPreconditioner::compute_local_edge_face_schur_complement() batch
+    // its n_edge_face_local sequential w_l solves into one SolverBlockCG
+    // call, mirroring compute_local_coarse_matrix()'s existing Pi-path
+    // block-CG pattern (BlockBDDCOperatorAdapter's vmult_plain_block()).
+    void
+    vmult_corner_pinned_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const unsigned int                                                     n_rhs) const
+    {
+      dirichlet_operator->vmult_masked_block(
+        dst, src, corner_pinned_dof_indices_per_color, corner_pinned_boundary_dof_indices, n_rhs);
+    }
+
     // Hard-zeros subdomain_vector at the corner-pinned dof set (physical
     // boundary UNION corner_dofs_subdomain only, NOT edge/face primal dofs)
     // -- the precondition vmult_corner_pinned()'s identity block requires.
@@ -274,6 +290,20 @@ namespace Portable
         &copy_through_dof_indices) const override
     {
       dirichlet_operator->vmult_masked(dst, src, dof_indices_per_color, copy_through_dof_indices);
+    }
+
+    void
+    vmult_masked_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const override
+    {
+      dirichlet_operator->vmult_masked_block(
+        dst, src, dof_indices_per_color, copy_through_dof_indices, n_rhs);
     }
 
     void
@@ -907,6 +937,27 @@ namespace Portable
       op->vmult_masked(dst, src, dof_indices_per_color, copy_through_dof_indices);
     }
 
+    // Never used in block form (this class was only ever used for scalar
+    // CG, see the class-level comment) -- stub matches this class's other
+    // _block overrides.
+    void
+    vmult_masked_block(
+      VectorType       &dst,
+      const VectorType &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const override
+    {
+      (void)dst;
+      (void)src;
+      (void)dof_indices_per_color;
+      (void)copy_through_dof_indices;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
     void
     initialize_dof_vector(VectorType &vec) const override
     {
@@ -1031,21 +1082,25 @@ namespace Portable
       (void)vec;
     }
 
+    // Block counterpart of vmult_plain()/vmult() above -- delegates to the
+    // concrete operator's vmult_corner_pinned_block(), letting a caller
+    // that only has this scalar-looking SubdomainLaplaceOperatorBase
+    // interface in hand still drive a block-batched corner-pinned solve
+    // (see BlockCornerPinnedOperatorAdapter in
+    // portable_block_vcycle_adapters.h).
     void
     vmult_plain_block(VectorType &dst, const VectorType &src, const unsigned int n_rhs) const override
     {
-      (void)dst;
-      (void)src;
-      (void)n_rhs;
-      DEAL_II_NOT_IMPLEMENTED();
+      op->vmult_corner_pinned_block(dst, src, n_rhs);
     }
 
+    // Corner-pinned A_RR has no primal-constraint projection of its own,
+    // in block form either -- same reasoning as project() above.
     void
     project_block(VectorType &vec, const unsigned int n_rhs) const override
     {
       (void)vec;
       (void)n_rhs;
-      DEAL_II_NOT_IMPLEMENTED();
     }
 
     void
@@ -1095,6 +1150,19 @@ namespace Portable
         &copy_through_dof_indices) const override
     {
       op->vmult_masked(dst, src, dof_indices_per_color, copy_through_dof_indices);
+    }
+
+    void
+    vmult_masked_block(
+      VectorType       &dst,
+      const VectorType &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const override
+    {
+      op->vmult_masked_block(dst, src, dof_indices_per_color, copy_through_dof_indices, n_rhs);
     }
 
     void

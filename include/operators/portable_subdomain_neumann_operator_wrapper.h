@@ -89,6 +89,24 @@ namespace Portable
     }
 
     void
+    vmult_masked_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const override
+    {
+      (void)dst;
+      (void)src;
+      (void)dof_indices_per_color;
+      (void)copy_through_dof_indices;
+      (void)n_rhs;
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
     vmult_plain_block(
       LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,

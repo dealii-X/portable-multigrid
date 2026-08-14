@@ -72,6 +72,16 @@ namespace Portable
       const unsigned int                                                     n_rhs) const override;
 
     void
+    vmult_masked_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const override;
+
+    void
     project_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
                   const unsigned int n_rhs) const override;
 
@@ -631,6 +641,93 @@ namespace Portable
         "work", boundary_dofs_masked.size(), KOKKOS_LAMBDA(const int i) {
           const auto idx  = boundary_dofs_masked(i);
           dst_device(idx) = src_device(idx);
+        });
+  }
+
+  // Block counterpart of vmult_masked() above, batching over n_rhs the same
+  // way vmult_plain_block() batches vmult_plain() -- combines vmult_masked()'s
+  // caller-supplied mask with vmult_plain_block()'s BK3Block kernel/dof_stride
+  // layout. Lets a fe_degree-erased caller (e.g. SubdomainBDDCOperator's
+  // vmult_corner_pinned_block()) batch several masked RHS's into one
+  // SolverBlockCG call instead of n_rhs sequential SolverCG calls.
+  template <int dim, int fe_degree, typename Number>
+  void
+  SubdomainLaplaceOperator<dim, fe_degree, Number>::vmult_masked_block(
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+    const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+      &dof_indices_per_color,
+    const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                      &copy_through_dof_indices,
+    const unsigned int n_rhs) const
+  {
+    AssertDimension(dst.size(), src.size());
+    AssertDimension(dst.size() % n_rhs, 0u);
+    const unsigned int dof_stride = dst.size() / n_rhs;
+
+    DeviceVector<Number> src_device(src.get_values(), src.size()),
+      dst_device(dst.get_values(), dst.size());
+
+    dst = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    AssertDimension(dof_indices_per_color.size(), n_colors);
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            Kokkos::fence();
+
+            constexpr bool is_serial =
+              std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+            unsigned int numBlocks       = numbers::invalid_unsigned_int;
+            unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+
+            if (is_serial)
+              {
+                numBlocks       = 1u;
+                threadsPerBlock = 1u;
+              }
+
+            BK3Block::Parallel::KokkosKernelBlock<dim, fe_degree + 1, fe_degree + 1, Number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              n_rhs,
+              dof_stride,
+              numBlocks,
+              threadsPerBlock);
+
+            Kokkos::fence();
+          }
+      }
+
+    // copy caller-designated constrained values through unchanged, tiled
+    // across all n_rhs blocks -- same principle as vmult_plain_block()'s
+    // physical-boundary copy-through.
+    const auto boundary_dofs_masked = copy_through_dof_indices;
+
+    if (boundary_dofs_masked.size() > 0)
+      Kokkos::parallel_for(
+        "work",
+        static_cast<std::size_t>(n_rhs) * boundary_dofs_masked.size(),
+        KOKKOS_LAMBDA(const std::size_t idx) {
+          const unsigned int k         = idx / boundary_dofs_masked.size();
+          const unsigned int i         = idx % boundary_dofs_masked.size();
+          const unsigned int flat_idx  = k * dof_stride + boundary_dofs_masked(i);
+          dst_device(flat_idx)         = src_device(flat_idx);
         });
   }
 

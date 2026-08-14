@@ -65,7 +65,31 @@ namespace Portable
       // compute_local_edge_face_schur_complement() to be called once during
       // setup before set_fine_correction_mode(true) is used.
       const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned = nullptr,
-      const BDDCVariant              variant = BDDCVariant::corner_edge_face);
+      // Corner-pinned hierarchy's own level transfers (subdomain_mg_
+      // transfers_corner_pinned in program.cc) -- needed to build a
+      // block-shaped corner-pinned V-cycle for compute_local_edge_face_
+      // schur_complement()'s batched w_l solves, the same way level_bddc_
+      // transfers already lets compute_local_coarse_matrix() build one for
+      // the Pi-projected path. The block V-cycle's MATRICES and diagonal
+      // come from level_bddc_matrices above instead (level_subdomain_
+      // corner_pinned_matrices in program.cc holds SubdomainBDDCOperator
+      // CornerPinnedAdapter-wrapped views of the SAME underlying
+      // SubdomainBDDCOperator objects level_bddc_matrices already holds
+      // directly -- casting through the adapter would be undefined
+      // behavior, since it doesn't inherit from SubdomainBDDCOperator;
+      // get_matrix_diagonal_inverse_corner_pinned() is reachable straight
+      // off the concrete SubdomainBDDCOperator, no adapter needed). Its
+      // SMOOTHER tuning (degree/smoothing_range) is likewise borrowed from
+      // level_bddc_smoothers rather than needing its own array -- see
+      // compute_local_edge_face_schur_complement()'s comment. Optional in
+      // lockstep with subdomain_mg_preconditioner_corner_pinned -- nullptr
+      // is fine for callers that never enable static condensation, but
+      // must be non-null together with it whenever compute_local_edge_
+      // face_schur_complement() actually runs the block solve (see its
+      // Assert).
+      const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>>
+                        *level_corner_pinned_transfers = nullptr,
+      const BDDCVariant variant                        = BDDCVariant::corner_edge_face);
 
     // Selects which algorithm vmult()'s fine-correction step uses:
     // false (default) = CG against Ahat = Pi*A*Pi (the original, project()-
@@ -315,6 +339,16 @@ namespace Portable
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers;
     const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers;
 
+    // Corner-pinned hierarchy's own per-level transfers (nullptr unless the
+    // caller passed them in -- see the constructor's comment), needed to
+    // build a block-shaped corner-pinned V-cycle for compute_local_edge_
+    // face_schur_complement()'s batched w_l solves. Same role as level_
+    // bddc_transfers above, but for the static-condensation path instead
+    // of the Pi-projected one; that block V-cycle's matrices/diagonal come
+    // from level_bddc_matrices instead (see the constructor's comment for
+    // why), so no separate corner-pinned matrices array is stored here.
+    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> *level_corner_pinned_transfers;
+
     SubdomainBDDCOperator<dim, Number> subdomain_bddc_operator;
 
     // Presents subdomain_bddc_operator.vmult_corner_pinned() (corners hard-
@@ -487,7 +521,9 @@ namespace Portable
     const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>> &level_bddc_transfers,
     const MGLevelObject<BddcSmootherType>                             &level_bddc_smoothers,
     const SubdomainPreconditioner *subdomain_mg_preconditioner_corner_pinned,
-    const BDDCVariant              variant)
+    const MGLevelObject<std::unique_ptr<MGTransferBase<dim, Number>>>
+                      *level_corner_pinned_transfers,
+    const BDDCVariant variant)
     : interface_operator(&interface_operator)
     , subdomain_operator(&subdomain_operator)
     , subdomain_dof_handler(&subdomain_operator.get_subdomain_dof_handler())
@@ -496,6 +532,7 @@ namespace Portable
     , level_bddc_matrices(level_bddc_matrices)
     , level_bddc_transfers(level_bddc_transfers)
     , level_bddc_smoothers(level_bddc_smoothers)
+    , level_corner_pinned_transfers(level_corner_pinned_transfers)
     , subdomain_bddc_operator(subdomain_operator)
     , subdomain_bddc_operator_corner(subdomain_bddc_operator)
     , n_subdomain_dofs(subdomain_operator.get_subdomain_dof_handler().get_dof_handler().n_dofs())
@@ -877,14 +914,10 @@ namespace Portable
     const auto         weights         = this->coarse_weights;
     const unsigned int n_corner        = this->n_corner_local;
 
-    SubdomainVectorType c_l;
-    c_l.reinit(temp_subdomain_dst);
-
-    // Scratch for this iteration's w_l, copied into edge_face_basis_block's
-    // packed layout below once converged -- reused across l rather than
-    // allocated per-l (edge_face_basis_block owns the persistent storage).
-    SubdomainVectorType w_l;
-    w_l.reinit(temp_subdomain_dst);
+    Assert(level_corner_pinned_transfers != nullptr,
+           ExcMessage("Block-batched edge/face basis solves require the corner-pinned level "
+                      "transfers to have been passed to the BDDCPreconditioner constructor (in "
+                      "lockstep with subdomain_mg_preconditioner_corner_pinned)."));
 
     Vector<Number> schur_column(n_edge_face_local);
 
@@ -893,60 +926,164 @@ namespace Portable
 
     Timer time;
 
+    // Build all n_edge_face_local c_l lifts into one packed block vector
+    // (same n_edge_face_local-blocks-of-n_subdomain_dofs layout
+    // edge_face_basis_block uses), then batch the n_edge_face_local
+    // A_RR_corner_pinned^{-1} c_l solves into ONE SolverBlockCG call via a
+    // block-shaped corner-pinned V-cycle, instead of n_edge_face_local
+    // sequential SolverCG calls -- per JUPITER data this dominates this
+    // function's cost (~98%), same motivation/pattern as compute_local_
+    // coarse_matrix()'s existing Pi-path block-CG.
+    SubdomainVectorType c_block;
+    c_block.reinit(static_cast<typename SubdomainVectorType::size_type>(n_edge_face_local) *
+                   n_subdomain_dofs);
+    c_block = 0;
+
+    {
+      DeviceVector<Number> c_block_view(c_block.get_values(),
+                                        static_cast<typename SubdomainVectorType::size_type>(
+                                          n_edge_face_local) *
+                                          n_subdomain_dofs);
+
+      Kokkos::fence();
+      time.restart();
+      Kokkos::parallel_for(
+        "build_edge_face_constraint_lift_block", n_edge_face_local, KOKKOS_LAMBDA(const int l) {
+          const unsigned int k     = n_corner + l;
+          const unsigned int start = offsets(k);
+          const unsigned int end   = offsets(k + 1);
+          const Number       w     = weights(k);
+          for (unsigned int i = start; i < end; ++i)
+            c_block_view(static_cast<std::size_t>(l) * n_subdomain_dofs + constraint_dofs(i)) = w;
+        });
+      Kokkos::fence();
+      edge_face_setup_timings[0] += time.wall_time();
+    }
+
+    // Block-shaped V-cycle over the corner-pinned hierarchy: matrices come
+    // from level_bddc_matrices (the SAME concrete SubdomainBDDCOperator
+    // objects the Pi-path's own block V-cycle below already casts to --
+    // level_subdomain_corner_pinned_matrices in program.cc holds
+    // SubdomainBDDCOperatorCornerPinnedAdapter-wrapped views of those same
+    // objects, not the concrete type itself, so casting through THAT array
+    // would be undefined behavior), transfers from level_corner_pinned_
+    // transfers (genuinely different constraints than level_bddc_transfers,
+    // corner-pinned-aware). Built from BlockCornerPinnedOperatorAdapter (no
+    // projection step: A_RR's corner pinning is baked into the mask
+    // already) and plain dealii::PreconditionChebyshev as the smoother
+    // (matches the corner-pinned SCALAR hierarchy's own choice in
+    // program.cc, and for the same reason -- A_RR is genuinely SPD
+    // everywhere, unlike Ahat, so a generic internal Lanczos eigenvalue
+    // estimate is safe here, no special projected-safe estimator needed).
+    using BlockOperatorType = BlockCornerPinnedOperatorAdapter<dim, Number>;
+    using BlockTransferType = BlockTransferAdapter<dim, Number>;
+    using BlockPreconditionerType =
+      BlockProjectedDiagonalPreconditioner<BlockOperatorType, SubdomainVectorType>;
+    using BlockSmootherType = PreconditionChebyshev<BlockOperatorType, SubdomainVectorType, BlockPreconditionerType>;
+
+    const unsigned int minlevel = level_bddc_matrices.min_level();
+    const unsigned int maxlevel = level_bddc_matrices.max_level();
+
+    MGLevelObject<std::unique_ptr<BlockOperatorType>> block_matrices(minlevel, maxlevel);
+    MGLevelObject<std::unique_ptr<BlockTransferType>> block_transfers(minlevel, maxlevel);
+    MGLevelObject<BlockSmootherType>                  block_smoothers(minlevel, maxlevel);
+
+    for (unsigned int level = minlevel; level <= maxlevel; ++level)
+      {
+        const auto &concrete_matrix =
+          static_cast<const SubdomainBDDCOperator<dim, Number> &>(*level_bddc_matrices[level]);
+
+        block_matrices[level] =
+          std::make_unique<BlockOperatorType>(concrete_matrix, n_edge_face_local);
+
+        if (level > minlevel)
+          block_transfers[level] = std::make_unique<BlockTransferType>(
+            *(*level_corner_pinned_transfers)[level], n_edge_face_local);
+
+        typename BlockSmootherType::AdditionalData smoother_data;
+        // degree/smoothing_range mirror the corner-pinned SCALAR hierarchy's
+        // own per-level convention in program.cc's setup_smoothers()
+        // (level 0: near-exact via degree = invalid_unsigned_int; interior
+        // levels: smoothing_range = 15, degree = n_pre_smooth) -- n_pre_smooth
+        // itself isn't reachable from here (PreconditionChebyshev keeps its
+        // AdditionalData private, no accessor), so it's borrowed from the
+        // already-accessible BDDC scalar smoother's degree at the same
+        // level, which uses the identical n_pre_smooth value at level>0.
+        // max_eigenvalue is deliberately left unset: eig_cg_n_iterations>0
+        // below triggers PreconditionChebyshev's own internal Lanczos
+        // estimate, safe here since A_RR is genuinely SPD (unlike Ahat).
+        if (level == minlevel)
+          {
+            smoother_data.smoothing_range     = 1e-3;
+            smoother_data.degree              = numbers::invalid_unsigned_int;
+            smoother_data.eig_cg_n_iterations = concrete_matrix.m();
+          }
+        else
+          {
+            smoother_data.smoothing_range     = 15.;
+            smoother_data.degree              = level_bddc_smoothers[level].get_additional_data().degree;
+            smoother_data.eig_cg_n_iterations = 10;
+          }
+        smoother_data.preconditioner = std::make_shared<BlockPreconditionerType>(
+          *block_matrices[level],
+          concrete_matrix.get_matrix_diagonal_inverse_corner_pinned(),
+          n_edge_face_local);
+
+        block_smoothers[level].initialize(*block_matrices[level], smoother_data);
+      }
+
+    SubdomainVCycleMultigrid<dim, Number, BlockOperatorType, BlockTransferType, BlockSmootherType>
+      block_mg_preconditioner(block_matrices, block_transfers, block_smoothers);
+
+    SubdomainVectorType w_block;
+    w_block.reinit(c_block);
+
+    ReductionControl                   solver_control(c_block.size(), 1e-14, 1e-11);
+    SolverBlockCG<SubdomainVectorType> block_solver(solver_control);
+
+    time.restart();
+    block_solver.solve_block(*block_matrices[maxlevel],
+                             w_block,
+                             c_block,
+                             block_mg_preconditioner,
+                             n_edge_face_local);
+    Kokkos::fence();
+    edge_face_setup_timings[1] += time.wall_time();
+
+    // w_block is already laid out exactly as edge_face_basis_block expects
+    // (block l = A_RR_corner_pinned^{-1} c_l, at offset l*n_subdomain_dofs)
+    // -- no unpack/copy needed, just adopt it directly.
+    edge_face_basis_block.swap(w_block);
+
+    // Column l of edge_face_schur_matrix = C_R w_l (entry m = c_m . w_l),
+    // read out of the packed block one column at a time -- small/cheap
+    // relative to the solve above (per JUPITER data ~2% of this function's
+    // cost), so left as a per-l loop rather than also batched.
+    // apply_edge_face_constraints() takes a SubdomainVectorType by
+    // reference (it owns its Kokkos storage, no aliasing-into-a-block
+    // constructor exists), so each column is deep_copy'd into a reused
+    // scratch vector first, same idiom the setup loop above used to use
+    // for the reverse (scratch -> block) direction.
+    SubdomainVectorType w_l_scratch;
+    w_l_scratch.reinit(temp_subdomain_dst);
+
+    time.restart();
     for (unsigned int l = 0; l < n_edge_face_local; ++l)
       {
-        const unsigned int k = n_corner + l;
+        DeviceVector<const Number> block_view(edge_face_basis_block.get_values() +
+                                                static_cast<typename SubdomainVectorType::size_type>(
+                                                  l) *
+                                                  n_subdomain_dofs,
+                                              n_subdomain_dofs);
+        DeviceVector<Number> w_l_view(w_l_scratch.get_values(), n_subdomain_dofs);
+        Kokkos::deep_copy(w_l_view, block_view);
 
-        // Lift group k's constraint functional into subdomain-vector space:
-        // coarse_weights(k) at the group's dofs, zero elsewhere (c_l = row k
-        // of C_R, as a subdomain vector).
-        Kokkos::fence();
-        time.restart();
-        c_l = 0;
-        DeviceVector<Number> c_l_view(c_l.get_values(), n_subdomain_dofs);
-
-        Kokkos::parallel_for(
-          "build_edge_face_constraint_lift", 1, KOKKOS_LAMBDA(const int) {
-            const unsigned int start = offsets(k);
-            const unsigned int end   = offsets(k + 1);
-            const Number       w     = weights(k);
-            for (unsigned int i = start; i < end; ++i)
-              c_l_view(constraint_dofs(i)) = w;
-          });
-        Kokkos::fence();
-        edge_face_setup_timings[0] += time.wall_time();
-
-        // w_l = A_RR_corner_pinned^{-1} c_l.
-        w_l = 0;
-
-        time.restart();
-        ReductionControl              control(c_l.size(), 1e-14, 1e-11);
-        SolverCG<SubdomainVectorType> solver(control);
-        solver.solve(this->subdomain_bddc_operator_corner,
-                     w_l,
-                     c_l,
-                     *subdomain_mg_preconditioner_corner_pinned);
-        Kokkos::fence();
-        edge_face_setup_timings[1] += time.wall_time();
-
-        // Column l of edge_face_schur_matrix = C_R w_l (entry m = c_m . w_l).
-        time.restart();
-        apply_edge_face_constraints(schur_column, w_l);
+        apply_edge_face_constraints(schur_column, w_l_scratch);
         for (unsigned int m = 0; m < n_edge_face_local; ++m)
           edge_face_schur_matrix(m, l) = schur_column(m);
-        Kokkos::fence();
-        edge_face_setup_timings[2] += time.wall_time();
-
-        // Pack w_l into block l of edge_face_basis_block (same packing
-        // idiom compute_local_coarse_matrix() uses for lifted_block).
-        DeviceVector<Number> w_l_view(w_l.get_values(), n_subdomain_dofs);
-        DeviceVector<Number> block_view(edge_face_basis_block.get_values() +
-                                          static_cast<typename SubdomainVectorType::size_type>(l) *
-                                            n_subdomain_dofs,
-                                        n_subdomain_dofs);
-        Kokkos::deep_copy(block_view, w_l_view);
-        Kokkos::fence();
       }
+    Kokkos::fence();
+    edge_face_setup_timings[2] += time.wall_time();
 
     // compute_cholesky_factorization() asserts property == symmetric.
     time.restart();
