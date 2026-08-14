@@ -26,8 +26,7 @@ public:
   create_subdomain_triangulation(TriaType &distributed_triangulation);
 
   void
-  copy_subdomain_triangulation(
-    const SubdomainTriangulation<dim> &other_subdomain_triangulation);
+  copy_subdomain_triangulation(const SubdomainTriangulation<dim> &other_subdomain_triangulation);
 
   const Triangulation<dim> &
   get_triangulation() const;
@@ -96,13 +95,12 @@ SubdomainTriangulation<dim>::get_interface_id() const
 template <int dim>
 template <typename TriaType>
 void
-SubdomainTriangulation<dim>::create_subdomain_triangulation(
-  TriaType &distributed_triangulation)
+SubdomainTriangulation<dim>::create_subdomain_triangulation(TriaType &distributed_triangulation)
 {
   this->clear();
 
-  this->subdomain_id = Utilities::MPI::this_mpi_process(
-    distributed_triangulation.get_mpi_communicator());
+  this->subdomain_id =
+    Utilities::MPI::this_mpi_process(distributed_triangulation.get_mpi_communicator());
   this->interface_id = 100 + this->subdomain_id;
 
 
@@ -121,20 +119,17 @@ SubdomainTriangulation<dim>::create_subdomain_triangulation(
       if (cell->is_locally_owned())
         {
           CellData<dim> cell_data;
-          for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_cell;
-               ++v)
+          for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_cell; ++v)
             {
               const unsigned int global_vertex_index = cell->vertex_index(v);
 
               if (global_to_local_vertex_map.find(global_vertex_index) ==
                   global_to_local_vertex_map.end())
                 {
-                  global_to_local_vertex_map[global_vertex_index] =
-                    vertices.size();
+                  global_to_local_vertex_map[global_vertex_index] = vertices.size();
                   vertices.push_back(cell->vertex(v));
                 }
-              cell_data.vertices[v] =
-                global_to_local_vertex_map[global_vertex_index];
+              cell_data.vertices[v] = global_to_local_vertex_map[global_vertex_index];
             }
 
           cell_data.material_id = cell->material_id();
@@ -154,16 +149,12 @@ SubdomainTriangulation<dim>::create_subdomain_triangulation(
               if (on_physical_boundary || on_interface)
                 {
                   CellData<dim - 1> face_data;
-                  for (unsigned int fv = 0;
-                       fv < GeometryInfo<dim>::vertices_per_face;
-                       ++fv)
+                  for (unsigned int fv = 0; fv < GeometryInfo<dim>::vertices_per_face; ++fv)
                     face_data.vertices[fv] =
-                      global_to_local_vertex_map[cell->face(f)->vertex_index(
-                        fv)];
+                      global_to_local_vertex_map[cell->face(f)->vertex_index(fv)];
 
-                  face_data.boundary_id = on_physical_boundary ?
-                                            cell->face(f)->boundary_id() :
-                                            this->interface_id;
+                  face_data.boundary_id =
+                    on_physical_boundary ? cell->face(f)->boundary_id() : this->interface_id;
 
                   face_data.manifold_id = cell->face(f)->manifold_id();
 
@@ -184,9 +175,7 @@ SubdomainTriangulation<dim>::create_subdomain_triangulation(
 
   GridTools::consistently_order_cells<dim>(subdomain_cell_data);
 
-  this->subdomain_triangulation.create_triangulation(vertices,
-                                                     subdomain_cell_data,
-                                                     subcell_data);
+  this->subdomain_triangulation.create_triangulation(vertices, subdomain_cell_data, subcell_data);
 
   AssertDimension(this->subdomain_triangulation.n_active_cells(),
                   distributed_triangulation.n_locally_owned_active_cells());

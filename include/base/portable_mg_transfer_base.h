@@ -28,6 +28,27 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
 
+    /**
+     * Block prolongate_and_add()/restrict_and_add(): applies the
+     * respective operation independently to each of n_rhs blocks of
+     * dst/src, laid out as n_rhs blocks of dof_stride_fine (dst for
+     * prolongate, src for restrict) / dof_stride_coarse each -- the same
+     * convention bk1_kokkos_kernels_block.h's
+     * KokkosProlongationBatchedBlockKernel()/
+     * KokkosRestrictionBatchedBlockKernel() use.
+     */
+    virtual void
+    prolongate_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int                                                     n_rhs) const = 0;
+
+    virtual void
+    restrict_and_add_block(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      const unsigned int                                                     n_rhs) const = 0;
+
     virtual void
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,

@@ -21,9 +21,8 @@ namespace Portable
     ~VCycleMultigridBase() = default;
 
     virtual void
-    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-            &src) const = 0;
+    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
   };
 
   template <typename VectorType, typename SmootherType>

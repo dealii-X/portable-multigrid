@@ -19,62 +19,105 @@ DEAL_II_NAMESPACE_OPEN
 namespace Portable
 {
 
-  template <int dim, typename number>
+  template <int dim, typename Number>
   class SubdomainLaplaceOperatorBase : public EnableObserverPointer
   {
   public:
     virtual void
-    vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-          const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-            &src) const = 0;
+    vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+          const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
     virtual void
-    vmult_bk3(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const = 0;
+    project(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const = 0;
 
     virtual void
-    vmult_dummy(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-                &src,
-      const bool ghost_exchange_on,
-      const bool computation_on) const = 0;
+    vmult_plain(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
+
+    /**
+     * Block vmult_plain(): applies vmult_plain() independently to each of
+     * n_rhs blocks of dst/src, which must be sized n_rhs * (this
+     * operator's dof count) and laid out as n_rhs blocks of that size
+     * each -- the same convention bk3_kokkos_kernel_block.h's
+     * KokkosKernelBlock()/SolverBlockCG use.
+     */
+    virtual void
+    vmult_plain_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+                      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+                      const unsigned int n_rhs) const = 0;
+
+    /**
+     * Block project(): applies project() independently to each of n_rhs
+     * blocks of vec, same layout convention as vmult_plain_block().
+     */
+    virtual void
+    project_block(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec,
+                  const unsigned int n_rhs) const = 0;
 
     virtual void
     vmult_interface_cell_range(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const = 0;
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
+
+    /**
+     * Same tensor-product cell-loop kernel as vmult_plain(),
+     * but scattering against a caller-supplied dof-index mask instead of one
+     * of this operator's own precomputed ones -- lets a caller that only
+     * knows *which* subdomain-local dofs it wants excluded (not the fe_degree
+     * needed to launch the kernel itself) reuse this operator's concrete,
+     * fe_degree-aware implementation via virtual dispatch. dof_indices_per_color
+     * must follow the same per-color/per-cell layout as plain_dof_indices_per_color
+     * (numbers::invalid_unsigned_int marks an excluded dof); copy_through_dof_indices
+     * lists the excluded dofs to pass through unchanged from src to dst (the same
+     * role physical_boundary_dof_indices plays in vmult_plain()).
+     */
+    virtual void
+    vmult_masked(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+        &copy_through_dof_indices) const = 0;
+
+    /**
+     * Block vmult_masked(): applies vmult_masked() independently to each of
+     * n_rhs blocks of dst/src, same layout convention as vmult_plain_block().
+     */
+    virtual void
+    vmult_masked_block(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+      const std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
+        &dof_indices_per_color,
+      const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
+                        &copy_through_dof_indices,
+      const unsigned int n_rhs) const = 0;
+
+    // virtual void
+    // vmult_bddc_preconditioner(
+    //   LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+    //   const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
     virtual void
-    vmult_neumann(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const = 0;
-
-    virtual void
-    Tvmult(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-        &src) const = 0;
+    Tvmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
     virtual void
     initialize_dof_vector(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec)
-      const = 0;
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const = 0;
 
     virtual void
     compute_diagonal() = 0;
 
-    virtual std::shared_ptr<DiagonalMatrix<
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
+    virtual std::shared_ptr<
+      DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
     get_matrix_diagonal_inverse() const = 0;
 
-    virtual std::shared_ptr<DiagonalMatrix<
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
-    get_matrix_diagonal_inverse_neumann() const = 0;
+    virtual std::shared_ptr<
+      DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
+    get_matrix_diagonal_inverse_plain() const = 0;
 
     virtual types::global_dof_index
     m() const = 0;
@@ -82,23 +125,20 @@ namespace Portable
     virtual types::global_dof_index
     n() const = 0;
 
-    virtual number
-    el(const types::global_dof_index row,
-       const types::global_dof_index col) const = 0;
+    virtual Number
+    el(const types::global_dof_index row, const types::global_dof_index col) const = 0;
 
-    virtual const MatrixFree<dim, number> &
+    virtual const MatrixFree<dim, Number> &
     get_matrix_free() const = 0;
 
     virtual const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const = 0;
 
-    virtual const Kokkos::View<const unsigned int *,
-                               MemorySpace::Default::kokkos_space>
+    virtual const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
     get_interface_dof_indices_subdomain() const = 0;
 
 
-    virtual const Kokkos::View<const unsigned int *,
-                               MemorySpace::Default::kokkos_space>
+    virtual const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>
     get_physical_boundary_dof_indices_subdomain() const = 0;
 
     virtual const SubdomainDoFHandler<dim> &
@@ -114,15 +154,13 @@ namespace Portable
     static bool
     dispatch(const unsigned int runtime_degree, OperatorRunner &runner)
     {
-      return recursive_dispatch<OperatorRunner, max_degree>(runtime_degree,
-                                                            runner);
+      return recursive_dispatch<OperatorRunner, max_degree>(runtime_degree, runner);
     }
 
   private:
     template <typename OperatorRunner, unsigned int degree>
     static bool
-    recursive_dispatch(const unsigned int runtime_degree,
-                       OperatorRunner    &runner)
+    recursive_dispatch(const unsigned int runtime_degree, OperatorRunner &runner)
     {
       if (runtime_degree == degree)
         {
@@ -131,8 +169,7 @@ namespace Portable
         }
       else if constexpr (degree > 1)
         {
-          return recursive_dispatch<OperatorRunner, degree - 1>(runtime_degree,
-                                                                runner);
+          return recursive_dispatch<OperatorRunner, degree - 1>(runtime_degree, runner);
         }
       else
         {

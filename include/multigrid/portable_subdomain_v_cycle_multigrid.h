@@ -32,14 +32,12 @@ namespace Portable
   class SubdomainVCycleMultigrid : public VCycleMultigridBase<dim, number>
   {
   public:
-    using VectorType =
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
+    using VectorType = LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
 
-    SubdomainVCycleMultigrid(
-      const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
-      const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
-      const MGLevelObject<SmootherType>                     &mg_smoothers,
-      const bool impose_zero_mean = false);
+    SubdomainVCycleMultigrid(const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
+                             const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
+                             const MGLevelObject<SmootherType>                     &mg_smoothers,
+                             const bool impose_zero_mean = false);
 
     void
     vmult(VectorType &dst, const VectorType &src) const override;
@@ -113,16 +111,11 @@ namespace Portable
             typename LevelMatrixType,
             typename TransferType,
             typename SmootherType>
-  SubdomainVCycleMultigrid<dim,
-                           number,
-                           LevelMatrixType,
-                           TransferType,
-                           SmootherType>::
-    SubdomainVCycleMultigrid(
-      const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
-      const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
-      const MGLevelObject<SmootherType>                     &mg_smoothers,
-      const bool                                             impose_zero_mean)
+  SubdomainVCycleMultigrid<dim, number, LevelMatrixType, TransferType, SmootherType>::
+    SubdomainVCycleMultigrid(const MGLevelObject<std::unique_ptr<LevelMatrixType>> &mg_matrices,
+                             const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
+                             const MGLevelObject<SmootherType>                     &mg_smoothers,
+                             const bool impose_zero_mean)
     : minlevel(mg_matrices.min_level())
     , maxlevel(mg_matrices.max_level())
     , mg_matrices(mg_matrices)
@@ -148,18 +141,19 @@ namespace Portable
             typename TransferType,
             typename SmootherType>
   void
-  SubdomainVCycleMultigrid<dim,
-                           number,
-                           LevelMatrixType,
-                           TransferType,
-                           SmootherType>::vmult(VectorType       &dst,
-                                                const VectorType &src) const
+  SubdomainVCycleMultigrid<dim, number, LevelMatrixType, TransferType, SmootherType>::vmult(
+    VectorType       &dst,
+    const VectorType &src) const
   {
     defect[maxlevel] = src;
+
+    mg_matrices.back()->project(defect[maxlevel]);
 
     v_cycle(maxlevel);
 
     dst = solution[maxlevel];
+
+    mg_matrices.back()->project(dst);
   }
 
   template <int dim,
@@ -168,12 +162,8 @@ namespace Portable
             typename TransferType,
             typename SmootherType>
   void
-  SubdomainVCycleMultigrid<dim,
-                           number,
-                           LevelMatrixType,
-                           TransferType,
-                           SmootherType>::v_cycle(const unsigned int level)
-    const
+  SubdomainVCycleMultigrid<dim, number, LevelMatrixType, TransferType, SmootherType>::v_cycle(
+    const unsigned int level) const
   {
     if (level == minlevel)
       {
@@ -185,7 +175,11 @@ namespace Portable
 
         // Accuracy on coarsest level should be comparable to overall level
         // accuracy (~1e-3)
+        mg_matrices[level]->project(defect[level]);
+
         (coarse)(level, solution[level], defect[level]);
+
+        mg_matrices[level]->project(solution[level]);
 
         if (impose_zero_mean)
           {
@@ -207,12 +201,28 @@ namespace Portable
     defect[level - 1] = 0;
     mg_transfers[level]->restrict_and_add(defect[level - 1], t[level]);
 
+    // Now load-bearing (Chat's own input-side Pi is commented out above in
+    // ProjectedDiagonalPreconditioner::vmult): Chat = Pi*D^{-1} is only
+    // symmetric for residuals already in V = range(Pi) (Pi is an orthogonal
+    // projector, so cross terms with (I-Pi) vanish against a V vector, but
+    // not in general). restrict_and_add has no notion of Pi and can leave
+    // defect[level-1] outside V_{level-1}; project it back before it is used
+    // as the defect for both pre- and post-smoothing at the coarser level.
+    mg_matrices[level - 1]->project(defect[level - 1]);
+
     // Recursive call to v_cycle on the coarser level
     v_cycle(level - 1);
 
     // Prolongate coarse correction and add to current solution
-    mg_transfers[level]->prolongate_and_add(solution[level],
-                                            solution[level - 1]);
+    mg_transfers[level]->prolongate_and_add(solution[level], solution[level - 1]);
+
+    // Necessary (not redundant like the other projections in this function):
+    // prolongation has no notion of Pi and can push solution[level] out of
+    // V = range(Pi). Both A-hat = Pi*A*Pi and the smoother's sandwiched
+    // correction Pi*(omega*D^{-1})*Pi only ever *add* vectors in V, so an
+    // out-of-V component picked up here would otherwise persist unremoved
+    // through post-smoothing.
+    mg_matrices[level]->project(solution[level]);
 
     // Post-smoothing
     mg_smoothers[level].step(solution[level], defect[level]);
