@@ -208,12 +208,19 @@ namespace Common
     // including d == dim - 1 (the register-loop axis itself, where idx_d ==
     // last by construction), so no special-casing by direction is needed
     // and the same body serves any dim. Utilities::pow(nq, d) is
-    // recomputed at each use rather than cached in a per-thread array (d
-    // is a small runtime loop variable, not a compile-time exponent, so
-    // this isn't a constexpr computation) -- exponentiation by squaring on
-    // d <= 2 is at most one multiply, cheaper than the register pressure
-    // (and GPU spill risk) of holding a whole array live across the loops
-    // below just to save that.
+    // recomputed at each use (once per (last, d), not cached across last in
+    // a per-thread array) rather than cached in a per-thread array (d is a
+    // small runtime loop variable, not a compile-time exponent, so this
+    // isn't a constexpr computation) -- exponentiation by squaring on d <= 2
+    // is at most one multiply, cheaper than the register pressure (and GPU
+    // spill risk) of holding a whole array live across the loops below just
+    // to save that. The one thing each function below does hoist out of its
+    // innermost n-loop is the base array index everything but the `n *
+    // stride_d` term forms -- that one's a straight sum of loop-invariant
+    // values (no exponentiation involved), so hoisting it just removes
+    // redundant adds on every n iteration rather than trading away register
+    // pressure the way caching co_shape_gradients/u_in themselves across the
+    // last-loop would.
 
 
 
@@ -263,11 +270,13 @@ namespace Common
                   const int stride_d   = Utilities::pow(nq, d);
                   const int idx_d      = (point / stride_d) % nq;
                   const int point_base = point - idx_d * stride_d;
+                  // Base index for u_in, invariant across the n-loop below --
+                  // hoisted so it isn't recomputed nq times per direction.
+                  const int in_base = e * nq_total + point_base;
 
                   Number q_d = 0;
                   for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] *
-                          u_in[e * nq_total + point_base + n * stride_d];
+                    q_d += s_co_shape_gradients[n * nq + idx_d] * u_in[in_base + n * stride_d];
 
                   scratch[gradients_offset + d * gradient_slot_stride + e * nq_total + point] = q_d;
                 }
@@ -345,11 +354,13 @@ namespace Common
                   const int stride_d   = Utilities::pow(nq, d);
                   const int idx_d      = (point / stride_d) % nq;
                   const int point_base = point - idx_d * stride_d;
+                  // Base index for u_in, invariant across the n-loop below --
+                  // hoisted so it isn't recomputed nq times per direction.
+                  const int in_base = e * nq_total + point_base;
 
                   Number q_d = 0;
                   for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] *
-                          u_in[e * nq_total + point_base + n * stride_d];
+                    q_d += s_co_shape_gradients[n * nq + idx_d] * u_in[in_base + n * stride_d];
                   q[d] = q_d;
                 }
 
@@ -427,12 +438,16 @@ namespace Common
                   const int stride_d   = Utilities::pow(nq, d);
                   const int idx_d      = (point / stride_d) % nq;
                   const int point_base = point - idx_d * stride_d;
+                  // Base index into the gradients pool, invariant across the
+                  // n-loop below -- hoisted so it isn't recomputed nq times
+                  // per direction (this one had 4 terms, not 2, so this is
+                  // the more impactful of the two hoists in this file).
+                  const int grad_base = gradients_offset + d * gradient_slot_stride +
+                                        e * nq_total + point_base;
 
                   Number sum = 0;
                   for (int n = 0; n < nq; ++n)
-                    sum += scratch[gradients_offset + d * gradient_slot_stride + e * nq_total +
-                                   point_base + n * stride_d] *
-                          s_co_shape_gradients[idx_d * nq + n];
+                    sum += scratch[grad_base + n * stride_d] * s_co_shape_gradients[idx_d * nq + n];
                   tmp0 += sum;
                 }
 
