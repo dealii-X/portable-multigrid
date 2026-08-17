@@ -9,6 +9,7 @@
 
 #include "base/portable_laplace_operator_base.h"
 #include "kernels/bk3_kokkos_kernel.h"
+#include "kernels/bk3_kokkos_kernel_common.h"
 #include "operators/portable_laplace_operator_quad.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -25,6 +26,11 @@ namespace Portable
 
     void
     vmult(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
+
+    void
+    vmult_new(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
@@ -160,6 +166,111 @@ namespace Portable
             const auto &precomputed_data = matrix_free.get_data(color);
 
             BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock);
+
+            // BK3::Parallel::
+            //   KokkosKernel_1D_Block<dim, fe_degree + 1, fe_degree + 1, number>(
+            //     precomputed_data.shape_values,
+            //     precomputed_data.co_shape_gradients,
+            //     G_tensors[color],
+            //     src_device,
+            //     dst_device,
+            //     dof_indices_per_color[color],
+            //     n_cells,
+            //     numBlocks,
+            //     threadsPerBlock);
+          }
+      };
+
+    if (matrix_free.use_overlap_communication_computation())
+      {
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            if (colored_graph[color].size() > color)
+              do_color(color);
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperatorBK3<dim, fe_degree, number>::vmult_new(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+
+    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
+      dst_device(dst.get_values(), dst.locally_owned_size());
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    // helper to process one color
+    auto do_color = [&](const unsigned int color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK3Common::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],

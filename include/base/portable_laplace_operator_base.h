@@ -23,6 +23,13 @@ namespace Portable
     vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
 
+
+    virtual void
+    vmult_new(
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
+
+
     virtual void
     vmult_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
                 const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,

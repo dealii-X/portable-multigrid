@@ -122,6 +122,9 @@ namespace multigrid
     void
     matvec_ghost_timing();
 
+    void
+    vmult_comparison_timing();
+
 
     MPI_Comm mpi_communicator;
 
@@ -166,6 +169,8 @@ namespace multigrid
     ConvergenceTable convergence_table;
 
     ConvergenceTable ghost_timing_table;
+
+    ConvergenceTable vmult_comparison_table;
 
     ConditionalOStream pcout;
 
@@ -777,10 +782,10 @@ namespace multigrid
         for (unsigned int i = 0; i < 5; ++i)
           // for (unsigned int i = 0; i < 1; ++i)
           {
-            // const unsigned int n_mv =
-            //   dof_handler.n_dofs() < 10000000 ? 200 : 50;
+            const unsigned int n_mv =
+              dof_handler.n_dofs() < 10000000 ? 200 : 50;
 
-            const unsigned int n_mv = 1;
+            // const unsigned int n_mv = 1;
 
             {
               Kokkos::fence();
@@ -844,6 +849,82 @@ namespace multigrid
     ghost_timing_table.add_value("mv_ghost_and_compute", best_mv_both);
     ghost_timing_table.add_value("mv_compute_only", best_only_comp);
     ghost_timing_table.add_value("mv_ghost_only", best_only_ghost);
+  }
+
+  // Compares LaplaceOperatorBK3::vmult() (BK3::Parallel::KokkosKernel, the
+  // original hand-written kernel) against vmult_new() (BK3Common::Parallel::
+  // KokkosKernel, composed from the generic building blocks in
+  // kernels/common.h) at every MG level, to check the refactor in
+  // kernels/common.h hasn't regressed performance. Same best-of-5 timing
+  // methodology and per-level/per-cycle tabulation convention as
+  // matvec_ghost_timing() above -- per-level numbers are printed directly,
+  // only the finest level's numbers are added to the table (one row per
+  // mesh-size cycle in run()).
+  template <int dim, int fe_degree>
+  void
+  LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
+  {
+    MGLevelObject<LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>>
+      dummy_solution(0, level_matrices.max_level()), dummy_rhs(0, level_matrices.max_level());
+
+    for (unsigned int level = 0; level <= level_matrices.max_level(); ++level)
+      {
+        level_matrices[level]->initialize_dof_vector(dummy_solution[level]);
+        level_matrices[level]->initialize_dof_vector(dummy_rhs[level]);
+      }
+
+    Timer time;
+
+    double best_vmult     = 1e10;
+    double best_vmult_new = 1e10;
+
+    for (unsigned int level = 0; level <= level_matrices.max_level(); ++level)
+      {
+        best_vmult     = 1e10;
+        best_vmult_new = 1e10;
+
+        for (unsigned int i = 0; i < 5; ++i)
+          {
+            const unsigned int n_mv = level_dof_handlers[level].n_dofs() < 10000000 ? 200 : 50;
+
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                level_matrices[level]->vmult(dummy_solution[level], dummy_rhs[level]);
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
+              best_vmult = std::min(best_vmult, stat.max);
+            }
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                level_matrices[level]->vmult_new(dummy_solution[level], dummy_rhs[level]);
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
+              best_vmult_new = std::min(best_vmult_new, stat.max);
+            }
+          }
+
+        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+          std::cout << "Best vmult/vmult_new timings for ndof = " << level_dof_handlers[level].n_dofs()
+                    << "   on level " << level << "|  vmult = " << best_vmult
+                    << "   vmult_new = " << best_vmult_new
+                    << "   speedup = " << best_vmult / best_vmult_new << std::endl;
+      }
+
+    vmult_comparison_table.add_value("cells", triangulation.n_global_active_cells());
+    vmult_comparison_table.add_value("dofs", dof_handler.n_dofs());
+    vmult_comparison_table.add_value("vmult", best_vmult);
+    vmult_comparison_table.add_value("vmult_new", best_vmult_new);
+    vmult_comparison_table.add_value("speedup", best_vmult / best_vmult_new);
   }
 
   template <int dim, int fe_degree>
@@ -1009,6 +1090,12 @@ namespace multigrid
         pcout << std::endl;
         pcout << std::endl;
 
+        pcout << std::endl;
+        pcout << std::endl;
+        vmult_comparison_timing();
+        pcout << std::endl;
+        pcout << std::endl;
+
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
           {
             convergence_table.set_scientific("mv_outer", true);
@@ -1032,6 +1119,16 @@ namespace multigrid
             ghost_timing_table.set_precision("mv_ghost_only", 4);
 
             ghost_timing_table.write_text(std::cout);
+
+            std::cout << std::endl << std::endl;
+
+            vmult_comparison_table.set_scientific("vmult", true);
+            vmult_comparison_table.set_precision("vmult", 4);
+            vmult_comparison_table.set_scientific("vmult_new", true);
+            vmult_comparison_table.set_precision("vmult_new", 4);
+            vmult_comparison_table.set_precision("speedup", 3);
+
+            vmult_comparison_table.write_text(std::cout);
 
             std::cout << std::endl << std::endl;
           }
