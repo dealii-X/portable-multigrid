@@ -9,7 +9,7 @@
 
 #include "base/portable_laplace_operator_base.h"
 #include "kernels/bk3_kokkos_kernel.h"
-#include "kernels/bk3_kokkos_kernel_common.h"
+#include "kernels/bk3_kokkos_kernels_custom.h"
 #include "operators/portable_laplace_operator_quad.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -270,7 +270,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3Common::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3Custom::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],

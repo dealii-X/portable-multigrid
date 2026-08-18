@@ -852,11 +852,12 @@ namespace multigrid
   }
 
   // Compares LaplaceOperatorBK3::vmult() (BK3::Parallel::KokkosKernel, the
-  // original hand-written kernel) against vmult_new() (BK3Common::Parallel::
+  // original hand-written kernel) against vmult_new() (BK3Custom::Parallel::
   // KokkosKernel, composed from the generic building blocks in
-  // kernels/common.h) at every MG level, to check the refactor in
-  // kernels/common.h hasn't regressed performance. Same best-of-5 timing
-  // methodology and per-level/per-cycle tabulation convention as
+  // kernels/portable_tensor_product_kernels.h) at every MG level, to check
+  // the refactor in kernels/portable_tensor_product_kernels.h hasn't
+  // regressed performance. Same best-of-5 timing methodology and
+  // per-level/per-cycle tabulation convention as
   // matvec_ghost_timing() above -- per-level numbers are printed directly,
   // only the finest level's numbers are added to the table (one row per
   // mesh-size cycle in run()).

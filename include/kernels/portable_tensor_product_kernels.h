@@ -1,5 +1,5 @@
-#ifndef kernels_common_h
-#define kernels_common_h
+#ifndef kernels_portable_tensor_product_kernels_h
+#define kernels_portable_tensor_product_kernels_h
 
 #include <deal.II/base/memory_space.h>
 #include <deal.II/base/utilities.h>
@@ -26,7 +26,14 @@ DEAL_II_NAMESPACE_OPEN
 // here to a batch of nelmtPerBatch cells sharing one team, to rectangular
 // (n_rows != n_columns) shape matrices, and to a shared offset-addressed
 // work array.
-namespace Common
+//
+// Filename/namespace deliberately mirror deal.II's own
+// matrix_free/portable_tensor_product_kernels.h (Portable::internal) -- the
+// long-term intent is upstreaming this generalization (batched, rectangular
+// matrices, offset-addressed scratch) into deal.II itself, so this stays
+// named/structured close to where it would eventually land. `Custom` is a
+// placeholder namespace for as long as this lives outside deal.II proper.
+namespace Custom
 {
   namespace Parallel
   {
@@ -64,6 +71,50 @@ namespace Common
 
       // Cache the input fiber in registers once, rather than re-reading
       // shared memory for every output index below.
+      Number r_in[mm];
+      for (int k = 0; k < mm; ++k)
+        r_in[k] = in[k * stride_in];
+
+      for (int q = 0; q < nn; ++q)
+        {
+          Number sum = 0;
+          for (int k = 0; k < mm; ++k)
+            {
+              const int row = contract_over_rows ? k : q;
+              const int col = contract_over_rows ? q : k;
+              sum += matrix[row * n_columns + col] * r_in[k];
+            }
+
+          if constexpr (add)
+            out[q * stride_out] += sum;
+          else
+            out[q * stride_out] = sum;
+        }
+    }
+
+
+
+    // Same single-fiber contraction as the overload above, but for callers
+    // whose stride_in/stride_out happen to be compile-time constants (e.g.
+    // the batched overload below, whose n_blocks1 already is one) --
+    // template, rather than runtime, parameters let the compiler constant-
+    // fold the fiber addressing instead of carrying stride_in/stride_out as
+    // live runtime values. Mirrors deal.II's own CPU
+    // internal::EvaluatorTensorProduct::apply()'s compile-time `stride`
+    // template parameter (tensor_product_kernels.h) for the same reason.
+    template <int  n_rows,
+              int  n_columns,
+              bool contract_over_rows,
+              bool add,
+              int  stride_in,
+              int  stride_out,
+              typename Number>
+    DEAL_II_HOST_DEVICE inline void
+    apply_matrix_vector_product(const Number *matrix, const Number *in, Number *out)
+    {
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
       Number r_in[mm];
       for (int k = 0; k < mm; ++k)
         r_in[k] = in[k * stride_in];
@@ -162,8 +213,8 @@ namespace Common
           const Number *in_e  = in + e * n_in_per_elmt + i2 * n_blocks1 * mm + i1;
           Number       *out_e = out + e * n_out_per_elmt + i2 * n_blocks1 * nn + i1;
 
-          apply_matrix_vector_product<n_rows, n_columns, contract_over_rows, add>(
-            matrix, in_e, out_e, n_blocks1, n_blocks1);
+          apply_matrix_vector_product<n_rows, n_columns, contract_over_rows, add, n_blocks1, n_blocks1>(
+            matrix, in_e, out_e);
         }
 
       team_member.team_barrier();
@@ -458,7 +509,7 @@ namespace Common
       team_member.team_barrier();
     }
   } // namespace Parallel
-} // namespace Common
+} // namespace Custom
 
 DEAL_II_NAMESPACE_CLOSE
 
