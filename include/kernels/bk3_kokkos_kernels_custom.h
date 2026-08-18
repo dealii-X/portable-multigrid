@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include "kernels/portable_evaluation_kernels.h"
 #include "kernels/portable_tensor_product_kernels.h"
 
 // Structural twin of BK3::Parallel::KokkosKernel (bk3_kokkos_kernel.h),
@@ -237,37 +238,57 @@ namespace BK3Custom
                 team_member.team_barrier();
               }
               // steps 2-4: interpolate dof -> quad, one direction at a
-              // time, via Custom::Parallel::EvaluatorTensorProduct
-              // (kernels/portable_tensor_product_kernels.h). Its values()
-              // replaces the manual per-thread tid/e/j/k loop below with
-              // its own internal batched loop over the same (element,
-              // co-dimension) index space -- algebraically verified (see
-              // the unify-kernels session) to compute the identical flat
-              // s_wsp0/s_wsp1 offsets the hand-written loop did, and
-              // re-checked bit-identical via
-              // correctness_tests/check_correctness_common_kernels/.
-              // Original hand-written version commented out below for
-              // reference/diff, per request -- not deleted.
+              // time, via Custom::Parallel::
+              // FEEvaluationImplTransformToCollocation::evaluate()
+              // (kernels/portable_evaluation_kernels.h), BK3's counterpart
+              // of deal.II's own struct of the same name. Replaces the
+              // per-direction if constexpr (dim == 2)/(dim == 3) unroll
+              // below (itself already verified bit-identical via
+              // correctness_tests/check_correctness_common_kernels/) with a
+              // single call; `in == out == s_values` here since steps
+              // 2-4/7-9 always start and end at s_values regardless of dim
+              // (see the scratch-pointer declarations above), and
+              // `scratch == s_gradients` supplies the gradients pool's
+              // first (dim == 2) or first two (dim == 3) slots as
+              // intermediate storage. Original versions commented out below
+              // for reference/diff, per request -- not deleted.
               {
-                const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
-                  team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
-
-                // step-2 : direction 0
-                if constexpr (dim == 2)
-                  {
-                    evaluator.template values<0, true, false>(s_values, s_gradients);
-                    evaluator.template values<1, true, false>(s_gradients, s_values);
-                  }
-                else if constexpr (dim == 3)
-                  {
-                    evaluator.template values<0, true, false>(s_values, s_gradients);
-
-                    // step-3 : direction 1
-                    evaluator.template values<1, true, false>(s_gradients, s_gradients + slot);
-                    // step-4 : direction 2
-                    evaluator.template values<2, true, false>(s_gradients + slot, s_values);
-                  }
+                Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nm, nq, Number>::
+                  evaluate(team_member,
+                          s_shape_values,
+                          s_values,
+                          s_values,
+                          s_gradients,
+                          slot,
+                          c_nelmtPerBatch,
+                          threadIdx,
+                          blockSize);
               }
+
+              // Prior version, via Custom::Parallel::EvaluatorTensorProduct
+              // directly (kernels/portable_tensor_product_kernels.h), one
+              // if constexpr (dim == 2)/(dim == 3) unroll per call site:
+              //
+              // {
+              //   const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
+              //     team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
+              //
+              //   // step-2 : direction 0
+              //   if constexpr (dim == 2)
+              //     {
+              //       evaluator.template values<0, true, false>(s_values, s_gradients);
+              //       evaluator.template values<1, true, false>(s_gradients, s_values);
+              //     }
+              //   else if constexpr (dim == 3)
+              //     {
+              //       evaluator.template values<0, true, false>(s_values, s_gradients);
+              //
+              //       // step-3 : direction 1
+              //       evaluator.template values<1, true, false>(s_gradients, s_gradients + slot);
+              //       // step-4 : direction 2
+              //       evaluator.template values<2, true, false>(s_gradients + slot, s_values);
+              //     }
+              // }
 
               // Original hand-written steps 2-4 (pre-EvaluatorTensorProduct):
               //
@@ -575,34 +596,50 @@ namespace BK3Custom
                 */
 
                 // steps 7-9: integrate quad -> dof, one direction at a time
-                // in reverse order, via the same evaluator instance used for
-                // steps 2-4 above (same matrix/scratch/batch parameters
-                // throughout this element-batch iteration -- mirrors
-                // deal.II's own EvaluatorTensorProduct usage of constructing
-                // once, calling .values<direction, ...>() per direction).
-                // Original hand-written version commented out below for
-                // reference/diff, per request -- not deleted.
+                // in reverse order, via Custom::Parallel::
+                // FEEvaluationImplTransformToCollocation::integrate()
+                // (kernels/portable_evaluation_kernels.h) -- mirror of
+                // evaluate() above, same in/out/scratch routing (in == out
+                // == s_values, scratch == s_gradients). Original versions
+                // commented out below for reference/diff, per request --
+                // not deleted.
                 {
-                  const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
-                    team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
-
-                  if constexpr (dim == 2)
-                    {
-                      evaluator.template values<1, false, false>(s_values, s_gradients);
-                      evaluator.template values<0, false, false>(s_gradients, s_values);
-                    }
-                  // step-7 : direction 2
-                  if constexpr (dim == 3)
-                    {
-                      evaluator.template values<2, false, false>(s_values, s_gradients);
-
-                      // step-8 : direction 1
-                      evaluator.template values<1, false, false>(s_gradients, s_gradients + slot);
-
-                      // step-9 : direction 0
-                      evaluator.template values<0, false, false>(s_gradients + slot, s_values);
-                    }
+                  Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nm, nq, Number>::
+                    integrate(team_member,
+                             s_shape_values,
+                             s_values,
+                             s_values,
+                             s_gradients,
+                             slot,
+                             c_nelmtPerBatch,
+                             threadIdx,
+                             blockSize);
                 }
+
+                // Prior version, via Custom::Parallel::EvaluatorTensorProduct
+                // directly (kernels/portable_tensor_product_kernels.h):
+                //
+                // {
+                //   const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
+                //     team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
+                //
+                //   if constexpr (dim == 2)
+                //     {
+                //       evaluator.template values<1, false, false>(s_values, s_gradients);
+                //       evaluator.template values<0, false, false>(s_gradients, s_values);
+                //     }
+                //   // step-7 : direction 2
+                //   if constexpr (dim == 3)
+                //     {
+                //       evaluator.template values<2, false, false>(s_values, s_gradients);
+                //
+                //       // step-8 : direction 1
+                //       evaluator.template values<1, false, false>(s_gradients, s_gradients + slot);
+                //
+                //       // step-9 : direction 0
+                //       evaluator.template values<0, false, false>(s_gradients + slot, s_values);
+                //     }
+                // }
 
                 // Original hand-written steps 7-9 (pre-EvaluatorTensorProduct):
                 //
