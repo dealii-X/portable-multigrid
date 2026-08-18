@@ -329,24 +329,62 @@ namespace BK3Custom
                       const int cell_g_offset =
                         global_cell_index * symmetric_tensor_dimension * nq_total;
 
+                      // Register-cache whichever factor is invariant across
+                      // the `last` loop below, mirroring the dim == 2/3
+                      // branches' own r_p/r_q/r_r caching: for directions
+                      // d < dim - 1, idx_d = (rem / stride_d) % nq depends
+                      // only on `rem` (this thread's fixed co-dimension
+                      // index), not on `last` -- so cache the
+                      // co_shape_gradients row once here, and read s_values
+                      // fresh inside the loop (its address does depend on
+                      // `last` for these directions). For the last direction
+                      // (d == dim - 1, which coincides with the `last` loop
+                      // variable itself), it's the reverse: point_base ==
+                      // rem regardless of `last`, so the s_values row is
+                      // what's cacheable, and the co_shape_gradients row
+                      // (idx_{dim-1} == last) must be read fresh instead.
+                      int    idx[dim - 1];
+                      Number reg[dim][nq];
+
+                      for (int d = 0; d < dim - 1; ++d)
+                        {
+                          const int stride_d = Utilities::pow(nq, d);
+                          idx[d]             = (rem / stride_d) % nq;
+                        }
+
+                      // Single shared n-loop filling the whole cache
+                      // (non-last-direction co_shape_gradients rows and the
+                      // last-direction s_values row together) in one pass,
+                      // rather than one loop per direction.
+                      for (int n = 0; n < nq; ++n)
+                        {
+                          for (int d = 0; d < dim - 1; ++d)
+                            reg[d][n] = s_co_shape_gradients[n * nq + idx[d]];
+                          reg[dim - 1][n] = s_values[e * nq_total + rem + n * co_dimension_size];
+                        }
+
                       for (int last = 0; last < nq; ++last)
                         {
                           const int point = rem + last * co_dimension_size;
 
                           Number q[dim];
-                          for (int d = 0; d < dim; ++d)
+                          for (int d = 0; d < dim - 1; ++d)
                             {
                               const int stride_d   = Utilities::pow(nq, d);
-                              const int idx_d      = (point / stride_d) % nq;
-                              const int point_base = point - idx_d * stride_d;
+                              const int point_base = point - idx[d] * stride_d;
                               const int in_base    = e * nq_total + point_base;
 
                               Number q_d = 0;
                               for (int n = 0; n < nq; ++n)
-                                q_d += s_co_shape_gradients[n * nq + idx_d] *
-                                       s_values[in_base + n * stride_d];
+                                q_d += reg[d][n] * s_values[in_base + n * stride_d];
                               q[d] = q_d;
                             }
+                          {
+                            Number q_d = 0;
+                            for (int n = 0; n < nq; ++n)
+                              q_d += s_co_shape_gradients[n * nq + last] * reg[dim - 1][n];
+                            q[dim - 1] = q_d;
+                          }
 
                           // Mirrors LaplaceOperatorBK3::compute_G_tensors()'s
                           // own indexing exactly: same (d1, d2) loop nest,
@@ -496,10 +534,13 @@ namespace BK3Custom
                 //   team_member.team_barrier();
                 // }
 
-                // step-6: integrate gradients -- dimension-driven, no
-                // dim == 2/3 branching, same idiom as step-5 above. Mirrors
-                // integrate() in kernels/portable_tensor_product_kernels.h,
-                // inlined here.
+                // step-6: integrate gradients -- dimension-driven, same
+                // idiom as step-5 above, including the same register-
+                // caching structure (mirror image: the co_shape_gradients
+                // row is transposed here, [idx_d * nq + n] rather than
+                // [n * nq + idx_d], matching integrate()'s own transpose-
+                // contracted relationship to evaluate() -- see
+                // kernels/portable_tensor_product_kernels.h).
                 {
                   constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
 
@@ -508,6 +549,21 @@ namespace BK3Custom
                     {
                       const int e   = tid / co_dimension_size;
                       const int rem = tid % co_dimension_size;
+
+                      int    idx[dim - 1];
+                      Number r_shape[dim - 1][nq];
+                      Number r_grad[nq];
+
+                      for (int d = 0; d < dim - 1; ++d)
+                        {
+                          const int stride_d = Utilities::pow(nq, d);
+                          idx[d]             = (rem / stride_d) % nq;
+                          for (int n = 0; n < nq; ++n)
+                            r_shape[d][n] = s_co_shape_gradients[idx[d] * nq + n];
+                        }
+                      for (int n = 0; n < nq; ++n)
+                        r_grad[n] =
+                          s_gradients[(dim - 1) * slot + e * nq_total + rem + n * co_dimension_size];
 
                       for (int last = 0; last < nq; ++last)
                         {
@@ -522,17 +578,17 @@ namespace BK3Custom
                           // sum, though mathematically equal, rounds
                           // differently).
                           Number tmp0 = 0;
-                          for (int d = 0; d < dim; ++d)
+                          for (int d = 0; d < dim - 1; ++d)
                             {
                               const int stride_d   = Utilities::pow(nq, d);
-                              const int idx_d      = (point / stride_d) % nq;
-                              const int point_base = point - idx_d * stride_d;
+                              const int point_base = point - idx[d] * stride_d;
                               const int grad_base  = d * slot + e * nq_total + point_base;
 
                               for (int n = 0; n < nq; ++n)
-                                tmp0 += s_gradients[grad_base + n * stride_d] *
-                                        s_co_shape_gradients[idx_d * nq + n];
+                                tmp0 += s_gradients[grad_base + n * stride_d] * r_shape[d][n];
                             }
+                          for (int n = 0; n < nq; ++n)
+                            tmp0 += r_grad[n] * s_co_shape_gradients[last * nq + n];
 
                           s_values[e * nq_total + point] = tmp0;
                         }
