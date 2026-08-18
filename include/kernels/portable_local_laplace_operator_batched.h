@@ -12,32 +12,6 @@ DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-  // Batched analog of CellData (kernels/portable_local_laplace_operator.h):
-  // the per-team-batch context object cell_loop_batched_launch() below
-  // constructs once per batch and passes to its Functor -- this is what
-  // Ivan's design calls "LaplaceOperator::Data", the batched counterpart of
-  // deal.II's own Portable::MatrixFree<dim,Number>::Data
-  // (matrix_free/portable_matrix_free.h), adapted for BK3-style
-  // multi-cell-per-team batching instead of deal.II's one-cell-per-team.
-  //
-  // Deliberately a thin aggregate with no accessor methods (no
-  // get_gradient()/submit_gradient()-style API): adding those would need a
-  // team_barrier() and shared-memory round-trip between gradient evaluation
-  // and the tensor-multiply step, risking the regression root-caused during
-  // the plain BK3 unification (see the doc comment on
-  // evaluate_gradients_and_multiply_tensor() in
-  // kernels/portable_evaluation_kernels.h).
-  //
-  // shape_values/co_shape_gradients point into the launching kernel's own
-  // shared-memory staging copies (mirroring
-  // BK3Custom::Parallel::KokkosKernel's s_shape_values/
-  // s_co_shape_gradients) -- reused across every batch a team processes, so
-  // staging once per team, not once per batch, matters for performance.
-  // G_tensor/dof_indices, by contrast, are real global-memory Views (the
-  // BK3-style precomputed geometric tensor and LaplaceOperator's own
-  // dof_indices_per_color[color]), read directly exactly as
-  // evaluate_gradients_and_multiply_tensor()/read_dof_values()/
-  // distribute_local_to_global() already expect.
   template <int dim, typename Number>
   struct LaplaceOperatorBatchData
   {
@@ -65,20 +39,6 @@ namespace Portable
     const int quad_size_per_batch;
   };
 
-
-
-  // Batched analog of LocalLaplaceOperator
-  // (kernels/portable_local_laplace_operator.h): a Functor whose operator()
-  // runs BK3::Parallel::KokkosKernel's steps 1-10 for one cell batch, built
-  // entirely from the abstractions in kernels/portable_evaluation_kernels.h
-  // -- read_dof_values()/distribute_local_to_global() for steps 1/10, and
-  // one FEEvaluationImplTransformToCollocation instance per batch for steps
-  // 2-9 (evaluate_values(), evaluate_gradients_and_multiply_tensor(),
-  // integrate_gradients(), integrate_values()). Mirrors
-  // BK3Custom::Parallel::KokkosKernel's per-batch body exactly, just
-  // factored out into a Functor so cell_loop_batched_launch() below stays
-  // generic -- the same split ApplyCellKernel/LocalLaplaceOperator provide
-  // for the unbatched cell_loop().
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
   class LocalLaplaceOperatorBatched
   {
@@ -89,8 +49,8 @@ namespace Portable
 
     DEAL_II_HOST_DEVICE void
     operator()(const LaplaceOperatorBatchData<dim, Number> *data,
-              const Custom::Parallel::DeviceView<Number>  &src,
-              Custom::Parallel::DeviceView<Number>        &dst) const;
+               const Custom::Parallel::DeviceView<Number>  &src,
+               Custom::Parallel::DeviceView<Number>        &dst) const;
   };
 
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
@@ -100,41 +60,42 @@ namespace Portable
     const Custom::Parallel::DeviceView<Number>  &src,
     Custom::Parallel::DeviceView<Number>        &dst) const
   {
-    const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim,
-                                                                    n_local_dofs_1d,
-                                                                    n_q_points_1d,
-                                                                    Number>
-      fe_eval(data->team_member,
-              data->shape_values,
-              data->co_shape_gradients,
-              data->c_nelmtPerBatch,
-              data->threadIdx,
-              data->blockSize);
+    const Custom::Parallel::
+      FEEvaluationImplTransformToCollocation<dim, n_local_dofs_1d, n_q_points_1d, Number>
+        fe_eval(data->team_member,
+                data->shape_values,
+                data->co_shape_gradients,
+                data->c_nelmtPerBatch,
+                data->threadIdx,
+                data->blockSize);
 
     Custom::Parallel::read_dof_values<dim, n_local_dofs_1d>(data->team_member,
-                                                             src,
-                                                             data->dof_indices,
-                                                             data->values,
-                                                             data->eb,
-                                                             data->nelmtPerBatch,
-                                                             data->cell_range_ids,
-                                                             data->c_nelmtPerBatch,
-                                                             data->threadIdx,
-                                                             data->blockSize);
+                                                            src,
+                                                            data->dof_indices,
+                                                            data->values,
+                                                            data->eb,
+                                                            data->nelmtPerBatch,
+                                                            data->cell_range_ids,
+                                                            data->c_nelmtPerBatch,
+                                                            data->threadIdx,
+                                                            data->blockSize);
 
     fe_eval.evaluate_values(data->values, data->values, data->gradients, data->quad_size_per_batch);
 
-    fe_eval.evaluate_gradients_and_multiply_tensor(data->G_tensor,
-                                                   data->eb,
-                                                   data->nelmtPerBatch,
-                                                   data->cell_range_ids,
-                                                   data->values,
-                                                   data->gradients,
-                                                   data->quad_size_per_batch);
+    fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(data->G_tensor,
+                                                             data->eb,
+                                                             data->nelmtPerBatch,
+                                                             data->cell_range_ids,
+                                                             data->values,
+                                                             data->gradients,
+                                                             data->quad_size_per_batch);
 
     fe_eval.integrate_gradients(data->gradients, data->quad_size_per_batch, data->values);
 
-    fe_eval.integrate_values(data->values, data->values, data->gradients, data->quad_size_per_batch);
+    fe_eval.integrate_values(data->values,
+                             data->values,
+                             data->gradients,
+                             data->quad_size_per_batch);
 
     Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(data->team_member,
                                                                        data->values,
@@ -151,18 +112,6 @@ namespace Portable
 
 
   // Batched analog of internal::ApplyCellKernel's role
-  // (kernels/portable_local_laplace_operator.h) -- but, since the batch
-  // size (nelmtPerBatch) is itself computed from a shared-memory budget on
-  // the host (mirroring BK3Custom::Parallel::KokkosKernel exactly; unlike
-  // deal.II's own per-cell team_shmem_size() callback, there is no fixed
-  // per-cell shared memory footprint to report ahead of picking a batch
-  // size), this stays a free function launching a KOKKOS_LAMBDA directly,
-  // like BK3Custom::Parallel::KokkosKernel, rather than a
-  // team_shmem_size()-based functor struct like ApplyCellKernel. Generic
-  // over Functor (LocalLaplaceOperatorBatched above) so this launcher
-  // itself carries no Laplace-specific math -- mirroring
-  // ApplyCellKernel/LocalLaplaceOperator's own split for the unbatched
-  // cell_loop().
   template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
   void
   cell_loop_batched_launch(
@@ -174,7 +123,7 @@ namespace Portable
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
     const unsigned int                       n_blocks          = numbers::invalid_unsigned_int,
     const unsigned int                       threads_per_block = numbers::invalid_unsigned_int,
-    const Custom::Parallel::CellRangeIdView &cell_range_ids    = Custom::Parallel::CellRangeIdView())
+    const Custom::Parallel::CellRangeIdView &cell_range_ids = Custom::Parallel::CellRangeIdView())
   {
     const int nelmt = precomputed_data.n_cells;
     if (nelmt == 0)
@@ -195,29 +144,31 @@ namespace Portable
     const int nelmtPerBatch =
       std::max(1, static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)));
 
-    const int numBlocks =
-      std::max(1,
-              ((n_blocks == numbers::invalid_unsigned_int) ?
-                 ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
-                 static_cast<int>(n_blocks)));
+    const int numBlocks = std::max(1,
+                                   ((n_blocks == numbers::invalid_unsigned_int) ?
+                                      ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
+                                      static_cast<int>(n_blocks)));
 
     const int threadsPerBlock =
       std::max(1,
-              ((threads_per_block == numbers::invalid_unsigned_int) ?
-                 (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
-                 static_cast<int>(threads_per_block)));
+               ((threads_per_block == numbers::invalid_unsigned_int) ?
+                  (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
+                  static_cast<int>(threads_per_block)));
 
-    const Custom::Parallel::DeviceView<Number> src_device(src.get_values(), src.locally_owned_size());
-    const Custom::Parallel::DeviceView<Number> dst_device(dst.get_values(), dst.locally_owned_size());
+    const Custom::Parallel::DeviceView<Number> src_device(src.get_values(),
+                                                          src.locally_owned_size());
+    const Custom::Parallel::DeviceView<Number> dst_device(dst.get_values(),
+                                                          dst.locally_owned_size());
 
     const Kokkos::View<Number *, MemorySpace::Default::kokkos_space> shape_values_global =
       precomputed_data.shape_values;
     const Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients_global =
       precomputed_data.co_shape_gradients;
 
-    const int ssize = n_1d * n_q_points_1d +                       // shape values
-                      n_q_points_1d * n_q_points_1d +              // co-shape gradients
-                      n_scratch_arrays * nelmtPerBatch * nq_total; // values slot + dim gradients-pool slots
+    const int ssize =
+      n_1d * n_q_points_1d +                       // shape values
+      n_q_points_1d * n_q_points_1d +              // co-shape gradients
+      n_scratch_arrays * nelmtPerBatch * nq_total; // values slot + dim gradients-pool slots
 
     const unsigned int shmem_size = ssize * sizeof(Number);
 

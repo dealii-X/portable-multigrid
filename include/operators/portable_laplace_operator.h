@@ -593,14 +593,6 @@ namespace Portable
       }
   }
 
-
-  // Precomputes the BK3-style symmetric geometric factor tensor
-  // G = J^-1 . J^-T . JxW per cell/quadrature point, consumed by
-  // cell_loop_batched()'s LocalLaplaceOperatorBatched functor via
-  // evaluate_gradients_and_multiply_tensor(). Identical to
-  // LaplaceOperatorBK3::compute_G_tensors() (duplicated rather than shared,
-  // matching how setup_dof_indices_per_color() is already duplicated
-  // between the two operator classes).
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::compute_G_tensors()

@@ -142,13 +142,13 @@ namespace BK3Custom
 
                 fe_eval.evaluate_values(s_values, s_values, s_gradients, quad_size_per_batch);
 
-                fe_eval.evaluate_gradients_and_multiply_tensor(d_G,
-                                                               eb,
-                                                               nelmtPerBatch,
-                                                               cell_range_ids,
-                                                               s_values,
-                                                               s_gradients,
-                                                               quad_size_per_batch);
+                fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(d_G,
+                                                                         eb,
+                                                                         nelmtPerBatch,
+                                                                         cell_range_ids,
+                                                                         s_values,
+                                                                         s_gradients,
+                                                                         quad_size_per_batch);
 
                 fe_eval.integrate_gradients(s_gradients, quad_size_per_batch, s_values);
 
