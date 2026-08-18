@@ -12,13 +12,14 @@
 #include "kernels/portable_tensor_product_kernels.h"
 
 // Structural twin of BK3::Parallel::KokkosKernel (bk3_kokkos_kernel.h),
-// composed from the generic building blocks in kernels/portable_tensor_product_kernels.h instead of
-// ten hand-written steps. Kept in its own file/namespace, alongside the
-// original, so the two can be run side by side and diffed for correctness
-// before anything switches over to this version -- see the discussion in
-// the unify-kernels session about factoring the sum-factorization logic
-// shared across include/kernels/ into a small number of generic,
-// GPU-batched primitives.
+// composed from the generic building blocks in
+// kernels/portable_tensor_product_kernels.h and
+// kernels/portable_evaluation_kernels.h instead of ten hand-written steps.
+// Kept in its own file/namespace, alongside the original, so the two can be
+// run side by side and diffed for correctness before anything switches over
+// to this version -- see the discussion in the unify-kernels session about
+// factoring the sum-factorization logic shared across include/kernels/ into
+// a small number of generic, GPU-batched primitives.
 //
 // Shared memory is organized as two pools instead of BK3's four named,
 // individually-aliased buffers: a single "values" slot (nelmtPerBatch *
@@ -33,9 +34,20 @@
 // and one fewer (3) for dim == 2, since BK3's own 4-slot budget is sized
 // for the dim == 3 case regardless of dim.
 //
-// Steps 1 (copy-in) and 10 (scatter) keep BK3::Parallel::KokkosKernel's
-// logic verbatim, just reading/writing whichever pool slot the surrounding
-// sequence puts the live data in.
+// Every one of the ten steps is now a call into
+// kernels/portable_evaluation_kernels.h: steps 1/10 (dof gather/scatter) are
+// the free functions Custom::Parallel::read_dof_values()/
+// distribute_local_to_global(); steps 2-4/7-9 (dof<->quad transform) and
+// steps 5-6 (collocated gradient + geometric-tensor multiply) are all
+// methods (evaluate_values()/integrate_values()/evaluate_gradients()/
+// evaluate_gradients_and_multiply_tensor()/integrate_gradients()) on a
+// single Custom::Parallel::FEEvaluationImplTransformToCollocation instance
+// (`fe_eval` below), constructed once per element-batch iteration -- the
+// values/gradients naming split mirrors deal.II's own FEEvaluation
+// convention. No step is inline/hand-written in this file anymore -- the
+// entire kernel body is dimension-generic (no dim == 2/3 branching
+// anywhere), and every prior inline/hand-written version is kept as a
+// `//`-commented reference block directly below its call site.
 DEAL_II_NAMESPACE_OPEN
 
 namespace BK3Custom
@@ -67,7 +79,6 @@ namespace BK3Custom
         return;
 
       constexpr int nq_total = Utilities::pow(nq, dim);
-      constexpr int nm_total = Utilities::pow(nm, dim);
 
       // finding the batch size
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
@@ -135,7 +146,7 @@ namespace BK3Custom
             Number *s_values    = s_co_shape_gradients + nq * nq;
             Number *s_gradients = s_values + nelmtPerBatch * nq_total;
 
-            const int slot = nelmtPerBatch * nq_total;
+            const int quad_size_per_batch = nelmtPerBatch * nq_total;
 
             const int threadIdx = team_member.team_rank();
             const int blockSize = team_member.team_size();
@@ -167,54 +178,39 @@ namespace BK3Custom
                                               (nelmt - eb * nelmtPerBatch) :
                                               nelmtPerBatch;
 
-                {
-                  // step-1 : Copy from in to the scratch values -- dimension-
-                  // driven, no dim == 2/3 branching: `co_dimension_size =
-                  // nm^(dim-1)` fixes one point in the (dim-1)-dimensional
-                  // co-dim plane spanned by every axis but the last (`rem`),
-                  // and the thread loops over the last axis in registers
-                  // (`last`), exactly the same "rem + last * co_dimension_size"
-                  // flat-index idiom evaluate()/evaluate_and_multiply_tensor()/
-                  // integrate() use in kernels/portable_tensor_product_kernels.h
-                  // -- verified to compute the identical local_idx values the
-                  // former dim == 2 (`j * nm + i`) / dim == 3
-                  // (`k * nm * nm + j * nm + i`) branches did.
-                  {
-                    constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                // Single instance for steps 2-9 below (matrix, scratch, and
+                // the batching parameters are the same throughout this
+                // element-batch iteration): holds s_shape_values (used by
+                // evaluate_values()/integrate_values(), steps 2-4/7-9) and
+                // s_co_shape_gradients (used by evaluate_gradients_and_
+                // multiply_tensor()/integrate_gradients(), steps 5-6) as
+                // members, mirroring deal.II's own EvaluatorTensorProduct
+                // usage of constructing once, calling per-step methods
+                // repeatedly.
+                const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nm, nq, Number>
+                  fe_eval(team_member,
+                          s_shape_values,
+                          s_co_shape_gradients,
+                          c_nelmtPerBatch,
+                          threadIdx,
+                          blockSize);
 
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                         tid += blockSize)
-                      {
-                        const int e   = tid / co_dimension_size;
-                        const int rem = tid % co_dimension_size;
+                // step-1 : Copy from in to the scratch values -- folded
+                // into its own kernel, Custom::Parallel::read_dof_values()
+                // in kernels/portable_evaluation_kernels.h. Prior inline
+                // version commented below for reference/diff.
+                Custom::Parallel::read_dof_values<dim, nm>(team_member,
+                                                           d_in,
+                                                           dof_indices,
+                                                           s_values,
+                                                           eb,
+                                                           nelmtPerBatch,
+                                                           cell_range_ids,
+                                                           c_nelmtPerBatch,
+                                                           threadIdx,
+                                                           blockSize);
 
-                        unsigned int global_cell_index = eb * nelmtPerBatch + e;
-
-                        if (cell_range_ids.size() > 0)
-                          global_cell_index = cell_range_ids(global_cell_index);
-
-                        for (int last = 0; last < nm; ++last)
-                          {
-                            const int local_idx = rem + last * co_dimension_size;
-
-                            // Fetch the global DoF index
-                            const unsigned int dof_index =
-                              dof_indices(local_idx, global_cell_index);
-
-                            // The index in the batched shared memory array
-                            const int shared_idx = e * nm_total + local_idx;
-
-                            if (dof_index == numbers::invalid_unsigned_int)
-                              s_values[shared_idx] = 0;
-                            else
-                              s_values[shared_idx] = d_in[dof_index];
-                          }
-                      }
-                  }
-                  team_member.team_barrier();
-                }
-
-                // Prior version, dim == 2/dim == 3 branched:
+                // Prior version, folded inline here:
                 //
                 // {
                 //   constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
@@ -222,55 +218,35 @@ namespace BK3Custom
                 //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
                 //        tid += blockSize)
                 //     {
-                //       const int e = tid / co_dimension_size;
+                //       const int e   = tid / co_dimension_size;
+                //       const int rem = tid % co_dimension_size;
                 //
                 //       unsigned int global_cell_index = eb * nelmtPerBatch + e;
                 //
                 //       if (cell_range_ids.size() > 0)
                 //         global_cell_index = cell_range_ids(global_cell_index);
                 //
-                //       if (dim == 2)
+                //       for (int last = 0; last < nm; ++last)
                 //         {
-                //           const int i = tid % nm;
+                //           const int local_idx = rem + last * co_dimension_size;
                 //
-                //           for (int j = 0; j < nm; ++j)
-                //             {
-                //               const int local_idx = j * nm + i;
-                //               const unsigned int dof_index =
-                //                 dof_indices(local_idx, global_cell_index);
-                //               const int shared_idx = e * nm_total + local_idx;
+                //           const unsigned int dof_index =
+                //             dof_indices(local_idx, global_cell_index);
+                //           const int shared_idx = e * nm_total + local_idx;
                 //
-                //               if (dof_index == numbers::invalid_unsigned_int)
-                //                 s_values[shared_idx] = 0;
-                //               else
-                //                 s_values[shared_idx] = d_in[dof_index];
-                //             }
-                //         }
-                //       else if (dim == 3)
-                //         {
-                //           const int j = (tid % co_dimension_size) / nm;
-                //           const int i = tid % nm;
-                //
-                //           for (int k = 0; k < nm; ++k)
-                //             {
-                //               const int local_idx = k * nm * nm + j * nm + i;
-                //               const unsigned int dof_index =
-                //                 dof_indices(local_idx, global_cell_index);
-                //               const int shared_idx = e * nm_total + local_idx;
-                //
-                //               if (dof_index == numbers::invalid_unsigned_int)
-                //                 s_values[shared_idx] = 0;
-                //               else
-                //                 s_values[shared_idx] = d_in[dof_index];
-                //             }
+                //           if (dof_index == numbers::invalid_unsigned_int)
+                //             s_values[shared_idx] = 0;
+                //           else
+                //             s_values[shared_idx] = d_in[dof_index];
                 //         }
                 //     }
+                //   team_member.team_barrier();
                 // }
 
                 // steps 2-4: interpolate dof -> quad, one direction at a
-                // time, via Custom::Parallel::
-                // FEEvaluationImplTransformToCollocation::evaluate()
-                // (kernels/portable_evaluation_kernels.h), BK3's counterpart
+                // time, via fe_eval.evaluate_values()
+                // (Custom::Parallel::FEEvaluationImplTransformToCollocation,
+                // kernels/portable_evaluation_kernels.h), BK3's counterpart
                 // of deal.II's own struct of the same name. Replaces the
                 // per-direction if constexpr (dim == 2)/(dim == 3) unroll
                 // below (itself already verified bit-identical via
@@ -282,143 +258,114 @@ namespace BK3Custom
                 // first (dim == 2) or first two (dim == 3) slots as
                 // intermediate storage. Original versions commented out below
                 // for reference/diff, per request -- not deleted.
-                {
-                  Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nm, nq, Number>::
-                    evaluate(team_member,
-                             s_shape_values,
-                             s_values,
-                             s_values,
-                             s_gradients,
-                             slot,
-                             c_nelmtPerBatch,
-                             threadIdx,
-                             blockSize);
-                }
+                fe_eval.evaluate_values(s_values, s_values, s_gradients, quad_size_per_batch);
                 // step-5: evaluate gradients and apply geometric factors --
-                // dimension-driven, no dim == 2/3 branching. Same "rem +
-                // last * co_dimension_size" point-flattening idiom as
-                // evaluate_and_multiply_tensor() in
-                // kernels/portable_tensor_product_kernels.h -- inlined here
-                // rather than calling that function (for now -- see the
-                // unify-kernels session), so this kernel keeps applying its
-                // own cell_range_ids remapping to d_G, which
-                // evaluate_and_multiply_tensor() deliberately doesn't
-                // support (see its doc comment). Reads "the values" from
-                // s_values (now always where steps 2-4 leave them,
-                // regardless of dim) and writes all dim directional-
-                // derivative-times-geometric-tensor components into the
-                // s_gradients pool. Algebraically verified against the
-                // dim == 2/dim == 3 branches below for dim == 2; dim == 3
-                // shares the same body evaluate_and_multiply_tensor()'s own
-                // bisection/correctness testing already covered.
-                {
-                  constexpr int co_dimension_size          = Utilities::pow(nq, dim - 1);
-                  constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
+                // dimension-driven, no dim == 2/3 branching. Folded into its
+                // own kernel, fe_eval.evaluate_gradients_and_multiply_tensor()
+                // (Custom::Parallel::FEEvaluationImplTransformToCollocation,
+                // kernels/portable_evaluation_kernels.h), which supports
+                // this kernel's own cell_range_ids remapping for d_G
+                // (passed through here via eb/nelmtPerBatch/cell_range_ids)
+                // and carries the same register-caching this kernel's own
+                // inline version had (see that method's doc comment for the
+                // caching rationale). Reads "the values" from s_values (now
+                // always where steps 2-4 leave them, regardless of dim) and
+                // writes all dim directional-derivative-times-geometric-
+                // tensor components into the s_gradients pool.
+                // Bit-identical against BK3::Parallel::KokkosKernel
+                // confirmed via
+                // correctness_tests/check_correctness_common_kernels/, and
+                // at or ahead of it in JUPITER timings up to 269.7M dofs.
+                fe_eval.evaluate_gradients_and_multiply_tensor(
+                  d_G, eb, nelmtPerBatch, cell_range_ids, s_values, s_gradients, quad_size_per_batch);
 
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e   = tid / co_dimension_size;
-                      const int rem = tid % co_dimension_size;
+                // Prior version, folded inline here (now
+                // Custom::Parallel::evaluate_gradients_and_multiply_tensor()
+                // in kernels/portable_evaluation_kernels.h instead):
+                //
+                // {
+                //   constexpr int co_dimension_size          = Utilities::pow(nq, dim - 1);
+                //   constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
+                //
+                //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //        tid += blockSize)
+                //     {
+                //       const int e   = tid / co_dimension_size;
+                //       const int rem = tid % co_dimension_size;
+                //
+                //       unsigned int global_cell_index = eb * nelmtPerBatch + e;
+                //
+                //       if (cell_range_ids.size() > 0)
+                //         global_cell_index = cell_range_ids(global_cell_index);
+                //
+                //       const int cell_g_offset =
+                //         global_cell_index * symmetric_tensor_dimension * nq_total;
+                //
+                //       int    idx[dim - 1];
+                //       Number reg[dim][nq];
+                //
+                //       for (int d = 0; d < dim - 1; ++d)
+                //         {
+                //           const int stride_d = Utilities::pow(nq, d);
+                //           idx[d]             = (rem / stride_d) % nq;
+                //         }
+                //
+                //       for (int n = 0; n < nq; ++n)
+                //         {
+                //           for (int d = 0; d < dim - 1; ++d)
+                //             reg[d][n] = s_co_shape_gradients[n * nq + idx[d]];
+                //           reg[dim - 1][n] = s_values[e * nq_total + rem + n * co_dimension_size];
+                //         }
+                //
+                //       for (int last = 0; last < nq; ++last)
+                //         {
+                //           const int point = rem + last * co_dimension_size;
+                //
+                //           Number q[dim];
+                //           for (int d = 0; d < dim - 1; ++d)
+                //             {
+                //               const int stride_d   = Utilities::pow(nq, d);
+                //               const int point_base = point - idx[d] * stride_d;
+                //               const int in_base    = e * nq_total + point_base;
+                //
+                //               Number q_d = 0;
+                //               for (int n = 0; n < nq; ++n)
+                //                 q_d += reg[d][n] * s_values[in_base + n * stride_d];
+                //               q[d] = q_d;
+                //             }
+                //           {
+                //             Number q_d = 0;
+                //             for (int n = 0; n < nq; ++n)
+                //               q_d += s_co_shape_gradients[n * nq + last] * reg[dim - 1][n];
+                //             q[dim - 1] = q_d;
+                //           }
+                //
+                //           Number G[dim][dim];
+                //           int    component_index = 0;
+                //           for (int d1 = 0; d1 < dim; ++d1)
+                //             for (int d2 = d1; d2 < dim; ++d2)
+                //               {
+                //                 const Number value =
+                //                   d_G[cell_g_offset + component_index * nq_total + point];
+                //                 G[d1][d2] = value;
+                //                 G[d2][d1] = value;
+                //                 ++component_index;
+                //               }
+                //
+                //           for (int d1 = 0; d1 < dim; ++d1)
+                //             {
+                //               Number out = 0;
+                //               for (int d2 = 0; d2 < dim; ++d2)
+                //                 out += G[d1][d2] * q[d2];
+                //
+                //               s_gradients[d1 * slot + e * nq_total + point] = out;
+                //             }
+                //         }
+                //     }
+                //   team_member.team_barrier();
+                // }
 
-                      unsigned int global_cell_index = eb * nelmtPerBatch + e;
-
-                      if (cell_range_ids.size() > 0)
-                        global_cell_index = cell_range_ids(global_cell_index);
-
-                      const int cell_g_offset =
-                        global_cell_index * symmetric_tensor_dimension * nq_total;
-
-                      // Register-cache whichever factor is invariant across
-                      // the `last` loop below, mirroring the dim == 2/3
-                      // branches' own r_p/r_q/r_r caching: for directions
-                      // d < dim - 1, idx_d = (rem / stride_d) % nq depends
-                      // only on `rem` (this thread's fixed co-dimension
-                      // index), not on `last` -- so cache the
-                      // co_shape_gradients row once here, and read s_values
-                      // fresh inside the loop (its address does depend on
-                      // `last` for these directions). For the last direction
-                      // (d == dim - 1, which coincides with the `last` loop
-                      // variable itself), it's the reverse: point_base ==
-                      // rem regardless of `last`, so the s_values row is
-                      // what's cacheable, and the co_shape_gradients row
-                      // (idx_{dim-1} == last) must be read fresh instead.
-                      int    idx[dim - 1];
-                      Number reg[dim][nq];
-
-                      for (int d = 0; d < dim - 1; ++d)
-                        {
-                          const int stride_d = Utilities::pow(nq, d);
-                          idx[d]             = (rem / stride_d) % nq;
-                        }
-
-                      // Single shared n-loop filling the whole cache
-                      // (non-last-direction co_shape_gradients rows and the
-                      // last-direction s_values row together) in one pass,
-                      // rather than one loop per direction.
-                      for (int n = 0; n < nq; ++n)
-                        {
-                          for (int d = 0; d < dim - 1; ++d)
-                            reg[d][n] = s_co_shape_gradients[n * nq + idx[d]];
-                          reg[dim - 1][n] = s_values[e * nq_total + rem + n * co_dimension_size];
-                        }
-
-                      for (int last = 0; last < nq; ++last)
-                        {
-                          const int point = rem + last * co_dimension_size;
-
-                          Number q[dim];
-                          for (int d = 0; d < dim - 1; ++d)
-                            {
-                              const int stride_d   = Utilities::pow(nq, d);
-                              const int point_base = point - idx[d] * stride_d;
-                              const int in_base    = e * nq_total + point_base;
-
-                              Number q_d = 0;
-                              for (int n = 0; n < nq; ++n)
-                                q_d += reg[d][n] * s_values[in_base + n * stride_d];
-                              q[d] = q_d;
-                            }
-                          {
-                            Number q_d = 0;
-                            for (int n = 0; n < nq; ++n)
-                              q_d += s_co_shape_gradients[n * nq + last] * reg[dim - 1][n];
-                            q[dim - 1] = q_d;
-                          }
-
-                          // Mirrors LaplaceOperatorBK3::compute_G_tensors()'s
-                          // own indexing exactly: same (d1, d2) loop nest,
-                          // same running `component_index` counter (there
-                          // named `idx`) instead of a closed-form formula --
-                          // correct by construction, since it enumerates the
-                          // packed upper-triangular components in the same
-                          // order they were written in.
-                          Number G[dim][dim];
-                          int    component_index = 0;
-                          for (int d1 = 0; d1 < dim; ++d1)
-                            for (int d2 = d1; d2 < dim; ++d2)
-                              {
-                                const Number value =
-                                  d_G[cell_g_offset + component_index * nq_total + point];
-                                G[d1][d2] = value;
-                                G[d2][d1] = value;
-                                ++component_index;
-                              }
-
-                          for (int d1 = 0; d1 < dim; ++d1)
-                            {
-                              Number out = 0;
-                              for (int d2 = 0; d2 < dim; ++d2)
-                                out += G[d1][d2] * q[d2];
-
-                              s_gradients[d1 * slot + e * nq_total + point] = out;
-                            }
-                        }
-                    }
-                  team_member.team_barrier();
-                }
-
-                // Prior version, dim == 2/dim == 3 branched:
+                // Original hand-written, dim == 2/dim == 3 branched:
                 //
                 // {
                 //   constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
@@ -534,69 +481,69 @@ namespace BK3Custom
                 //   team_member.team_barrier();
                 // }
 
-                // step-6: integrate gradients -- dimension-driven, same
-                // idiom as step-5 above, including the same register-
-                // caching structure (mirror image: the co_shape_gradients
-                // row is transposed here, [idx_d * nq + n] rather than
-                // [n * nq + idx_d], matching integrate()'s own transpose-
-                // contracted relationship to evaluate() -- see
-                // kernels/portable_tensor_product_kernels.h).
-                {
-                  constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
+                // step-6: integrate gradients -- dimension-driven, folded
+                // into its own kernel, fe_eval.integrate_gradients()
+                // (Custom::Parallel::FEEvaluationImplTransformToCollocation,
+                // kernels/portable_evaluation_kernels.h), which carries the
+                // same register-caching this kernel's own inline version
+                // had. Bit-identical against BK3::Parallel::KokkosKernel
+                // confirmed via
+                // correctness_tests/check_correctness_common_kernels/, and
+                // at or ahead of it in JUPITER timings up to 269.7M dofs.
+                fe_eval.integrate_gradients(s_gradients, quad_size_per_batch, s_values);
 
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e   = tid / co_dimension_size;
-                      const int rem = tid % co_dimension_size;
+                // Prior version, folded inline here (now
+                // Custom::Parallel::integrate_gradients() in
+                // kernels/portable_evaluation_kernels.h instead):
+                //
+                // {
+                //   constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
+                //
+                //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //        tid += blockSize)
+                //     {
+                //       const int e   = tid / co_dimension_size;
+                //       const int rem = tid % co_dimension_size;
+                //
+                //       int    idx[dim - 1];
+                //       Number r_shape[dim - 1][nq];
+                //       Number r_grad[nq];
+                //
+                //       for (int d = 0; d < dim - 1; ++d)
+                //         {
+                //           const int stride_d = Utilities::pow(nq, d);
+                //           idx[d]             = (rem / stride_d) % nq;
+                //           for (int n = 0; n < nq; ++n)
+                //             r_shape[d][n] = s_co_shape_gradients[idx[d] * nq + n];
+                //         }
+                //       for (int n = 0; n < nq; ++n)
+                //         r_grad[n] = s_gradients[(dim - 1) * slot + e * nq_total + rem +
+                //                                 n * co_dimension_size];
+                //
+                //       for (int last = 0; last < nq; ++last)
+                //         {
+                //           const int point = rem + last * co_dimension_size;
+                //
+                //           Number tmp0 = 0;
+                //           for (int d = 0; d < dim - 1; ++d)
+                //             {
+                //               const int stride_d   = Utilities::pow(nq, d);
+                //               const int point_base = point - idx[d] * stride_d;
+                //               const int grad_base  = d * slot + e * nq_total + point_base;
+                //
+                //               for (int n = 0; n < nq; ++n)
+                //                 tmp0 += s_gradients[grad_base + n * stride_d] * r_shape[d][n];
+                //             }
+                //           for (int n = 0; n < nq; ++n)
+                //             tmp0 += r_grad[n] * s_co_shape_gradients[last * nq + n];
+                //
+                //           s_values[e * nq_total + point] = tmp0;
+                //         }
+                //     }
+                //   team_member.team_barrier();
+                // }
 
-                      int    idx[dim - 1];
-                      Number r_shape[dim - 1][nq];
-                      Number r_grad[nq];
-
-                      for (int d = 0; d < dim - 1; ++d)
-                        {
-                          const int stride_d = Utilities::pow(nq, d);
-                          idx[d]             = (rem / stride_d) % nq;
-                          for (int n = 0; n < nq; ++n)
-                            r_shape[d][n] = s_co_shape_gradients[idx[d] * nq + n];
-                        }
-                      for (int n = 0; n < nq; ++n)
-                        r_grad[n] =
-                          s_gradients[(dim - 1) * slot + e * nq_total + rem + n * co_dimension_size];
-
-                      for (int last = 0; last < nq; ++last)
-                        {
-                          const int point = rem + last * co_dimension_size;
-
-                          // Accumulates directly into tmp0 across all (d, n)
-                          // pairs -- not via a per-direction partial sum
-                          // added to tmp0 afterwards -- to match the
-                          // dim == 2/3 branches' own flat accumulation order
-                          // bit-for-bit (floating-point addition isn't
-                          // associative, so a per-direction intermediate
-                          // sum, though mathematically equal, rounds
-                          // differently).
-                          Number tmp0 = 0;
-                          for (int d = 0; d < dim - 1; ++d)
-                            {
-                              const int stride_d   = Utilities::pow(nq, d);
-                              const int point_base = point - idx[d] * stride_d;
-                              const int grad_base  = d * slot + e * nq_total + point_base;
-
-                              for (int n = 0; n < nq; ++n)
-                                tmp0 += s_gradients[grad_base + n * stride_d] * r_shape[d][n];
-                            }
-                          for (int n = 0; n < nq; ++n)
-                            tmp0 += r_grad[n] * s_co_shape_gradients[last * nq + n];
-
-                          s_values[e * nq_total + point] = tmp0;
-                        }
-                    }
-                  team_member.team_barrier();
-                }
-
-                // Prior version, dim == 2/dim == 3 branched:
+                // Original hand-written, dim == 2/dim == 3 branched:
                 //
                 // {
                 //   constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
@@ -669,110 +616,65 @@ namespace BK3Custom
                 */
 
                 // steps 7-9: integrate quad -> dof, one direction at a time
-                // in reverse order, via Custom::Parallel::
-                // FEEvaluationImplTransformToCollocation::integrate()
-                // (kernels/portable_evaluation_kernels.h) -- mirror of
-                // evaluate() above, same in/out/scratch routing (in == out
-                // == s_values, scratch == s_gradients). Original versions
-                // commented out below for reference/diff, per request --
-                // not deleted.
-                {
-                  Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nm, nq, Number>::
-                    integrate(team_member,
-                              s_shape_values,
-                              s_values,
-                              s_values,
-                              s_gradients,
-                              slot,
-                              c_nelmtPerBatch,
-                              threadIdx,
-                              blockSize);
-                }
+                // in reverse order, via fe_eval.integrate_values()
+                // (Custom::Parallel::FEEvaluationImplTransformToCollocation,
+                // kernels/portable_evaluation_kernels.h) -- mirror of
+                // evaluate_values() above, same in/out/scratch routing
+                // (in == out == s_values, scratch == s_gradients). Original
+                // versions commented out below for reference/diff, per
+                // request -- not deleted.
+                fe_eval.integrate_values(s_values, s_values, s_gradients, quad_size_per_batch);
 
                 // step-10 : Copy s_values (result) back to global out vector
-                // -- dimension-driven, same "rem + last * co_dimension_size"
-                // idiom as step-1 above (see its comment).
-                {
-                  constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                // -- folded into its own kernel,
+                // Custom::Parallel::distribute_local_to_global() in
+                // kernels/portable_evaluation_kernels.h. Prior inline
+                // version commented below for reference/diff.
+                Custom::Parallel::distribute_local_to_global<dim, nm>(team_member,
+                                                                      s_values,
+                                                                      d_out,
+                                                                      dof_indices,
+                                                                      eb,
+                                                                      nelmtPerBatch,
+                                                                      cell_range_ids,
+                                                                      c_nelmtPerBatch,
+                                                                      threadIdx,
+                                                                      blockSize);
 
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e   = tid / co_dimension_size;
-                      const int rem = tid % co_dimension_size;
-
-                      unsigned int global_cell_index = eb * nelmtPerBatch + e;
-
-                      if (cell_range_ids.size() > 0)
-                        global_cell_index = cell_range_ids(global_cell_index);
-
-                      for (int last = 0; last < nm; ++last)
-                        {
-                          const int local_idx = rem + last * co_dimension_size;
-
-                          // Find where this node lives in the global 'd_out'
-                          // vector
-                          const unsigned int dof_index = dof_indices(local_idx, global_cell_index);
-
-                          // The index in our batched shared memory result
-                          const int shared_idx = e * nm_total + local_idx;
-
-                          if (dof_index != numbers::invalid_unsigned_int)
-                            {
-                              // CRITICAL: Use atomic_add because elements share
-                              // nodes!
-                              Kokkos::atomic_add(&d_out[dof_index], s_values[shared_idx]);
-                            }
-                        }
-                    }
-
-                  // Prior version, dim == 2/dim == 3 branched:
-                  //
-                  // for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                  //      tid += blockSize)
-                  //   {
-                  //     const int e = tid / co_dimension_size;
-                  //
-                  //     unsigned int global_cell_index = eb * nelmtPerBatch + e;
-                  //
-                  //     if (cell_range_ids.size() > 0)
-                  //       global_cell_index = cell_range_ids(global_cell_index);
-                  //
-                  //     if (dim == 2)
-                  //       {
-                  //         const int i = tid % nm;
-                  //
-                  //         for (int j = 0; j < nm; ++j)
-                  //           {
-                  //             const int local_idx = j * nm + i;
-                  //             const unsigned int dof_index =
-                  //               dof_indices(local_idx, global_cell_index);
-                  //             const int shared_idx = e * nm_total + local_idx;
-                  //
-                  //             if (dof_index != numbers::invalid_unsigned_int)
-                  //               Kokkos::atomic_add(&d_out[dof_index], s_values[shared_idx]);
-                  //           }
-                  //       }
-                  //     else if (dim == 3)
-                  //       {
-                  //         const int j = (tid % co_dimension_size) / nm;
-                  //         const int i = tid % nm;
-                  //
-                  //         for (int k = 0; k < nm; ++k)
-                  //           {
-                  //             const int local_idx = k * nm * nm + j * nm + i;
-                  //             const unsigned int dof_index =
-                  //               dof_indices(local_idx, global_cell_index);
-                  //             const int shared_idx = e * nm_total + local_idx;
-                  //
-                  //             if (dof_index != numbers::invalid_unsigned_int)
-                  //               Kokkos::atomic_add(&d_out[dof_index], s_values[shared_idx]);
-                  //           }
-                  //       }
-                  //   }
-
-                  team_member.team_barrier();
-                }
+                // Prior version, folded inline here:
+                //
+                // {
+                //   constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                //
+                //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //        tid += blockSize)
+                //     {
+                //       const int e   = tid / co_dimension_size;
+                //       const int rem = tid % co_dimension_size;
+                //
+                //       unsigned int global_cell_index = eb * nelmtPerBatch + e;
+                //
+                //       if (cell_range_ids.size() > 0)
+                //         global_cell_index = cell_range_ids(global_cell_index);
+                //
+                //       for (int last = 0; last < nm; ++last)
+                //         {
+                //           const int local_idx = rem + last * co_dimension_size;
+                //
+                //           const unsigned int dof_index = dof_indices(local_idx, global_cell_index);
+                //           const int shared_idx = e * nm_total + local_idx;
+                //
+                //           if (dof_index != numbers::invalid_unsigned_int)
+                //             {
+                //               // CRITICAL: Use atomic_add because elements share
+                //               // nodes!
+                //               Kokkos::atomic_add(&d_out[dof_index], s_values[shared_idx]);
+                //             }
+                //         }
+                //     }
+                //
+                //   team_member.team_barrier();
+                // }
 
                 eb += team_member.league_size();
               }

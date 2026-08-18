@@ -33,6 +33,13 @@ DEAL_II_NAMESPACE_OPEN
 // matrices, offset-addressed scratch) into deal.II itself, so this stays
 // named/structured close to where it would eventually land. `Custom` is a
 // placeholder namespace for as long as this lives outside deal.II proper.
+//
+// This file holds only the low-level tensor-product primitives
+// (apply_matrix_vector_product(), EvaluatorTensorProduct); the higher-level,
+// per-cell evaluate()/integrate()-style orchestration built on top of them
+// lives in kernels/portable_evaluation_kernels.h instead, mirroring
+// deal.II's own split between matrix_free/tensor_product_kernels.h and
+// matrix_free/evaluation_kernels.h.
 namespace Custom
 {
   namespace Parallel
@@ -43,6 +50,12 @@ namespace Custom
     using DeviceView = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>;
 
     using CellRangeIdView = Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>;
+
+    // Per-cell local-to-global dof index table (local_idx, global_cell_index)
+    // -> global dof index, or numbers::invalid_unsigned_int for a
+    // constrained/absent dof -- shared shape used by read_dof_values()/
+    // distribute_local_to_global() in kernels/portable_evaluation_kernels.h.
+    using DoFIndicesView = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>;
 
     // Truly one-dimensional matrix-vector product along a single fiber:
     // contracts in[0], in[stride_in], ..., in[(mm-1)*stride_in] against
@@ -252,9 +265,10 @@ namespace Custom
     // shape_gradients/co_shape_gradients and exposes
     // `gradients()`/`co_gradients()` alongside `values()`; nothing in this
     // codebase needs those yet (BK3's own collocated-gradient step is
-    // evaluate_and_multiply_tensor()/integrate() below, a different fused
-    // operation, not a matrix-vector product against a second matrix), so
-    // only `values()` is provided so far -- add the others here if/when a
+    // evaluate_and_multiply_tensor()/integrate() in
+    // kernels/portable_evaluation_kernels.h, a different fused operation,
+    // not a matrix-vector product against a second matrix), so only
+    // `values()` is provided so far -- add the others here if/when a
     // caller needs them, rather than growing a second class.
     //
     // Takes `matrix` and the batching parameters (c_nelmtPerBatch,
@@ -296,284 +310,6 @@ namespace Custom
       const int         threadIdx;
       const int         blockSize;
     };
-
-
-
-    // Linear index of the (d1, d2) entry (0 <= d1, d2 < dim) of a symmetric
-    // dim x dim tensor stored as its dim*(dim+1)/2 upper-triangular
-    // components in row-major (d1, d2 >= d1) order -- e.g. dim == 3 gives
-    // the enumeration (Grr, Grs, Grt, Gss, Gst, Gtt) BK3's own G-tensor
-    // construction (compute_G_tensors()) already uses; dim == 2 gives
-    // (Grr, Grs, Gss). Shared by evaluate_and_multiply_tensor() below and
-    // by whatever builds `d_G` in the first place.
-    template <int dim>
-    DEAL_II_HOST_DEVICE inline int
-    symmetric_tensor_component_index(const int d1, const int d2)
-    {
-      const int a = (d1 < d2) ? d1 : d2;
-      const int b = (d1 < d2) ? d2 : d1;
-      return a * dim - (a * (a - 1)) / 2 + (b - a);
-    }
-
-
-
-    // evaluate()/evaluate_and_multiply_tensor()/integrate() below all share
-    // the same loop shape. `tid % co_dimension_size` fixes one point in the
-    // (dim - 1)-dimensional "co-dim plane" spanned by every axis but the
-    // last; the thread then loops in registers over the last axis (extent
-    // nq), so `point = rem + last * co_dimension_size` is the flat nq^dim
-    // index of the current point (co_dimension_size == nq^(dim - 1), the
-    // stride of the last axis).
-    //
-    // Per direction d, the contraction needed is:
-    //   q[d](point) = sum_n co_shape_gradients[n * nq + idx_d] * u_in(point with axis d := n)
-    // where idx_d is d's own position within `point`. Both quantities are
-    // read directly off `point` with plain fixed-radix arithmetic
-    // (Utilities::pow(nq, d) is axis d's stride): idx_d = (point /
-    // Utilities::pow(nq, d)) % nq, and "point with axis d zeroed" is point -
-    // idx_d * Utilities::pow(nq, d) -- so "point with axis d := n" is that
-    // plus n * Utilities::pow(nq, d). This is the same formula for every d,
-    // including d == dim - 1 (the register-loop axis itself, where idx_d ==
-    // last by construction), so no special-casing by direction is needed
-    // and the same body serves any dim. Utilities::pow(nq, d) is
-    // recomputed at each use (once per (last, d), not cached across last in
-    // a per-thread array) rather than cached in a per-thread array (d is a
-    // small runtime loop variable, not a compile-time exponent, so this
-    // isn't a constexpr computation) -- exponentiation by squaring on d <= 2
-    // is at most one multiply, cheaper than the register pressure (and GPU
-    // spill risk) of holding a whole array live across the loops below just
-    // to save that. The one thing each function below does hoist out of its
-    // innermost n-loop is the base array index everything but the `n *
-    // stride_d` term forms -- that one's a straight sum of loop-invariant
-    // values (no exponentiation involved), so hoisting it just removes
-    // redundant adds on every n iteration rather than trading away register
-    // pressure the way caching co_shape_gradients/u_in themselves across the
-    // last-loop would.
-
-
-
-    // Evaluates the dim directional derivatives of `values`
-    // (nq^dim-per-cell, i.e. after the dof->quad interpolation sweep has
-    // completed) via `co_shape_gradients` (an nq x nq collocation
-    // differentiation matrix), with no further processing -- e.g. for an
-    // operator whose geometric-factor step isn't BK3's isotropic-Laplace
-    // symmetric tensor. See evaluate_and_multiply_tensor() below for the
-    // fused, BK3-specific counterpart (not implemented in terms of this
-    // function, to keep the tensor multiply register-fused).
-    //
-    // `gradients` addresses the base of a caller-owned region holding dim
-    // consecutive nq^dim-per-cell slots (stride `slot` elements), one per
-    // direction -- may not overlap `values` (this reads `values` throughout,
-    // never writing it). Ends with its own team_barrier().
-    template <int dim, int nq, typename Number>
-    DEAL_II_HOST_DEVICE inline void
-    evaluate(const TeamHandle &team_member,
-            const Number     *s_co_shape_gradients,
-            const Number     *values,
-            Number           *gradients,
-            const int         slot,
-            const int         c_nelmtPerBatch,
-            const int         threadIdx,
-            const int         blockSize)
-    {
-      static_assert(dim >= 1, "dim must be at least 1");
-
-      constexpr int nq_total          = Utilities::pow(nq, dim);
-      constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
-        {
-          const int e   = tid / co_dimension_size;
-          const int rem = tid % co_dimension_size;
-
-          for (int last = 0; last < nq; ++last)
-            {
-              const int point = rem + last * co_dimension_size;
-
-              for (int d = 0; d < dim; ++d)
-                {
-                  const int stride_d   = Utilities::pow(nq, d);
-                  const int idx_d      = (point / stride_d) % nq;
-                  const int point_base = point - idx_d * stride_d;
-                  // Base index for values, invariant across the n-loop below
-                  // -- hoisted so it isn't recomputed nq times per direction.
-                  const int in_base = e * nq_total + point_base;
-
-                  Number q_d = 0;
-                  for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] * values[in_base + n * stride_d];
-
-                  gradients[d * slot + e * nq_total + point] = q_d;
-                }
-            }
-        }
-
-      team_member.team_barrier();
-    }
-
-
-
-    // Same fan-out as evaluate() above, but fused with an immediate
-    // pointwise multiply of the resulting dim-vector by the BK3 symmetric
-    // geometric factor tensor `d_G` (chain rule for the reference-to-
-    // physical mapping) before writing to the gradients pool -- this is
-    // BK3::Parallel::KokkosKernel's step 5. Computing the dim directional
-    // derivatives and applying the tensor together, all in registers per
-    // thread, means one pass (one team_barrier() at the end) suffices,
-    // rather than the barrier a plain evaluate() call followed by a
-    // separate tensor-multiply pass would need in between; the tensor
-    // multiply is hardcoded to the isotropic-Laplace symmetric tensor (not
-    // a functor) for now. `G` is loaded into a small dim x dim register
-    // array once per point (both triangular halves, via
-    // symmetric_tensor_component_index()) rather than looked up per (d1,
-    // d2) pair, so the multiply itself is a plain dense symmetric
-    // matrix-vector product. Pair with integrate() below for the matching
-    // fan-in half.
-    //
-    // `g_offset` is a raw element offset into `d_G`, already resolved by
-    // the caller to point at cell e == 0 of this call's batch (each
-    // thread's own cell e then adds e * (dim*(dim+1)/2) * nq^dim on top) --
-    // deliberately not derived here from a batch/league index or a
-    // cell_range_ids lookup, so this function doesn't need to know
-    // BK3::Parallel::KokkosKernel's cell-batching conventions. Note this
-    // means if a caller ever needs the cell_range_ids indirection
-    // BK3::Parallel::KokkosKernel's steps 1/10 use for dof_indices, `d_G`
-    // itself must already be laid out in that permuted order -- this
-    // function cannot apply the permutation itself.
-    template <int dim, int nq, typename Number>
-    DEAL_II_HOST_DEVICE inline void
-    evaluate_and_multiply_tensor(const TeamHandle         &team_member,
-                                 const Number             *s_co_shape_gradients,
-                                 const DeviceView<Number> &d_G,
-                                 const int                 g_offset,
-                                 const Number             *values,
-                                 Number                    *gradients,
-                                 const int                 slot,
-                                 const int                 c_nelmtPerBatch,
-                                 const int                 threadIdx,
-                                 const int                 blockSize)
-    {
-      static_assert(dim >= 1, "dim must be at least 1");
-
-      constexpr int nq_total                   = Utilities::pow(nq, dim);
-      constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
-      constexpr int co_dimension_size          = Utilities::pow(nq, dim - 1);
-
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
-        {
-          const int e   = tid / co_dimension_size;
-          const int rem = tid % co_dimension_size;
-
-          const int cell_g_offset = g_offset + e * symmetric_tensor_dimension * nq_total;
-
-          for (int last = 0; last < nq; ++last)
-            {
-              const int point = rem + last * co_dimension_size;
-
-              Number q[dim];
-              for (int d = 0; d < dim; ++d)
-                {
-                  const int stride_d   = Utilities::pow(nq, d);
-                  const int idx_d      = (point / stride_d) % nq;
-                  const int point_base = point - idx_d * stride_d;
-                  // Base index for values, invariant across the n-loop below
-                  // -- hoisted so it isn't recomputed nq times per direction.
-                  const int in_base = e * nq_total + point_base;
-
-                  Number q_d = 0;
-                  for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] * values[in_base + n * stride_d];
-                  q[d] = q_d;
-                }
-
-              Number G[dim][dim];
-              for (int d1 = 0; d1 < dim; ++d1)
-                for (int d2 = d1; d2 < dim; ++d2)
-                  {
-                    const Number value =
-                      d_G[cell_g_offset + symmetric_tensor_component_index<dim>(d1, d2) * nq_total +
-                          point];
-                    G[d1][d2] = value;
-                    G[d2][d1] = value;
-                  }
-
-              for (int d1 = 0; d1 < dim; ++d1)
-                {
-                  Number out = 0;
-                  for (int d2 = 0; d2 < dim; ++d2)
-                    out += G[d1][d2] * q[d2];
-
-                  gradients[d1 * slot + e * nq_total + point] = out;
-                }
-            }
-        }
-
-      team_member.team_barrier();
-    }
-
-
-
-    // Integrates the dim directional-derivative slots left by
-    // evaluate() or evaluate_and_multiply_tensor() above back into a single
-    // result at `values` -- BK3::Parallel::KokkosKernel's step 6. Each
-    // output entry sums contributions from all dim input slots (the
-    // transpose-contracted mirror of evaluate()'s fan-out: the
-    // co_shape_gradients row is read as [idx_d * nq + n] here rather than
-    // [n * nq + idx_d]), so this is one pass, one team_barrier() at the end.
-    //
-    // `gradients`/`slot` address the same region evaluate()/
-    // evaluate_and_multiply_tensor() wrote; `values` may be the same buffer
-    // they read their input from -- nothing here reads `values`, so
-    // overwriting it in place is safe without needing a barrier first.
-    template <int dim, int nq, typename Number>
-    DEAL_II_HOST_DEVICE inline void
-    integrate(const TeamHandle &team_member,
-             const Number     *s_co_shape_gradients,
-             const Number     *gradients,
-             const int         slot,
-             Number           *values,
-             const int         c_nelmtPerBatch,
-             const int         threadIdx,
-             const int         blockSize)
-    {
-      static_assert(dim >= 1, "dim must be at least 1");
-
-      constexpr int nq_total          = Utilities::pow(nq, dim);
-      constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
-        {
-          const int e   = tid / co_dimension_size;
-          const int rem = tid % co_dimension_size;
-
-          for (int last = 0; last < nq; ++last)
-            {
-              const int point = rem + last * co_dimension_size;
-
-              Number tmp0 = 0;
-              for (int d = 0; d < dim; ++d)
-                {
-                  const int stride_d   = Utilities::pow(nq, d);
-                  const int idx_d      = (point / stride_d) % nq;
-                  const int point_base = point - idx_d * stride_d;
-                  // Base index into the gradients pool, invariant across the
-                  // n-loop below -- hoisted so it isn't recomputed nq times
-                  // per direction (this one had 4 terms, not 2, so this is
-                  // the more impactful of the two hoists in this file).
-                  const int grad_base = d * slot + e * nq_total + point_base;
-
-                  Number sum = 0;
-                  for (int n = 0; n < nq; ++n)
-                    sum += gradients[grad_base + n * stride_d] * s_co_shape_gradients[idx_d * nq + n];
-                  tmp0 += sum;
-                }
-
-              values[e * nq_total + point] = tmp0;
-            }
-        }
-
-      team_member.team_barrier();
-    }
   } // namespace Parallel
 } // namespace Custom
 
