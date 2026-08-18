@@ -218,177 +218,124 @@ namespace BK3Custom
                   }
                   team_member.team_barrier();
                 }
-
-                // step-2 : direction 0
+                // steps 2-4: interpolate dof -> quad, one direction at a
+                // time, via Custom::Parallel::EvaluatorTensorProduct
+                // (kernels/portable_tensor_product_kernels.h). Its values()
+                // replaces the manual per-thread tid/e/j/k loop below with
+                // its own internal batched loop over the same (element,
+                // co-dimension) index space -- algebraically verified (see
+                // the unify-kernels session) to compute the identical flat
+                // s_wsp0/s_wsp1 offsets the hand-written loop did, and
+                // re-checked bit-identical via
+                // correctness_tests/check_correctness_common_kernels/.
+                // Original hand-written version commented out below for
+                // reference/diff, per request -- not deleted.
                 {
-                  constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                  const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
+                    team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
 
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e = tid / co_dimension_size;
+                  // step-2 : direction 0
+                  evaluator.template values<0, true, false>(s_wsp0, s_wsp1);
 
-                      if (dim == 2)
-                        {
-                          const int j = tid % nm;
+                  // step-3 : direction 1
+                  evaluator.template values<1, true, false>(s_wsp1, s_wsp0);
 
-                          // for (int i = 0; i < nm; ++i)
-                          //   {
-                          //     r_p[i] = s_wsp0[e * nm * nm + j * nm + i];
-                          //   }
-
-                          // for (int p = 0; p < nq; ++p)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int i = 0; i < nm; ++i)
-                          //       {
-                          //         tmp += s_shape_values[i * nq + p] * r_p[i];
-                          //       }
-
-                          //     s_wsp1[e * nq * nm + j * nq + p] = tmp;
-                          //   }
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, true, false, 1, 1>(
-                            s_shape_values,
-                            s_wsp0 + e * nm * nm + j * nm,
-                            s_wsp1 + e * nq * nm + j * nq);
-                        }
-                      else if (dim == 3)
-                        {
-                          const int k = (tid % co_dimension_size) / nm;
-                          const int j = tid % nm;
-
-                          // for (int i = 0; i < nm; ++i)
-                          //   {
-                          //     r_p[i] = s_wsp0[e * nm * nm * nm + k * nm * nm + j * nm + i];
-                          //   }
-
-                          // for (int p = 0; p < nq; ++p)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int i = 0; i < nm; ++i)
-                          //       {
-                          //         tmp += s_shape_values[i * nq + p] * r_p[i];
-                          //       }
-
-                          //     s_wsp1[e * nq * nm * nm + k * nq * nm + j * nq + p] = tmp;
-                          //   }
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, true, false, 1, 1>(
-                            s_shape_values,
-                            s_wsp0 + e * nm * nm * nm + k * nm * nm + j * nm,
-                            s_wsp1 + e * nq * nm * nm + k * nq * nm + j * nq);
-                        }
-                    }
-                  team_member.team_barrier();
+                  // step-4 : direction 2
+                  if constexpr (dim == 3)
+                    evaluator.template values<2, true, false>(s_wsp0, s_wsp1);
                 }
 
-                // step-3 : direction 1
-                {
-                  constexpr int co_dimension_size = nq * Utilities::pow(nm, dim - 2);
-
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e = tid / co_dimension_size;
-
-                      if (dim == 2)
-                        {
-                          const int p = tid % nq;
-
-                          // for (int j = 0; j < nm; ++j)
-                          //   {
-                          //     r_p[j] = s_wsp1[e * nq * nm + j * nq + p];
-                          //   }
-
-                          // for (int q = 0; q < nq; ++q)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int j = 0; j < nm; ++j)
-                          //       {
-                          //         tmp += s_shape_values[j * nq + q] * r_p[j];
-                          //       }
-
-                          //     s_wsp0[e * nq * nq + q * nq + p] = tmp;
-                          //   }
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, true, false, nq, nq>(
-                            s_shape_values,
-                            s_wsp1 + e * nq * nm + p,
-                            s_wsp0 + e * nq * nq + p);
-                        }
-                      else if (dim == 3)
-                        {
-                          const int k = (tid % co_dimension_size) / nq;
-                          const int p = tid % nq;
-
-                          // for (int j = 0; j < nm; ++j)
-                          //   {
-                          //     r_p[j] = s_wsp1[e * nq * nm * nm + k * nq * nm + j * nq + p];
-                          //   }
-
-                          // for (int q = 0; q < nq; ++q)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int j = 0; j < nm; ++j)
-                          //       {
-                          //         tmp += s_shape_values[j * nq + q] * r_p[j];
-                          //       }
-
-                          //     s_wsp0[e * nq * nq * nm + k * nq * nq + q * nq + p] = tmp;
-                          //   }
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, true, false, nq, nq>(
-                            s_shape_values,
-                            s_wsp1 + e * nq * nm * nm + k * nq * nm + p,
-                            s_wsp0 + e * nq * nq * nm + k * nq * nq + p);
-                        }
-                    }
-                  team_member.team_barrier();
-                }
-
-                // step-4 : direction 2
-                if (dim == 3)
-                  {
-                    constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                         tid += blockSize)
-                      {
-                        int e = tid / co_dimension_size;
-
-                        int q = (tid % co_dimension_size) / nq;
-                        int p = tid % nq;
-
-                        // for (int k = 0; k < nm; ++k)
-                        //   {
-                        //     r_p[k] = s_wsp0[e * nq * nq * nm + k * nq * nq + q * nq + p];
-                        //   }
-                        // for (int r = 0; r < nq; ++r)
-                        //   {
-                        //     Number tmp = 0.0;
-
-                        //     for (int k = 0; k < nm; ++k)
-                        //       {
-                        //         tmp += s_shape_values[k * nq + r] * r_p[k];
-                        //       }
-
-                        //     s_wsp1[e * nq * nq * nq + r * nq * nq + q * nq + p] = tmp;
-                        //   }
-
-                        Custom::Parallel::
-                          apply_matrix_vector_product<nm, nq, true, false, nq * nq, nq * nq>(
-                            s_shape_values,
-                            s_wsp0 + e * nq * nq * nm + q * nq + p,
-                            s_wsp1 + e * nq * nq * nq + q * nq + p);
-                      }
-                    team_member.team_barrier();
-                  }
-
+                // Original hand-written steps 2-4 (pre-EvaluatorTensorProduct):
+                //
+                // {
+                //   // step-2 : direction 0
+                //   {
+                //     constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                //
+                //     for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //          tid += blockSize)
+                //       {
+                //         const int e = tid / co_dimension_size;
+                //
+                //         if (dim == 2)
+                //           {
+                //             const int j = tid % nm;
+                //
+                //             Custom::Parallel::
+                //               apply_matrix_vector_product<nm, nq, true, false, 1, 1>(
+                //                 s_shape_values,
+                //                 s_wsp0 + e * nm * nm + j * nm,
+                //                 s_wsp1 + e * nq * nm + j * nq);
+                //           }
+                //         else if (dim == 3)
+                //           {
+                //             const int k = (tid % co_dimension_size) / nm;
+                //             const int j = tid % nm;
+                //
+                //             Custom::Parallel::
+                //               apply_matrix_vector_product<nm, nq, true, false, 1, 1>(
+                //                 s_shape_values,
+                //                 s_wsp0 + e * nm * nm * nm + k * nm * nm + j * nm,
+                //                 s_wsp1 + e * nq * nm * nm + k * nq * nm + j * nq);
+                //           }
+                //       }
+                //     team_member.team_barrier();
+                //   }
+                //
+                //   // step-3 : direction 1
+                //   {
+                //     constexpr int co_dimension_size = nq * Utilities::pow(nm, dim - 2);
+                //
+                //     for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //          tid += blockSize)
+                //       {
+                //         const int e = tid / co_dimension_size;
+                //
+                //         if (dim == 2)
+                //           {
+                //             const int p = tid % nq;
+                //
+                //             Custom::Parallel::
+                //               apply_matrix_vector_product<nm, nq, true, false, nq, nq>(
+                //                 s_shape_values, s_wsp1 + e * nq * nm + p, s_wsp0 + e * nq * nq + p);
+                //           }
+                //         else if (dim == 3)
+                //           {
+                //             const int k = (tid % co_dimension_size) / nq;
+                //             const int p = tid % nq;
+                //
+                //             Custom::Parallel::
+                //               apply_matrix_vector_product<nm, nq, true, false, nq, nq>(
+                //                 s_shape_values,
+                //                 s_wsp1 + e * nq * nm * nm + k * nq * nm + p,
+                //                 s_wsp0 + e * nq * nq * nm + k * nq * nq + p);
+                //           }
+                //       }
+                //     team_member.team_barrier();
+                //   }
+                //
+                //   // step-4 : direction 2
+                //   if (dim == 3)
+                //     {
+                //       constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
+                //
+                //       for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //            tid += blockSize)
+                //         {
+                //           int e = tid / co_dimension_size;
+                //
+                //           int q = (tid % co_dimension_size) / nq;
+                //           int p = tid % nq;
+                //
+                //           Custom::Parallel::
+                //             apply_matrix_vector_product<nm, nq, true, false, nq * nq, nq * nq>(
+                //               s_shape_values,
+                //               s_wsp0 + e * nq * nq * nm + q * nq + p,
+                //               s_wsp1 + e * nq * nq * nq + q * nq + p);
+                //         }
+                //       team_member.team_barrier();
+                //     }
+                // }
                 // step-5: evaluate gradients and apply geometric factors
                 {
                   constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
@@ -584,172 +531,115 @@ namespace BK3Custom
                 Interpolate to GLL nodes
                 */
 
-                // step-7 : direction 2
-                if (dim == 3)
-                  {
-                    constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-                    for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                         tid += blockSize)
-                      {
-                        const int e = tid / co_dimension_size;
-
-                        const int q = (tid % co_dimension_size) / nq;
-                        const int p = tid % nq;
-
-                        // for (int r = 0; r < nq; ++r)
-                        //   {
-                        //     r_p[r] = s_wsp1[e * nq * nq * nq + r * nq * nq + q * nq + p];
-                        //   }
-
-                        // for (int k = 0; k < nm; ++k)
-                        //   {
-                        //     Number tmp = 0.0;
-
-                        //     for (int r = 0; r < nq; ++r)
-                        //       {
-                        //         tmp += s_shape_values[k * nq + r] * r_p[r];
-                        //       }
-
-                        //     s_wsp0[e * nq * nq * nm + k * nq * nq + q * nq + p] = tmp;
-                        //   }
-
-                        Custom::Parallel::
-                          apply_matrix_vector_product<nm, nq, false, false, nq * nq, nq * nq>(
-                            s_shape_values,
-                            s_wsp1 + e * nq * nq * nq + q * nq + p,
-                            s_wsp0 + e * nq * nq * nm + q * nq + p);
-                      }
-                    team_member.team_barrier();
-                  }
-
-                // step-8 : direction 1
+                // steps 7-9: integrate quad -> dof, one direction at a time
+                // in reverse order, via the same evaluator instance used for
+                // steps 2-4 above (same matrix/scratch/batch parameters
+                // throughout this element-batch iteration -- mirrors
+                // deal.II's own EvaluatorTensorProduct usage of constructing
+                // once, calling .values<direction, ...>() per direction).
+                // Original hand-written version commented out below for
+                // reference/diff, per request -- not deleted.
                 {
-                  constexpr int co_dimension_size = nq * Utilities::pow(nm, dim - 2);
+                  const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
+                    team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
 
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e = tid / co_dimension_size;
-                      if (dim == 2)
-                        {
-                          const int p = tid % nq;
+                  // step-7 : direction 2
+                  if constexpr (dim == 3)
+                    evaluator.template values<2, false, false>(s_wsp1, s_wsp0);
 
-                          // for (int q = 0; q < nq; ++q)
-                          //   {
-                          //     r_p[q] = s_wsp0[e * nq * nq + q * nq + p];
-                          //   }
+                  // step-8 : direction 1
+                  evaluator.template values<1, false, false>(s_wsp0, s_wsp1);
 
-                          // for (int j = 0; j < nm; ++j)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int q = 0; q < nq; ++q)
-                          //       {
-                          //         tmp += s_shape_values[j * nq + q] * r_p[q];
-                          //       }
-                          //     s_wsp1[e * nq * nm + j * nq + p] = tmp;
-                          //   }
-
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, nq, nq>(
-                            s_shape_values,
-                            s_wsp0 + e * nq * nq + p,
-                            s_wsp1 + e * nq * nm + p);
-                        }
-                      else if (dim == 3)
-                        {
-                          const int k = (tid % co_dimension_size) / nq;
-                          const int p = tid % nq;
-
-                          // for (int q = 0; q < nq; ++q)
-                          //   {
-                          //     r_p[q] = s_wsp0[e * nq * nq * nm + k * nq * nq + q * nq + p];
-                          //   }
-
-                          // for (int j = 0; j < nm; ++j)
-                          //   {
-                          //     Number tmp = 0.0;
-
-                          //     for (int q = 0; q < nq; ++q)
-                          //       {
-                          //         tmp += s_shape_values[j * nq + q] * r_p[q];
-                          //       }
-                          //     s_wsp1[e * nq * nm * nm + k * nq * nm + j * nq + p] = tmp;
-                          //   }
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, nq, nq>(
-                            s_shape_values,
-                            s_wsp0 + e * nq * nq * nm + k * nq * nq + p,
-                            s_wsp1 + e * nq * nm * nm + k * nq * nm + p);
-                        }
-                    }
-                  team_member.team_barrier();
+                  // step-9 : direction 0
+                  evaluator.template values<0, false, false>(s_wsp1, s_wsp0);
                 }
 
-                // step-9 : direction 0
-                {
-                  constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
-
-                  for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
-                       tid += blockSize)
-                    {
-                      const int e = tid / co_dimension_size;
-
-                      if (dim == 2)
-                        {
-                          const int j = tid % nm;
-
-                          // for (int p = 0; p < nq; ++p)
-                          //   {
-                          //     r_p[p] = s_wsp1[e * nq * nm + j * nq + p];
-                          //   }
-
-                          // for (int i = 0; i < nm; ++i)
-                          //   {
-                          //     Number tmp = 0.0;
-                          //     for (int p = 0; p < nq; ++p)
-                          //       {
-                          //         tmp += s_shape_values[i * nq + p] * r_p[p];
-                          //       }
-                          //     s_wsp0[e * nm * nm + j * nm + i] = tmp;
-                          //   }
-
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, 1, 1>(
-                            s_shape_values,
-                            s_wsp1 + e * nq * nm + j * nq,
-                            s_wsp0 + e * nm * nm + j * nm);
-                        }
-                      else if (dim == 3)
-                        {
-                          const int k = (tid % co_dimension_size) / nm;
-                          const int j = tid % nm;
-
-                          // for (int p = 0; p < nq; ++p)
-                          //   {
-                          //     r_p[p] = s_wsp1[e * nq * nm * nm + k * nq * nm + j * nq + p];
-                          //   }
-
-                          // for (int i = 0; i < nm; ++i)
-                          //   {
-                          //     Number tmp = 0.0;
-                          //     for (int p = 0; p < nq; ++p)
-                          //       {
-                          //         tmp += s_shape_values[i * nq + p] * r_p[p];
-                          //       }
-                          //     s_wsp0[e * nm * nm * nm + k * nm * nm + j * nm + i] = tmp;
-                          //   }
-
-
-                          Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, 1, 1>(
-                            s_shape_values,
-                            s_wsp1 + e * nq * nm * nm + k * nq * nm + j * nq,
-                            s_wsp0 + e * nm * nm * nm + k * nm * nm + j * nm);
-                        }
-                    }
-                  team_member.team_barrier();
-                }
+                // Original hand-written steps 7-9 (pre-EvaluatorTensorProduct):
+                //
+                // // step-7 : direction 2
+                // if (dim == 3)
+                //   {
+                //     constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
+                //
+                //     for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //          tid += blockSize)
+                //       {
+                //         const int e = tid / co_dimension_size;
+                //
+                //         const int q = (tid % co_dimension_size) / nq;
+                //         const int p = tid % nq;
+                //
+                //         Custom::Parallel::
+                //           apply_matrix_vector_product<nm, nq, false, false, nq * nq, nq * nq>(
+                //             s_shape_values,
+                //             s_wsp1 + e * nq * nq * nq + q * nq + p,
+                //             s_wsp0 + e * nq * nq * nm + q * nq + p);
+                //       }
+                //     team_member.team_barrier();
+                //   }
+                //
+                // // step-8 : direction 1
+                // {
+                //   constexpr int co_dimension_size = nq * Utilities::pow(nm, dim - 2);
+                //
+                //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //        tid += blockSize)
+                //     {
+                //       const int e = tid / co_dimension_size;
+                //       if (dim == 2)
+                //         {
+                //           const int p = tid % nq;
+                //
+                //           Custom::Parallel::
+                //             apply_matrix_vector_product<nm, nq, false, false, nq, nq>(
+                //               s_shape_values, s_wsp0 + e * nq * nq + p, s_wsp1 + e * nq * nm + p);
+                //         }
+                //       else if (dim == 3)
+                //         {
+                //           const int k = (tid % co_dimension_size) / nq;
+                //           const int p = tid % nq;
+                //
+                //           Custom::Parallel::
+                //             apply_matrix_vector_product<nm, nq, false, false, nq, nq>(
+                //               s_shape_values,
+                //               s_wsp0 + e * nq * nq * nm + k * nq * nq + p,
+                //               s_wsp1 + e * nq * nm * nm + k * nq * nm + p);
+                //         }
+                //     }
+                //   team_member.team_barrier();
+                // }
+                //
+                // // step-9 : direction 0
+                // {
+                //   constexpr int co_dimension_size = Utilities::pow(nm, dim - 1);
+                //
+                //   for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size;
+                //        tid += blockSize)
+                //     {
+                //       const int e = tid / co_dimension_size;
+                //
+                //       if (dim == 2)
+                //         {
+                //           const int j = tid % nm;
+                //
+                //           Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, 1, 1>(
+                //             s_shape_values,
+                //             s_wsp1 + e * nq * nm + j * nq,
+                //             s_wsp0 + e * nm * nm + j * nm);
+                //         }
+                //       else if (dim == 3)
+                //         {
+                //           const int k = (tid % co_dimension_size) / nm;
+                //           const int j = tid % nm;
+                //
+                //           Custom::Parallel::apply_matrix_vector_product<nm, nq, false, false, 1, 1>(
+                //             s_shape_values,
+                //             s_wsp1 + e * nq * nm * nm + k * nq * nm + j * nq,
+                //             s_wsp0 + e * nm * nm * nm + k * nm * nm + j * nm);
+                //         }
+                //     }
+                //   team_member.team_barrier();
+                // }
 
                 // step-10 : Copy wsp0 (result) back to global out vector
                 {
@@ -861,7 +751,8 @@ namespace BK3Custom
     //   // evaluate_and_multiply_tensor() below indexes d_G by
     //   // eb * nelmtPerBatch + e directly, not remapped through
     //   // cell_range_ids the way dof_indices is in steps 1/10 -- see its doc
-    //   // comment in kernels/portable_tensor_product_kernels.h. No current caller passes a non-empty
+    //   // comment in kernels/portable_tensor_product_kernels.h. No current caller passes a
+    //   non-empty
     //   // cell_range_ids to this kernel; this catches it loudly rather than
     //   // silently reading the wrong cell's geometric factors if that ever
     //   // changes without also revisiting this.
@@ -1005,63 +896,32 @@ namespace BK3Custom
     //               team_member.team_barrier();
     //             }
 
+    //             // Single EvaluatorTensorProduct instance for both the
+    //             // steps-2-4 interpolation sweep and the steps-7-9
+    //             // integration sweep below -- matrix and the batching
+    //             // parameters are the same throughout this element-batch
+    //             // iteration, so one instance suffices (mirrors deal.II's
+    //             // own EvaluatorTensorProduct usage: construct once per
+    //             // team, call .values<direction, ...>(in, out) once per
+    //             // direction, in/out taken as buffers directly -- see
+    //             // kernels/portable_tensor_product_kernels.h).
+    //             const Custom::Parallel::EvaluatorTensorProduct<dim, nm, nq, Number> evaluator(
+    //               team_member, s_shape_values, nullptr, c_nelmtPerBatch, threadIdx, blockSize);
+
     //             // steps 2-4: interpolate dof -> quad, one direction at a
     //             // time, ping-ponging through the gradients pool's slots and
     //             // landing the result in the values slot. Each call ends
     //             // with its own team_barrier().
     //             if constexpr (dim == 2)
     //               {
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 0, nm, nq, true, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g0,
-    //                   off_g1,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 1, nm, nq, true, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g1,
-    //                   off_values,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
+    //                 evaluator.template values<0, true, false>(s_work + off_g0, s_work + off_g1);
+    //                 evaluator.template values<1, true, false>(s_work + off_g1, s_work + off_values);
     //               }
     //             else if constexpr (dim == 3)
     //               {
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 0, nm, nq, true, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g0,
-    //                   off_g1,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 1, nm, nq, true, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g1,
-    //                   off_g2,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 2, nm, nq, true, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g2,
-    //                   off_values,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
+    //                 evaluator.template values<0, true, false>(s_work + off_g0, s_work + off_g1);
+    //                 evaluator.template values<1, true, false>(s_work + off_g1, s_work + off_g2);
+    //                 evaluator.template values<2, true, false>(s_work + off_g2, s_work + off_values);
     //               }
 
     //             // steps 5-6: evaluate collocated gradients + apply the
@@ -1113,59 +973,16 @@ namespace BK3Custom
     //             int result_offset;
     //             if constexpr (dim == 2)
     //               {
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 1, nm, nq, false, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_values,
-    //                   off_g0,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 0, nm, nq, false, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g0,
-    //                   off_g1,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
+    //                 evaluator.template values<1, false, false>(s_work + off_values, s_work + off_g0);
+    //                 evaluator.template values<0, false, false>(s_work + off_g0, s_work + off_g1);
 
     //                 result_offset = off_g1;
     //               }
     //             else if constexpr (dim == 3)
     //               {
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 2, nm, nq, false, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_values,
-    //                   off_g0,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 1, nm, nq, false, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g0,
-    //                   off_g1,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
-
-    //                 Custom::Parallel::apply_matrix_vector_product<dim, 0, nm, nq, false, false>(
-    //                   team_member,
-    //                   s_shape_values,
-    //                   s_work,
-    //                   off_g1,
-    //                   off_g2,
-    //                   c_nelmtPerBatch,
-    //                   threadIdx,
-    //                   blockSize);
+    //                 evaluator.template values<2, false, false>(s_work + off_values, s_work + off_g0);
+    //                 evaluator.template values<1, false, false>(s_work + off_g0, s_work + off_g1);
+    //                 evaluator.template values<0, false, false>(s_work + off_g1, s_work + off_g2);
 
     //                 result_offset = off_g2;
     //               }

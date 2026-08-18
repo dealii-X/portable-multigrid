@@ -139,12 +139,11 @@ namespace Custom
 
 
     // Batched single-direction tensor contraction: for each of
-    // c_nelmtPerBatch cells in the batch, contracts scratch[in_offset...]
-    // along logical tensor direction `direction` against `matrix` (n_rows x
-    // n_columns, row-major), writing the result to scratch[out_offset...].
-    // Composed from the single-fiber overload above -- this just works out
-    // which fiber (base pointer + stride) each thread owns and loops over
-    // all of them.
+    // c_nelmtPerBatch cells in the batch, contracts `in` along logical
+    // tensor direction `direction` against `matrix` (n_rows x n_columns,
+    // row-major), writing the result to `out`. Composed from the
+    // single-fiber overload above -- this just works out which fiber (base
+    // pointer + stride) each thread owns and loops over all of them.
     //
     // `contract_over_rows` selects which side of the (possibly rectangular)
     // matrix is summed over: true contracts over the n_rows index (the
@@ -158,12 +157,15 @@ namespace Custom
     // (extent n_rows) -- i.e. this call is meant to be issued in increasing
     // `direction` order (0, 1, ..., dim-1) for interpolation and decreasing
     // order (dim-1, ..., 1, 0) for integration, matching a standard
-    // sum-factorization sweep. `in_offset`/`out_offset` must address
-    // distinct, non-overlapping regions of `scratch` (no in-place support);
-    // the caller manages ping-ponging between (at least) two regions across
-    // calls. Ends with a team_barrier(), so the result is visible to
-    // whatever the caller issues next -- no barrier is needed in between
-    // calls to this function.
+    // sum-factorization sweep. `in` and `out` must be distinct,
+    // non-overlapping buffers (no in-place support, matching deal.II's own
+    // `apply()`'s in_place == false path -- see EvaluatorTensorProduct
+    // below for the in_place == true path deal.II additionally supports via
+    // a `temp` buffer, not needed by any caller here yet); the caller
+    // manages ping-ponging between (at least) two buffers across calls.
+    // Ends with a team_barrier(), so the result is visible to whatever the
+    // caller issues next -- no barrier is needed in between calls to this
+    // function.
     template <int  dim,
               int  direction,
               int  n_rows,
@@ -174,9 +176,8 @@ namespace Custom
     DEAL_II_HOST_DEVICE inline void
     apply_matrix_vector_product(const TeamHandle &team_member,
                                 const Number     *matrix,
-                                Number           *scratch,
-                                const int         in_offset,
-                                const int         out_offset,
+                                const Number     *in,
+                                Number           *out,
                                 const int         c_nelmtPerBatch,
                                 const int         threadIdx,
                                 const int         blockSize)
@@ -200,9 +201,6 @@ namespace Custom
       constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
       constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
 
-      const Number *in  = scratch + in_offset;
-      Number       *out = scratch + out_offset;
-
       for (int tid = threadIdx; tid < c_nelmtPerBatch * n_blocks1 * n_blocks2; tid += blockSize)
         {
           const int e   = tid / (n_blocks1 * n_blocks2);
@@ -219,6 +217,85 @@ namespace Custom
 
       team_member.team_barrier();
     }
+
+
+
+    // Class wrapper around the batched dim/direction apply_matrix_vector_product()
+    // above, in the same shape as deal.II's own
+    // Portable::internal::EvaluatorTensorProduct
+    // (matrix_free/portable_tensor_product_kernels.h): construct once per
+    // team/matrix/batch, then issue one call per sum-factorization
+    // direction via a templated `values<direction, dof_to_quad, add>(in,
+    // out)` member function, `direction` itself a template (not runtime)
+    // parameter -- mirroring deal.II's EvaluatorTensorProduct::values(),
+    // whose signature this deliberately echoes (`dof_to_quad` there plays
+    // the same role `contract_over_rows` does here, and `in`/`out` are
+    // taken directly as the caller's buffers, exactly as in deal.II's
+    // values(const ViewTypeIn in, ViewTypeOut out)).
+    //
+    // `temp` mirrors the constructor slot deal.II's EvaluatorTensorProduct
+    // always takes (a SharedView, used only by its in_place == true path to
+    // stage a result before copying it into `out` -- see
+    // Portable::internal::populate_view()/apply()'s in_place branch). Every
+    // caller here ping-pongs between two distinct buffers instead, i.e.
+    // always takes deal.II's in_place == false path, so `temp` is stored
+    // but never read by values() -- callers with no in-place use (all of
+    // them, currently) pass nullptr for it, same as deal.II callers pass an
+    // empty/unused View when they don't need in_place. Keeping the
+    // parameter (rather than dropping it, as an earlier version of this
+    // class did) keeps the constructor's shape aligned with deal.II's own,
+    // in case an in_place values()/gradients() overload is added here
+    // later.
+    //
+    // Named `values`, not `apply`, to match deal.II's convention for the
+    // "shape_values"-matrix contraction -- deal.II's class also holds
+    // shape_gradients/co_shape_gradients and exposes
+    // `gradients()`/`co_gradients()` alongside `values()`; nothing in this
+    // codebase needs those yet (BK3's own collocated-gradient step is
+    // evaluate_and_multiply_tensor()/integrate() below, a different fused
+    // operation, not a matrix-vector product against a second matrix), so
+    // only `values()` is provided so far -- add the others here if/when a
+    // caller needs them, rather than growing a second class.
+    //
+    // Takes `matrix` and the batching parameters (c_nelmtPerBatch,
+    // threadIdx, blockSize) once at construction, exactly as deal.II's
+    // EvaluatorTensorProduct takes its Views and TeamHandle once; only
+    // `in`/`out` vary per values() call, exactly as in deal.II.
+    template <int dim, int n_rows, int n_columns, typename Number>
+    class EvaluatorTensorProduct
+    {
+    public:
+      DEAL_II_HOST_DEVICE
+      EvaluatorTensorProduct(const TeamHandle &team_member,
+                             const Number     *matrix,
+                             Number           *temp,
+                             const int         c_nelmtPerBatch,
+                             const int         threadIdx,
+                             const int         blockSize)
+        : team_member(team_member)
+        , matrix(matrix)
+        , temp(temp)
+        , c_nelmtPerBatch(c_nelmtPerBatch)
+        , threadIdx(threadIdx)
+        , blockSize(blockSize)
+      {}
+
+      template <int direction, bool dof_to_quad, bool add>
+      DEAL_II_HOST_DEVICE void
+      values(const Number *in, Number *out) const
+      {
+        apply_matrix_vector_product<dim, direction, n_rows, n_columns, dof_to_quad, add>(
+          team_member, matrix, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+      }
+
+    private:
+      const TeamHandle &team_member;
+      const Number     *matrix;
+      Number           *temp;
+      const int         c_nelmtPerBatch;
+      const int         threadIdx;
+      const int         blockSize;
+    };
 
 
 
