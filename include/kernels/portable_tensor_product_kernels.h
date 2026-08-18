@@ -352,27 +352,26 @@ namespace Custom
 
 
 
-    // Evaluates the dim directional derivatives of values at
-    // scratch[values_offset...] (nq^dim-per-cell, i.e. after the dof->quad
-    // interpolation sweep has completed) via `co_shape_gradients` (an nq x
-    // nq collocation differentiation matrix), with no further processing --
-    // e.g. for an operator whose geometric-factor step isn't BK3's
-    // isotropic-Laplace symmetric tensor. See evaluate_and_multiply_tensor()
-    // below for the fused, BK3-specific counterpart (not implemented in
-    // terms of this function, to keep the tensor multiply register-fused).
+    // Evaluates the dim directional derivatives of `values`
+    // (nq^dim-per-cell, i.e. after the dof->quad interpolation sweep has
+    // completed) via `co_shape_gradients` (an nq x nq collocation
+    // differentiation matrix), with no further processing -- e.g. for an
+    // operator whose geometric-factor step isn't BK3's isotropic-Laplace
+    // symmetric tensor. See evaluate_and_multiply_tensor() below for the
+    // fused, BK3-specific counterpart (not implemented in terms of this
+    // function, to keep the tensor multiply register-fused).
     //
-    // `gradients_offset` addresses the base of a caller-owned region
-    // holding dim consecutive nq^dim-per-cell slots (stride
-    // `gradient_slot_stride` elements), one per direction. Ends with its
-    // own team_barrier().
+    // `gradients` addresses the base of a caller-owned region holding dim
+    // consecutive nq^dim-per-cell slots (stride `slot` elements), one per
+    // direction -- may not overlap `values` (this reads `values` throughout,
+    // never writing it). Ends with its own team_barrier().
     template <int dim, int nq, typename Number>
     DEAL_II_HOST_DEVICE inline void
     evaluate(const TeamHandle &team_member,
             const Number     *s_co_shape_gradients,
-            Number           *scratch,
-            const int         values_offset,
-            const int         gradients_offset,
-            const int         gradient_slot_stride,
+            const Number     *values,
+            Number           *gradients,
+            const int         slot,
             const int         c_nelmtPerBatch,
             const int         threadIdx,
             const int         blockSize)
@@ -381,8 +380,6 @@ namespace Custom
 
       constexpr int nq_total          = Utilities::pow(nq, dim);
       constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-      const Number *u_in = scratch + values_offset;
 
       for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
         {
@@ -398,15 +395,15 @@ namespace Custom
                   const int stride_d   = Utilities::pow(nq, d);
                   const int idx_d      = (point / stride_d) % nq;
                   const int point_base = point - idx_d * stride_d;
-                  // Base index for u_in, invariant across the n-loop below --
-                  // hoisted so it isn't recomputed nq times per direction.
+                  // Base index for values, invariant across the n-loop below
+                  // -- hoisted so it isn't recomputed nq times per direction.
                   const int in_base = e * nq_total + point_base;
 
                   Number q_d = 0;
                   for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] * u_in[in_base + n * stride_d];
+                    q_d += s_co_shape_gradients[n * nq + idx_d] * values[in_base + n * stride_d];
 
-                  scratch[gradients_offset + d * gradient_slot_stride + e * nq_total + point] = q_d;
+                  gradients[d * slot + e * nq_total + point] = q_d;
                 }
             }
         }
@@ -449,10 +446,9 @@ namespace Custom
                                  const Number             *s_co_shape_gradients,
                                  const DeviceView<Number> &d_G,
                                  const int                 g_offset,
-                                 Number                    *scratch,
-                                 const int                 values_offset,
-                                 const int                 gradients_offset,
-                                 const int                 gradient_slot_stride,
+                                 const Number             *values,
+                                 Number                    *gradients,
+                                 const int                 slot,
                                  const int                 c_nelmtPerBatch,
                                  const int                 threadIdx,
                                  const int                 blockSize)
@@ -462,8 +458,6 @@ namespace Custom
       constexpr int nq_total                   = Utilities::pow(nq, dim);
       constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
       constexpr int co_dimension_size          = Utilities::pow(nq, dim - 1);
-
-      const Number *u_in = scratch + values_offset;
 
       for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
         {
@@ -482,13 +476,13 @@ namespace Custom
                   const int stride_d   = Utilities::pow(nq, d);
                   const int idx_d      = (point / stride_d) % nq;
                   const int point_base = point - idx_d * stride_d;
-                  // Base index for u_in, invariant across the n-loop below --
-                  // hoisted so it isn't recomputed nq times per direction.
+                  // Base index for values, invariant across the n-loop below
+                  // -- hoisted so it isn't recomputed nq times per direction.
                   const int in_base = e * nq_total + point_base;
 
                   Number q_d = 0;
                   for (int n = 0; n < nq; ++n)
-                    q_d += s_co_shape_gradients[n * nq + idx_d] * u_in[in_base + n * stride_d];
+                    q_d += s_co_shape_gradients[n * nq + idx_d] * values[in_base + n * stride_d];
                   q[d] = q_d;
                 }
 
@@ -509,7 +503,7 @@ namespace Custom
                   for (int d2 = 0; d2 < dim; ++d2)
                     out += G[d1][d2] * q[d2];
 
-                  scratch[gradients_offset + d1 * gradient_slot_stride + e * nq_total + point] = out;
+                  gradients[d1 * slot + e * nq_total + point] = out;
                 }
             }
         }
@@ -521,25 +515,23 @@ namespace Custom
 
     // Integrates the dim directional-derivative slots left by
     // evaluate() or evaluate_and_multiply_tensor() above back into a single
-    // result at scratch[values_offset...] -- BK3::Parallel::KokkosKernel's
-    // step 6. Each output entry sums contributions from all dim input
-    // slots (the transpose-contracted mirror of evaluate()'s fan-out: the
+    // result at `values` -- BK3::Parallel::KokkosKernel's step 6. Each
+    // output entry sums contributions from all dim input slots (the
+    // transpose-contracted mirror of evaluate()'s fan-out: the
     // co_shape_gradients row is read as [idx_d * nq + n] here rather than
     // [n * nq + idx_d]), so this is one pass, one team_barrier() at the end.
     //
-    // `gradients_offset`/`gradient_slot_stride` address the same region
-    // evaluate()/evaluate_and_multiply_tensor() wrote; `values_offset` may
-    // address the same region they read their input from -- nothing here
-    // reads scratch[values_offset...], so overwriting it in place is safe
-    // without needing a barrier first.
+    // `gradients`/`slot` address the same region evaluate()/
+    // evaluate_and_multiply_tensor() wrote; `values` may be the same buffer
+    // they read their input from -- nothing here reads `values`, so
+    // overwriting it in place is safe without needing a barrier first.
     template <int dim, int nq, typename Number>
     DEAL_II_HOST_DEVICE inline void
     integrate(const TeamHandle &team_member,
              const Number     *s_co_shape_gradients,
-             Number           *scratch,
-             const int         gradients_offset,
-             const int         gradient_slot_stride,
-             const int         values_offset,
+             const Number     *gradients,
+             const int         slot,
+             Number           *values,
              const int         c_nelmtPerBatch,
              const int         threadIdx,
              const int         blockSize)
@@ -548,8 +540,6 @@ namespace Custom
 
       constexpr int nq_total          = Utilities::pow(nq, dim);
       constexpr int co_dimension_size = Utilities::pow(nq, dim - 1);
-
-      Number *u_out = scratch + values_offset;
 
       for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
         {
@@ -570,16 +560,15 @@ namespace Custom
                   // n-loop below -- hoisted so it isn't recomputed nq times
                   // per direction (this one had 4 terms, not 2, so this is
                   // the more impactful of the two hoists in this file).
-                  const int grad_base = gradients_offset + d * gradient_slot_stride +
-                                        e * nq_total + point_base;
+                  const int grad_base = d * slot + e * nq_total + point_base;
 
                   Number sum = 0;
                   for (int n = 0; n < nq; ++n)
-                    sum += scratch[grad_base + n * stride_d] * s_co_shape_gradients[idx_d * nq + n];
+                    sum += gradients[grad_base + n * stride_d] * s_co_shape_gradients[idx_d * nq + n];
                   tmp0 += sum;
                 }
 
-              u_out[e * nq_total + point] = tmp0;
+              values[e * nq_total + point] = tmp0;
             }
         }
 
