@@ -312,6 +312,24 @@ namespace multigrid
               << std::endl;
       }
 
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dst, dst_new;
+    dst.reinit(solution_device);
+    dst_new.reinit(solution_device);
+
+    system_matrix->vmult(dst, system_rhs_device);
+    system_matrix->vmult_new(dst_new, system_rhs_device);
+
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst;
+    diff -= dst_new;
+
+    double abs_err = diff.l2_norm();
+    double rel_err;
+    double norm_dst = dst.l2_norm();
+    if (norm_dst > 0)
+      rel_err = abs_err / norm_dst;
+    else
+      rel_err = 0.;
+
     LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
     rw_vector.import_elements(solution_device, VectorOperation::insert);
     ghost_solution_host.import_elements(rw_vector, VectorOperation::insert);
@@ -338,6 +356,9 @@ namespace multigrid
     convergence_table.add_value("cg_time", time_cg);
     convergence_table.add_value("cg_its", iterations);
     convergence_table.add_value("norm", global_norm);
+    convergence_table.add_value("abs_err", abs_err);
+    convergence_table.add_value("rel_err", rel_err);
+
 
     // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
     //   for (unsigned int level = 1; level <= level_matrices.max_level(); level++)
@@ -602,6 +623,10 @@ namespace multigrid
             convergence_table.set_precision("cg_time", 3);
             convergence_table.set_scientific("norm", true);
             convergence_table.set_precision("norm", 3);
+            convergence_table.set_scientific("abs_err", true);
+            convergence_table.set_precision("abs_err", 3);
+            convergence_table.set_scientific("rel_err", true);
+            convergence_table.set_precision("rel_err", 3);
 
             convergence_table.write_text(std::cout);
 
