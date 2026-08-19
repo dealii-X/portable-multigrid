@@ -1,5 +1,5 @@
-#ifndef bk3_kokkos_kernel_h
-#define bk3_kokkos_kernel_h
+#ifndef bk3_kokkos_kernels_h
+#define bk3_kokkos_kernels_h
 
 #include <deal.II/base/memory_space.h>
 #include <deal.II/base/utilities.h>

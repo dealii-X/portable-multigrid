@@ -35,6 +35,54 @@ namespace Custom
 
     using DoFIndicesView = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>;
 
+
+
+    /**
+     * One-dimensional kernel for use by the generic tensor product
+     * interpolation as provided by the class EvaluatorTensorProduct,
+     * implementing a matrix-vector product along this dimension, controlled by
+     * the number of rows and columns and the stride in the input and output
+     * arrays, which are embedded into some lexicographic ordering of unknowns
+     * in a tensor-product arrangement.
+     */
+    template <int  n_rows,
+              int  n_columns,
+              bool contract_over_rows,
+              bool add,
+              int  stride_in,
+              int  stride_out,
+              typename Number>
+    DEAL_II_HOST_DEVICE inline void
+    apply_matrix_vector_product(const Number *matrix, const Number *in, Number *out)
+    {
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
+      Number r_in[mm];
+      for (int k = 0; k < mm; ++k)
+        r_in[k] = in[k * stride_in];
+
+      for (int q = 0; q < nn; ++q)
+        {
+          Number sum = 0;
+          for (int k = 0; k < mm; ++k)
+            {
+              const int row = contract_over_rows ? k : q;
+              const int col = contract_over_rows ? q : k;
+              sum += matrix[row * n_columns + col] * r_in[k];
+            }
+
+          if constexpr (add)
+            out[q * stride_out] += sum;
+          else
+            out[q * stride_out] = sum;
+        }
+    }
+
+    /**
+     * Specialized version of apply_matrix_vector_product() that takes the strides as arguments,
+     * rather than as template parameters.
+     */
     template <int n_rows, int n_columns, bool contract_over_rows, bool add, typename Number>
     DEAL_II_HOST_DEVICE inline void
     apply_matrix_vector_product(const Number *matrix,
@@ -70,41 +118,30 @@ namespace Custom
     }
 
 
-    template <int  n_rows,
-              int  n_columns,
-              bool contract_over_rows,
-              bool add,
-              int  stride_in,
-              int  stride_out,
-              typename Number>
-    DEAL_II_HOST_DEVICE inline void
-    apply_matrix_vector_product(const Number *matrix, const Number *in, Number *out)
-    {
-      constexpr int mm = contract_over_rows ? n_rows : n_columns;
-      constexpr int nn = contract_over_rows ? n_columns : n_rows;
-
-      Number r_in[mm];
-      for (int k = 0; k < mm; ++k)
-        r_in[k] = in[k * stride_in];
-
-      for (int q = 0; q < nn; ++q)
-        {
-          Number sum = 0;
-          for (int k = 0; k < mm; ++k)
-            {
-              const int row = contract_over_rows ? k : q;
-              const int col = contract_over_rows ? q : k;
-              sum += matrix[row * n_columns + col] * r_in[k];
-            }
-
-          if constexpr (add)
-            out[q * stride_out] += sum;
-          else
-            out[q * stride_out] = sum;
-        }
-    }
-
-
+    /**
+     * Helper function that applies sum factorization in a specified direction using batched kernel
+     * and apply_matrix_vector_product().
+     *
+     * Sizes of the input and output vectors in 2D:
+     * -----------------------------------------------------------
+     * direction|  contract_over_rows  |  !contract_over_rows
+     * ----------------------------------------------------------
+     *      0   |  mm x mm -> nn x mm  |  nn x mm -> mm x mm
+     * ----------------------------------------------------------
+     *      1   |  mm x nn -> mm x nn  |  mm x nn -> mm x nn
+     * ----------------------------------------------------------
+     *
+     * Sizes of the input and output vectors in 3D:
+     * -----------------------------------------------------------------------
+     * direction|     contract_over_rows       |      !contract_over_rows
+     * -----------------------------------------------------------------------
+     *     0    | mm x mm x mm -> nn x mm x mm |  nn x mm x mm -> mm x mm x mm
+     * -----------------------------------------------------------------------
+     *     1    | nn x mm x mm -> nn x nn x mm |  nn x nn x mm -> nn x mm x mm
+     * -----------------------------------------------------------------------
+     *     2    | nn x nn x mm -> nn x nn x nn |  nn x nn x nn -> nn x nn x mm
+     * -----------------------------------------------------------------------
+     */
     template <int  dim,
               int  direction,
               int  n_rows,

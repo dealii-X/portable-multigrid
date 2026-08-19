@@ -10,8 +10,7 @@
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
-#include "kernels/bk3_kokkos_kernel.h"
-#include "kernels/bk3_kokkos_kernels_custom.h"
+#include "kernels/bk3_kokkos_kernels.h"
 #include "operators/portable_laplace_operator_quad.h"
 
 DEAL_II_NAMESPACE_OPEN

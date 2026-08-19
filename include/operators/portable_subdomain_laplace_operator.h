@@ -12,7 +12,7 @@
 
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
-#include "kernels/bk3_kokkos_kernel.h"
+#include "kernels/bk3_kokkos_kernels.h"
 #include "kernels/portable_local_laplace_operator.h"
 #include "operators/portable_laplace_operator_quad.h"
 
