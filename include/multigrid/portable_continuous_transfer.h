@@ -31,6 +31,25 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
+    // No alternate-kernel implementation exists for the continuous (CG<->DG)
+    // transfer -- see MGTransferBase's own doc comment
+    // (base/portable_mg_transfer_base.h) for why these exist at all.
+    void
+    prolongate_and_add_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> & /*dst*/,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> & /*src*/) const override
+    {
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
+    void
+    restrict_and_add_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> & /*dst*/,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> & /*src*/) const override
+    {
+      DEAL_II_NOT_IMPLEMENTED();
+    }
+
     void
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,

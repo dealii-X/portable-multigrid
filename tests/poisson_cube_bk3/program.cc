@@ -19,6 +19,7 @@
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/la_parallel_vector.h>
 #include <deal.II/lac/precondition.h>
+#include <deal.II/lac/read_write_vector.h>
 #include <deal.II/lac/solver_cg.h>
 
 #include <deal.II/matrix_free/operators.h>
@@ -31,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <random>
 
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_transfer.h"
@@ -124,6 +126,9 @@ namespace multigrid
 
     void
     vmult_comparison_timing();
+
+    void
+    prolong_restrict_comparison_timing();
 
 
     MPI_Comm mpi_communicator;
@@ -879,6 +884,17 @@ namespace multigrid
     double best_vmult     = 1e10;
     double best_vmult_new = 1e10;
 
+    // Per-level speedup, gathered into its own fresh table each cycle
+    // rather than extra per-level columns on vmult_comparison_table below:
+    // the number of MG levels varies across mesh-size cycles (run()'s
+    // sizes[] loop), and ConvergenceTable requires every column to have the
+    // same number of rows across the whole table's lifetime -- a column
+    // like "speedup_L5" would only get a value on cycles with >= 6 levels
+    // and break write_text() on every earlier, shallower cycle. A local
+    // table with one row per level, written out immediately after this
+    // cycle's per-level loop, sidesteps that entirely.
+    ConvergenceTable level_speedup_table;
+
     for (unsigned int level = 0; level <= level_matrices.max_level(); ++level)
       {
         best_vmult     = 1e10;
@@ -914,11 +930,60 @@ namespace multigrid
             }
           }
 
+        const double speedup = best_vmult / best_vmult_new;
+
+        // Correctness check on a random vector, independent of the timing
+        // loop above (deterministic, run once per level) -- same
+        // random-vector-compare idea as
+        // correctness_tests/check_correctness_laplace_operator_batched/
+        // program.cc, but using the vectors' own l2_norm() (an MPI-collective
+        // reduction, so every rank already has the same global value; only
+        // the printing/tabulation below is rank-0-gated) rather than a
+        // max-abs-diff over locally_owned_elements().
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> src_random, dst_vmult,
+          dst_vmult_new;
+        level_matrices[level]->initialize_dof_vector(src_random);
+        level_matrices[level]->initialize_dof_vector(dst_vmult);
+        level_matrices[level]->initialize_dof_vector(dst_vmult_new);
+
+        {
+          std::mt19937                           gen(42 + level);
+          std::uniform_real_distribution<double> dist(-1., 1.);
+
+          LinearAlgebra::ReadWriteVector<vcycle_number> rw(src_random.locally_owned_elements());
+          for (const auto idx : src_random.locally_owned_elements())
+            rw(idx) = dist(gen);
+          src_random.import_elements(rw, VectorOperation::insert);
+        }
+
+        level_matrices[level]->vmult(dst_vmult, src_random);
+        level_matrices[level]->vmult_new(dst_vmult_new, src_random);
+
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> err;
+        err = dst_vmult;
+        err -= dst_vmult_new;
+
+        const double norm    = dst_vmult.l2_norm();
+        const double abs_err = err.l2_norm();
+        const double rel_err = abs_err / std::max(norm, 1e-30);
+
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-          std::cout << "Best vmult/vmult_new timings for ndof = " << level_dof_handlers[level].n_dofs()
-                    << "   on level " << level << "|  vmult = " << best_vmult
-                    << "   vmult_new = " << best_vmult_new
-                    << "   speedup = " << best_vmult / best_vmult_new << std::endl;
+          {
+            std::cout << "Best vmult/vmult_new timings for ndof = " << level_dof_handlers[level].n_dofs()
+                      << "   on level " << level << "|  vmult = " << best_vmult
+                      << "   vmult_new = " << best_vmult_new << "   speedup = " << speedup << std::endl;
+            std::cout << "  correctness (random vector) |  norm = " << norm << "   abs_err = " << abs_err
+                      << "   rel_err = " << rel_err << std::endl;
+
+            level_speedup_table.add_value("level", level);
+            level_speedup_table.add_value("dofs", level_dof_handlers[level].n_dofs());
+            level_speedup_table.add_value("vmult", best_vmult);
+            level_speedup_table.add_value("vmult_new", best_vmult_new);
+            level_speedup_table.add_value("speedup", speedup);
+            level_speedup_table.add_value("norm", norm);
+            level_speedup_table.add_value("abs_err", abs_err);
+            level_speedup_table.add_value("rel_err", rel_err);
+          }
       }
 
     vmult_comparison_table.add_value("cells", triangulation.n_global_active_cells());
@@ -926,6 +991,228 @@ namespace multigrid
     vmult_comparison_table.add_value("vmult", best_vmult);
     vmult_comparison_table.add_value("vmult_new", best_vmult_new);
     vmult_comparison_table.add_value("speedup", best_vmult / best_vmult_new);
+
+    if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      {
+        level_speedup_table.set_scientific("vmult", true);
+        level_speedup_table.set_precision("vmult", 4);
+        level_speedup_table.set_scientific("vmult_new", true);
+        level_speedup_table.set_precision("vmult_new", 4);
+        level_speedup_table.set_precision("speedup", 3);
+        level_speedup_table.set_scientific("norm", true);
+        level_speedup_table.set_precision("norm", 3);
+        level_speedup_table.set_scientific("abs_err", true);
+        level_speedup_table.set_precision("abs_err", 3);
+        level_speedup_table.set_scientific("rel_err", true);
+        level_speedup_table.set_precision("rel_err", 3);
+
+        std::cout << std::endl << "Per-level vmult/vmult_new speedup and correctness:" << std::endl;
+        level_speedup_table.write_text(std::cout);
+        std::cout << std::endl;
+      }
+  }
+
+  // Best-of-5 prolongate_and_add()/restrict_and_add() (production
+  // BK1::Parallel::KokkosProlongationBatchedKernel/
+  // KokkosRestrictionBatchedKernel) vs prolongate_and_add_new()/
+  // restrict_and_add_new() (the EvaluatorTensorProduct-based "Abstracted"
+  // kernels) timings, plus a random-vector correctness check, per level,
+  // same methodology as vmult_comparison_timing() above. Called directly
+  // through the MGTransferBase pointer -- prolongate_and_add_new()/
+  // restrict_and_add_new() are part of that virtual interface (base/
+  // portable_mg_transfer_base.h), so no per-(degree_coarse, degree_fine)
+  // dispatch or downcast is needed here, unlike setup_mg_transfers()'s own
+  // PolynomialTransferRunner (which has to construct the concrete
+  // Portable::PolynomialTransfer<...> object in the first place). Runs over
+  // every level, both the PolynomialTransfer levels (p-multigrid) and the
+  // GeometricTransfer ones below coarse_triangulations.size()
+  // (h-multigrid) -- GeometricTransfer::prolongate_and_add_internal_new()/
+  // restrict_and_add_internal_new() (portable_geometric_transfer.h) are a
+  // real alternate-kernel implementation too, not a
+  // DEAL_II_NOT_IMPLEMENTED() stub, since GeometricTransfer already calls
+  // BK1::Parallel::KokkosProlongationBatchedKernel/
+  // KokkosRestrictionBatchedKernel under the hood just like
+  // PolynomialTransfer does.
+  //
+  // dst must be zeroed before each call since prolongate_and_add()/
+  // restrict_and_add() *add* into dst rather than overwriting it.
+  template <int dim, int fe_degree>
+  void
+  LaplaceProblem<dim, fe_degree>::prolong_restrict_comparison_timing()
+  {
+    Timer time;
+
+    ConvergenceTable level_transfer_table;
+
+    for (unsigned int level = 1; level <= level_matrices.max_level(); ++level)
+      {
+        auto &transfer = *mg_transfers[level];
+
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> vec_coarse, vec_fine,
+          dst_prolong_orig, dst_prolong_new, dst_restrict_orig, dst_restrict_new;
+
+        level_matrices[level - 1]->initialize_dof_vector(vec_coarse);
+        level_matrices[level]->initialize_dof_vector(vec_fine);
+        level_matrices[level]->initialize_dof_vector(dst_prolong_orig);
+        level_matrices[level]->initialize_dof_vector(dst_prolong_new);
+        level_matrices[level - 1]->initialize_dof_vector(dst_restrict_orig); 
+        level_matrices[level - 1]->initialize_dof_vector(dst_restrict_new);
+
+        {
+          std::mt19937                           gen(42 + level);
+          std::uniform_real_distribution<double> dist(-1., 1.);
+
+          LinearAlgebra::ReadWriteVector<vcycle_number> rw_coarse(vec_coarse.locally_owned_elements());
+          for (const auto idx : vec_coarse.locally_owned_elements())
+            rw_coarse(idx) = dist(gen);
+          vec_coarse.import_elements(rw_coarse, VectorOperation::insert);
+
+          LinearAlgebra::ReadWriteVector<vcycle_number> rw_fine(vec_fine.locally_owned_elements());
+          for (const auto idx : vec_fine.locally_owned_elements())
+            rw_fine(idx) = dist(gen);
+          vec_fine.import_elements(rw_fine, VectorOperation::insert);
+        }
+
+        double best_prolong      = 1e10;
+        double best_prolong_new  = 1e10;
+        double best_restrict     = 1e10;
+        double best_restrict_new = 1e10;
+
+        const unsigned int n_mv = level_dof_handlers[level].n_dofs() < 10000000 ? 200 : 50;
+
+        for (unsigned int i = 0; i < 5; ++i)
+          {
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                {
+                  dst_prolong_orig = 0.;
+                  transfer.prolongate_and_add(dst_prolong_orig, vec_coarse);
+                }
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              best_prolong = std::min(best_prolong, stat.max);
+            }
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                {
+                  dst_prolong_new = 0.;
+                  transfer.prolongate_and_add_new(dst_prolong_new, vec_coarse);
+                }
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              best_prolong_new = std::min(best_prolong_new, stat.max);
+            }
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                {
+                  dst_restrict_orig = 0.;
+                  transfer.restrict_and_add(dst_restrict_orig, vec_fine);
+                }
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              best_restrict = std::min(best_restrict, stat.max);
+            }
+            {
+              Kokkos::fence();
+              time.restart();
+              for (unsigned int i = 0; i < n_mv; ++i)
+                {
+                  dst_restrict_new = 0.;
+                  transfer.restrict_and_add_new(dst_restrict_new, vec_fine);
+                }
+              Kokkos::fence();
+
+              Utilities::MPI::MinMaxAvg stat =
+                Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+              best_restrict_new = std::min(best_restrict_new, stat.max);
+            }
+          }
+
+        // Correctness on a random vector, independent of the timing loop
+        // above.
+        dst_prolong_orig = 0.;
+        dst_prolong_new  = 0.;
+        transfer.prolongate_and_add(dst_prolong_orig, vec_coarse);
+        transfer.prolongate_and_add_new(dst_prolong_new, vec_coarse);
+
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> err_prolong;
+        err_prolong = dst_prolong_orig;
+        err_prolong -= dst_prolong_new;
+        const double prolong_norm    = dst_prolong_orig.l2_norm();
+        const double prolong_abs_err = err_prolong.l2_norm();
+        const double prolong_rel_err = prolong_abs_err / std::max(prolong_norm, 1e-30);
+
+        dst_restrict_orig = 0.;
+        dst_restrict_new  = 0.;
+        transfer.restrict_and_add(dst_restrict_orig, vec_fine);
+        transfer.restrict_and_add_new(dst_restrict_new, vec_fine);
+
+        LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default> err_restrict;
+        err_restrict = dst_restrict_orig;
+        err_restrict -= dst_restrict_new;
+        const double restrict_norm    = dst_restrict_orig.l2_norm();
+        const double restrict_abs_err = err_restrict.l2_norm();
+        const double restrict_rel_err = restrict_abs_err / std::max(restrict_norm, 1e-30);
+
+        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+          {
+            std::cout << "Best prolong/restrict timings for ndof_coarse = "
+                      << level_dof_handlers[level - 1].n_dofs()
+                      << ", ndof_fine = " << level_dof_handlers[level].n_dofs() << "   on level "
+                      << level << "|  prolong = " << best_prolong
+                      << "   prolong_new = " << best_prolong_new
+                      << "   speedup = " << (best_prolong / best_prolong_new)
+                      << "   restrict = " << best_restrict << "   restrict_new = " << best_restrict_new
+                      << "   speedup = " << (best_restrict / best_restrict_new) << std::endl;
+
+            level_transfer_table.add_value("level", level);
+            level_transfer_table.add_value("dofs_coarse", level_dof_handlers[level - 1].n_dofs());
+            level_transfer_table.add_value("dofs_fine", level_dof_handlers[level].n_dofs());
+            level_transfer_table.add_value("prolong", best_prolong);
+            level_transfer_table.add_value("prolong_new", best_prolong_new);
+            level_transfer_table.add_value("prolong_speedup", best_prolong / best_prolong_new);
+            level_transfer_table.add_value("prolong_rel_err", prolong_rel_err);
+            level_transfer_table.add_value("restrict", best_restrict);
+            level_transfer_table.add_value("restrict_new", best_restrict_new);
+            level_transfer_table.add_value("restrict_speedup", best_restrict / best_restrict_new);
+            level_transfer_table.add_value("restrict_rel_err", restrict_rel_err);
+          }
+      }
+
+    if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      {
+        level_transfer_table.set_scientific("prolong", true);
+        level_transfer_table.set_precision("prolong", 4);
+        level_transfer_table.set_scientific("prolong_new", true);
+        level_transfer_table.set_precision("prolong_new", 4);
+        level_transfer_table.set_precision("prolong_speedup", 3);
+        level_transfer_table.set_scientific("prolong_rel_err", true);
+        level_transfer_table.set_precision("prolong_rel_err", 3);
+        level_transfer_table.set_scientific("restrict", true);
+        level_transfer_table.set_precision("restrict", 4);
+        level_transfer_table.set_scientific("restrict_new", true);
+        level_transfer_table.set_precision("restrict_new", 4);
+        level_transfer_table.set_precision("restrict_speedup", 3);
+        level_transfer_table.set_scientific("restrict_rel_err", true);
+        level_transfer_table.set_precision("restrict_rel_err", 3);
+
+        std::cout << std::endl
+                  << "Per-level prolongate/restrict speedup and correctness:" << std::endl;
+        level_transfer_table.write_text(std::cout);
+        std::cout << std::endl;
+      }
   }
 
   template <int dim, int fe_degree>
@@ -1094,6 +1381,12 @@ namespace multigrid
         pcout << std::endl;
         pcout << std::endl;
         vmult_comparison_timing();
+        pcout << std::endl;
+        pcout << std::endl;
+
+        pcout << std::endl;
+        pcout << std::endl;
+        prolong_restrict_comparison_timing();
         pcout << std::endl;
         pcout << std::endl;
 

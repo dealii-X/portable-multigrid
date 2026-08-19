@@ -8,8 +8,7 @@
 
 #include <vector>
 
-#include "kernels/portable_evaluation_kernels.h"
-#include "kernels/portable_tensor_product_kernels.h"
+#include "matrix_free/portable_evaluation_kernels.h"
 
 DEAL_II_NAMESPACE_OPEN
 

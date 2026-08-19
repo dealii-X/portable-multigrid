@@ -173,6 +173,16 @@ namespace Portable
       void
       restrict_and_add(VectorType &dst, const VectorType &src) const override;
 
+      // Same ghost-exchange/in-place-vector wrapper as prolongate_and_add()/
+      // restrict_and_add() above, but routed through
+      // prolongate_and_add_internal_new()/restrict_and_add_internal_new()
+      // instead -- see MGTransferBase's own doc comment
+      // (base/portable_mg_transfer_base.h) for why these exist at all.
+      void
+      prolongate_and_add_new(VectorType &dst, const VectorType &src) const override;
+      void
+      restrict_and_add_new(VectorType &dst, const VectorType &src) const override;
+
     protected:
       /**
        * Perform prolongation on vectors with correct ghosting.
@@ -185,6 +195,22 @@ namespace Portable
        */
       virtual void
       restrict_and_add_internal(VectorType &dst, const VectorType &src) const = 0;
+
+      /**
+       * Alternate-kernel-implementation counterparts of
+       * prolongate_and_add_internal()/restrict_and_add_internal() above --
+       * see MGTransferBase's own doc comment
+       * (base/portable_mg_transfer_base.h). Not every derived class has an
+       * alternate kernel to offer; those that don't should throw
+       * DEAL_II_NOT_IMPLEMENTED() from their override, mirroring
+       * LaplaceOperatorBase::vmult_new()'s original placeholder before
+       * LaplaceOperator implemented it for real.
+       */
+      virtual void
+      prolongate_and_add_internal_new(VectorType &dst, const VectorType &src) const = 0;
+
+      virtual void
+      restrict_and_add_internal_new(VectorType &dst, const VectorType &src) const = 0;
 
       /**
        * A wrapper around update_ghost_values() optimized in case the
@@ -363,6 +389,97 @@ namespace Portable
       this->zero_out_ghost_values(*vec_coarse_ptr);
 
       this->restrict_and_add_internal(*vec_coarse_ptr, *vec_fine_ptr);
+
+      // clean up related to update_ghost_values()
+      if (vec_fine_needs_ghost_update == false && use_src_inplace == false)
+        this->zero_out_ghost_values(*vec_fine_ptr); // internal vector (DG)
+      else if (vec_fine_needs_ghost_update && use_src_inplace == false)
+        vec_fine_ptr->set_ghost_state(false); // internal vector (CG)
+      else if (vec_fine_needs_ghost_update && (src_ghosts_have_been_set == false))
+        this->zero_out_ghost_values(*vec_fine_ptr); // external vector
+
+      this->compress(*vec_coarse_ptr, VectorOperation::add);
+
+      if (use_dst_inplace == false)
+        dst += this->vec_coarse;
+    }
+
+    // Identical to prolongate_and_add() above, calling
+    // prolongate_and_add_internal_new() instead of
+    // prolongate_and_add_internal() -- see this class's own declaration for
+    // why these exist.
+    template <int dim, typename number>
+    void
+    GeometricTransferCore<dim, number>::prolongate_and_add_new(VectorType       &dst,
+                                                                const VectorType &src) const
+    {
+      const bool  use_dst_inplace = this->vec_fine.size() == 0;
+      auto *const vec_fine_ptr    = use_dst_inplace ? &dst : &this->vec_fine;
+      Assert(vec_fine_ptr->get_partitioner().get() == this->partitioner_fine.get(),
+             ExcInternalError());
+
+      const bool        use_src_inplace = this->vec_coarse.size() == 0;
+      const auto *const vec_coarse_ptr  = use_src_inplace ? &src : &this->vec_coarse;
+      Assert(vec_coarse_ptr->get_partitioner().get() == this->partitioner_coarse.get(),
+             ExcInternalError());
+
+      const bool src_ghosts_have_been_set = src.has_ghost_elements();
+
+      if (use_src_inplace == false)
+        this->vec_coarse.copy_locally_owned_data_from(src);
+
+      if ((use_src_inplace == false) || (src_ghosts_have_been_set == false))
+        this->update_ghost_values(*vec_coarse_ptr);
+
+      if (use_dst_inplace == false)
+        *vec_fine_ptr = number(0.);
+
+      this->prolongate_and_add_internal_new(*vec_fine_ptr, *vec_coarse_ptr);
+
+      if (this->vec_fine_needs_ghost_update || use_dst_inplace == false)
+        this->compress(*vec_fine_ptr, VectorOperation::add);
+
+      if (use_dst_inplace == false)
+        dst += this->vec_fine;
+
+      if (use_src_inplace && (src_ghosts_have_been_set == false))
+        this->zero_out_ghost_values(*vec_coarse_ptr);
+    }
+
+    // Identical to restrict_and_add() above, calling
+    // restrict_and_add_internal_new() instead of restrict_and_add_internal()
+    // -- see this class's own declaration for why these exist.
+    template <int dim, typename number>
+    void
+    GeometricTransferCore<dim, number>::restrict_and_add_new(VectorType       &dst,
+                                                              const VectorType &src) const
+    {
+      const bool        use_src_inplace = this->vec_fine.size() == 0;
+      const auto *const vec_fine_ptr    = use_src_inplace ? &src : &this->vec_fine;
+      Assert(vec_fine_ptr->get_partitioner().get() == this->partitioner_fine.get(),
+             ExcInternalError());
+
+      const bool  use_dst_inplace = this->vec_coarse.size() == 0;
+      auto *const vec_coarse_ptr  = use_dst_inplace ? &dst : &this->vec_coarse;
+      Assert(vec_coarse_ptr->get_partitioner().get() == this->partitioner_coarse.get(),
+             ExcInternalError());
+
+      const bool src_ghosts_have_been_set = src.has_ghost_elements();
+
+      if (use_src_inplace == false)
+        this->vec_fine.copy_locally_owned_data_from(src);
+
+      if ((use_src_inplace == false) ||
+          (vec_fine_needs_ghost_update && (src_ghosts_have_been_set == false)))
+        this->update_ghost_values(*vec_fine_ptr);
+
+      if (use_dst_inplace == false)
+        *vec_coarse_ptr = number(0.0);
+
+      // since we might add into the ghost values and call compress
+      this->zero_out_ghost_values(*vec_coarse_ptr);
+
+      this->restrict_and_add_internal_new(*vec_coarse_ptr, *vec_fine_ptr);
 
       // clean up related to update_ghost_values()
       if (vec_fine_needs_ghost_update == false && use_src_inplace == false)
