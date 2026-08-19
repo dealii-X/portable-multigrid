@@ -746,25 +746,6 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
-    // BK1::Parallel::KokkosProlongationBatchedKernelAbstracted()/
-    // KokkosRestrictionBatchedKernelAbstracted() counterparts of
-    // prolongate_and_add_internal()/restrict_and_add_internal() above --
-    // same transfer_schemes loop and per-scheme
-    // prolongation_matrix_shared_memory/dof_indices_coarse/dof_indices_fine/
-    // weights this instance already set up, just the
-    // EvaluatorTensorProduct-based kernel instead of the hand-unrolled one.
-    // See GeometricTransferCore's own doc comment
-    // (portable_geometric_transfer_core.h) for why these exist.
-    void
-    prolongate_and_add_internal_new(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
-
-    void
-    restrict_and_add_internal_new(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
-
     void
     setup_weights();
 
@@ -833,7 +814,7 @@ namespace Portable
           }
 
         BK1::Parallel::
-          KokkosProlongationBatchedKernel<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
+          KokkosProlongationBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
             scheme.prolongation_matrix_shared_memory,
             src_device,
             dst_device,
@@ -882,7 +863,7 @@ namespace Portable
           }
 
         BK1::Parallel::
-          KokkosRestrictionBatchedKernel<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
+          KokkosRestrictionBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
             scheme.prolongation_matrix_shared_memory,
             src_device,
             dst_device,
@@ -896,94 +877,6 @@ namespace Portable
         ++scheme_index;
       }
   }
-
-  // Identical loop to prolongate_and_add_internal() above, calling
-  // BK1::Parallel::KokkosProlongationBatchedKernelAbstracted() instead of
-  // KokkosProlongationBatchedKernel() -- same
-  // prolongation_matrix_shared_memory/dof_indices_coarse/dof_indices_fine/
-  // weights per scheme, purely a different kernel implementation for the
-  // same math.
-  template <int dim, int fe_degree, typename number>
-  void
-  GeometricTransfer<dim, fe_degree, number>::prolongate_and_add_internal_new(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
-      dst_device(dst.get_values(), dst.locally_owned_size());
-
-    for (auto &scheme : transfer_schemes)
-      {
-        if (scheme.n_coarse_cells == 0)
-          continue;
-
-        constexpr bool is_serial =
-          std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-
-        unsigned int numBlocks       = numbers::invalid_unsigned_int;
-        unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-        if (is_serial)
-          {
-            numBlocks       = 1u;
-            threadsPerBlock = 1u;
-          }
-
-        BK1::Parallel::
-          KokkosProlongationBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
-            scheme.prolongation_matrix_shared_memory,
-            src_device,
-            dst_device,
-            scheme.dof_indices_coarse,
-            scheme.dof_indices_fine,
-            scheme.weights,
-            scheme.n_coarse_cells,
-            numBlocks,
-            threadsPerBlock);
-      }
-  }
-
-  // Restriction counterpart of prolongate_and_add_internal_new() above --
-  // same relationship KokkosRestrictionBatchedKernelAbstracted() has to
-  // KokkosRestrictionBatchedKernel() (kernels/bk1_kokkos_kernels.h).
-  template <int dim, int fe_degree, typename number>
-  void
-  GeometricTransfer<dim, fe_degree, number>::restrict_and_add_internal_new(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
-      dst_device(dst.get_values(), dst.locally_owned_size());
-
-    for (auto &scheme : transfer_schemes)
-      {
-        if (scheme.n_coarse_cells == 0)
-          continue;
-
-        constexpr bool is_serial =
-          std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-
-        unsigned int numBlocks       = numbers::invalid_unsigned_int;
-        unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-        if (is_serial)
-          {
-            numBlocks       = 1u;
-            threadsPerBlock = 1u;
-          }
-
-        BK1::Parallel::
-          KokkosRestrictionBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
-            scheme.prolongation_matrix_shared_memory,
-            src_device,
-            dst_device,
-            scheme.dof_indices_coarse,
-            scheme.dof_indices_fine,
-            scheme.weights,
-            scheme.n_coarse_cells,
-            numBlocks,
-            threadsPerBlock);
-      }
-  }
-
 
   template <int dim, int fe_degree, typename number>
   void

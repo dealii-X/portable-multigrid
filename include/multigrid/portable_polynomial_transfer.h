@@ -679,28 +679,6 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
-    // Not part of the MGTransferBase interface (unlike LaplaceOperatorBase's
-    // vmult/vmult_new pair) -- these exercise
-    // BK1::Parallel::KokkosProlongationBatchedKernelAbstracted()/
-    // KokkosRestrictionBatchedKernelAbstracted() (kernels/bk1_kokkos_kernels.h,
-    // built from Custom::Parallel::EvaluatorTensorProduct rather than
-    // prolongate_and_add()/restrict_and_add()'s hand-unrolled per-direction
-    // loops) purely for A/B correctness/performance comparison against the
-    // production kernels above, on the exact same
-    // prolongation_matrix_1d/dof_indices_coarse/plain_dof_indices_fine/
-    // weights_view_kokkos this instance already set up -- see
-    // correctness_tests/check_correctness_bk1_kernels/program.cc and
-    // tests/poisson_cube_bk3/program.cc's prolong_restrict_comparison_timing().
-    void
-    prolongate_and_add_new(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
-
-    void
-    restrict_and_add_new(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
-
     void
     reinit(const MatrixFree<dim, number>   &mf_coarse,
            const MatrixFree<dim, number>   &mf_fine,
@@ -715,16 +693,6 @@ namespace Portable
 
     void
     restrict_and_add_internal(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
-
-    void
-    prolongate_and_add_new_internal(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
-
-    void
-    restrict_and_add_new_internal(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
@@ -774,25 +742,6 @@ namespace Portable
 
   template <int dim, int p_coarse, int p_fine, typename number>
   void
-  PolynomialTransfer<dim, p_coarse, p_fine, number>::prolongate_and_add_new(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    this->prolongate_and_add_new_internal(dst, src);
-  }
-
-  template <int dim, int p_coarse, int p_fine, typename number>
-  void
-  PolynomialTransfer<dim, p_coarse, p_fine, number>::restrict_and_add_new(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    this->restrict_and_add_new_internal(dst, src);
-  }
-
-
-  template <int dim, int p_coarse, int p_fine, typename number>
-  void
   PolynomialTransfer<dim, p_coarse, p_fine, number>::prolongate_and_add_internal(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
@@ -825,7 +774,7 @@ namespace Portable
 
         if (n_cells > 0)
           {
-            BK1::Parallel::KokkosProlongationBatchedKernel<dim, p_coarse + 1, p_fine + 1, number>(
+            BK1::Parallel::KokkosProlongationBatchedKernelAbstracted<dim, p_coarse + 1, p_fine + 1, number>(
               this->prolongation_matrix_1d,
               src_device,
               dst_device,
@@ -921,7 +870,7 @@ namespace Portable
 
         if (n_cells > 0)
           {
-            BK1::Parallel::KokkosRestrictionBatchedKernel<dim, p_coarse + 1, p_fine + 1, number>(
+            BK1::Parallel::KokkosRestrictionBatchedKernelAbstracted<dim, p_coarse + 1, p_fine + 1, number>(
               this->prolongation_matrix_1d,
               src_device,
               dst_device,
@@ -972,183 +921,6 @@ namespace Portable
         src.update_ghost_values();
 
         // Execute the loop on the cells
-        for (unsigned int color = 0; color < n_colors; ++color)
-          {
-            if (colored_graph[color].size() > 0)
-              do_color(color);
-          }
-
-        dst.compress(VectorOperation::add);
-      }
-    src.zero_out_ghost_values();
-  }
-
-  // Identical color-loop/overlap-communication structure to
-  // prolongate_and_add_internal() above, calling
-  // BK1::Parallel::KokkosProlongationBatchedKernelAbstracted() instead of
-  // KokkosProlongationBatchedKernel() -- same
-  // prolongation_matrix_1d/dof_indices_coarse/plain_dof_indices_fine/
-  // weights_view_kokkos, purely a different kernel implementation for the
-  // same math (see kernels/bk1_kokkos_kernels.h's own doc comment on the
-  // Abstracted kernel for how it differs).
-  template <int dim, int p_coarse, int p_fine, typename number>
-  void
-  PolynomialTransfer<dim, p_coarse, p_fine, number>::prolongate_and_add_new_internal(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
-      dst_device(dst.get_values(), dst.locally_owned_size());
-
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
-
-    const unsigned int n_colors = colored_graph.size();
-
-    constexpr bool is_serial =
-      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    if (is_serial)
-      {
-        numBlocks       = 1u;
-        threadsPerBlock = 1u;
-      }
-
-    // helper to process one color
-    auto do_color = [&](const unsigned int color)
-      {
-        const auto n_cells = colored_graph[color].size();
-
-        if (n_cells > 0)
-          {
-            BK1::Parallel::KokkosProlongationBatchedKernelAbstracted<dim,
-                                                                     p_coarse + 1,
-                                                                     p_fine + 1,
-                                                                     number>(
-              this->prolongation_matrix_1d,
-              src_device,
-              dst_device,
-              this->dof_indices_coarse[color],
-              this->plain_dof_indices_fine[color],
-              this->weights_view_kokkos[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock);
-          }
-      };
-
-    if (matrix_free_fine->use_overlap_communication_computation())
-      {
-        src.update_ghost_values_start(0);
-
-        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
-          do_color(0);
-
-        src.update_ghost_values_finish();
-
-        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
-          {
-            do_color(1);
-            Kokkos::fence();
-          }
-
-        dst.compress_start(0, VectorOperation::add);
-
-        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
-          do_color(2);
-
-        dst.compress_finish(VectorOperation::add);
-      }
-    else
-      {
-        src.update_ghost_values();
-
-        for (unsigned int color = 0; color < n_colors; ++color)
-          {
-            if (colored_graph[color].size() > 0)
-              do_color(color);
-          }
-        dst.compress(VectorOperation::add);
-      }
-    src.zero_out_ghost_values();
-  }
-
-  // Restriction counterpart of prolongate_and_add_new_internal() above --
-  // same relationship KokkosRestrictionBatchedKernelAbstracted() has to
-  // KokkosRestrictionBatchedKernel() (kernels/bk1_kokkos_kernels.h).
-  template <int dim, int p_coarse, int p_fine, typename number>
-  void
-  PolynomialTransfer<dim, p_coarse, p_fine, number>::restrict_and_add_new_internal(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
-
-    const unsigned int n_colors = colored_graph.size();
-
-    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
-      dst_device(dst.get_values(), dst.locally_owned_size());
-
-    constexpr bool is_serial =
-      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    if (is_serial)
-      {
-        numBlocks       = 1u;
-        threadsPerBlock = 1u;
-      }
-
-    auto do_color = [&](const unsigned int color)
-      {
-        const auto n_cells = colored_graph[color].size();
-
-        if (n_cells > 0)
-          {
-            BK1::Parallel::KokkosRestrictionBatchedKernelAbstracted<dim,
-                                                                    p_coarse + 1,
-                                                                    p_fine + 1,
-                                                                    number>(
-              this->prolongation_matrix_1d,
-              src_device,
-              dst_device,
-              this->dof_indices_coarse[color],
-              this->plain_dof_indices_fine[color],
-              this->weights_view_kokkos[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock);
-          }
-      };
-
-    if (matrix_free_fine->use_overlap_communication_computation())
-      {
-        src.update_ghost_values_start(0);
-
-        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
-          do_color(0);
-
-        src.update_ghost_values_finish();
-
-        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
-          {
-            do_color(1);
-            Kokkos::fence();
-          }
-
-        dst.compress_start(0, VectorOperation::add);
-
-        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
-          do_color(2);
-
-        dst.compress_finish(VectorOperation::add);
-      }
-    else
-      {
-        src.update_ghost_values();
-
         for (unsigned int color = 0; color < n_colors; ++color)
           {
             if (colored_graph[color].size() > 0)
