@@ -161,7 +161,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -256,7 +256,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],

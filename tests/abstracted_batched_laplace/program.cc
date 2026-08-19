@@ -29,8 +29,10 @@
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
+#include <random>
 
 #include "operators/portable_laplace_operator.h"
 
@@ -108,7 +110,11 @@ namespace multigrid
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> solution_device;
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> system_rhs_device;
 
-    std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>> system_matrix;
+    // Concrete type (not LaplaceOperatorBase) -- vmult_comparison_timing()
+    // below calls vmult_bk3()/vmult_dealii_batched()/
+    // vmult_dealii_batched_fused() directly, none of which are in
+    // LaplaceOperatorBase's virtual interface (only vmult() is).
+    std::unique_ptr<Portable::LaplaceOperator<dim, fe_degree, double>> system_matrix;
 
     const unsigned int refinement_cycles = 10;
 
@@ -190,8 +196,13 @@ namespace multigrid
     std::map<types::boundary_id, const Function<dim> *> dirichlet_boundary_functions = {
       {types::boundary_id(0), &homogeneous_dirichlet_bc}};
 
+    // No make_hanging_node_constraints() -- the meshes here are only
+    // globally refined (see run()), so there are no hanging nodes yet, and
+    // this project's own kernels (BK3, batched FEEvaluation) only mask
+    // Dirichlet boundary constraints so far, not hanging-node ones (the
+    // reverse of what real deal.II's own Portable::MatrixFree/FEEvaluation
+    // does internally). Keep this Dirichlet-only until that's reconciled.
     constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
-    DoFTools::make_hanging_node_constraints(dof_handler, constraints);
 
     VectorTools::interpolate_boundary_values(dof_handler,
                                              dirichlet_boundary_functions,
@@ -312,23 +323,8 @@ namespace multigrid
               << std::endl;
       }
 
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dst, dst_new;
-    dst.reinit(solution_device);
-    dst_new.reinit(solution_device);
-
-    system_matrix->vmult(dst, system_rhs_device);
-    system_matrix->vmult_new(dst_new, system_rhs_device);
-
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst;
-    diff -= dst_new;
-
-    double abs_err = diff.l2_norm();
-    double rel_err;
-    double norm_dst = dst.l2_norm();
-    if (norm_dst > 0)
-      rel_err = abs_err / norm_dst;
-    else
-      rel_err = 0.;
+    // vmult-variant comparison (correctness + performance, vmult_bk3() as
+    // ground truth) now lives in vmult_comparison_timing() below, not here.
 
     LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
     rw_vector.import_elements(solution_device, VectorOperation::insert);
@@ -356,8 +352,6 @@ namespace multigrid
     convergence_table.add_value("cg_time", time_cg);
     convergence_table.add_value("cg_its", iterations);
     convergence_table.add_value("norm", global_norm);
-    convergence_table.add_value("abs_err", abs_err);
-    convergence_table.add_value("rel_err", rel_err);
 
 
     // if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
@@ -470,55 +464,121 @@ namespace multigrid
   //   ghost_timing_table.add_value("mv_ghost_only", best_only_ghost);
   // }
 
+  // Correctness + performance comparison of LaplaceOperator's four vmult
+  // variants -- vmult_dealii() (standard, unbatched, real deal.II kernels --
+  // the speedup baseline every other variant is measured against here),
+  // vmult_bk3() (best-performing, fully-abstracted BK3 kernel -- the
+  // correctness ground truth, not the speedup baseline), vmult_dealii_batched()
+  // (step-64-style batched, combined evaluate()/integrate()), and
+  // vmult_dealii_batched_fused() (same, via the split evaluate_values()/
+  // evaluate_gradients()/integrate_gradients()/integrate_values()). Per
+  // Ivan's direction, this deliberately does not exercise the CG solver --
+  // see solve() above, currently uncalled from run().
   template <int dim, int fe_degree>
   void
   LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
   {
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dummy_solution, dummy_rhs;
-    system_matrix->initialize_dof_vector(dummy_solution);
-    system_matrix->initialize_dof_vector(dummy_rhs);
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src, dst_dealii, dst_bk3,
+      dst_batched, dst_batched_fused;
+    system_matrix->initialize_dof_vector(src);
+    system_matrix->initialize_dof_vector(dst_dealii);
+    system_matrix->initialize_dof_vector(dst_bk3);
+    system_matrix->initialize_dof_vector(dst_batched);
+    system_matrix->initialize_dof_vector(dst_batched_fused);
 
-    Timer time;
+    {
+      std::mt19937                           gen(42);
+      std::uniform_real_distribution<double> dist(-1., 1.);
 
-    double best_vmult     = 1e10;
-    double best_vmult_new = 1e10;
+      LinearAlgebra::ReadWriteVector<double> rw(locally_owned_dofs);
+      for (const auto idx : locally_owned_dofs)
+        rw(idx) = dist(gen);
+      src.import_elements(rw, VectorOperation::insert);
+    }
 
-    for (unsigned int i = 0; i < 5; ++i)
-      {
-        const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+    // vmult_dealii() drives real deal.II's own Portable::FEEvaluation/
+    // MatrixFree::cell_loop(), which -- unlike this project's own masked
+    // kernels -- reads the actual src value at Dirichlet-constrained DoFs
+    // instead of always treating it as zero. Zero those entries up front so
+    // every variant below sees the same input; this project's own kernels
+    // are invariant to this already (they never read src at constrained
+    // DoFs at all).
+    system_matrix->get_matrix_free().set_constrained_values(0., src);
 
+    // -- correctness: vmult_bk3() is ground truth --
+    system_matrix->vmult_bk3(dst_bk3, src);
+    system_matrix->vmult_dealii(dst_dealii, src);
+    system_matrix->vmult_dealii_batched(dst_batched, src);
+    system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src);
+
+    // Belt-and-suspenders: each vmult already leaves the constrained entries
+    // at 0 given the zeroed src above (via either copy_constrained_values()
+    // in vmult_dealii(), or simply never writing them in the masked
+    // kernels) -- this just makes that explicit.
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_bk3);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_dealii);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_fused);
+
+    const double norm_bk3 = dst_bk3.l2_norm();
+
+    auto rel_err_vs_bk3 = [&](const LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
+                                 &dst) {
+      LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst;
+      diff -= dst_bk3;
+      return norm_bk3 > 0 ? diff.l2_norm() / norm_bk3 : 0.;
+    };
+
+    const double rel_err_dealii  = rel_err_vs_bk3(dst_dealii);
+    const double rel_err_batched = rel_err_vs_bk3(dst_batched);
+    const double rel_err_batched_fused = rel_err_vs_bk3(dst_batched_fused);
+
+    // -- performance: best-of-5, same methodology as the rest of this file --
+    const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+
+    auto time_vmult = [&](const std::function<void()> &func) {
+      double best = 1e10;
+      Timer  time;
+      for (unsigned int i = 0; i < 5; ++i)
         {
           Kokkos::fence();
           time.restart();
-          for (unsigned int i = 0; i < n_mv; ++i)
-            system_matrix->vmult(dummy_solution, dummy_rhs);
+          for (unsigned int j = 0; j < n_mv; ++j)
+            func();
           Kokkos::fence();
 
-          Utilities::MPI::MinMaxAvg stat =
+          const Utilities::MPI::MinMaxAvg stat =
             Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
 
-          best_vmult = std::min(best_vmult, stat.max);
+          best = std::min(best, stat.max);
         }
-        {
-          Kokkos::fence();
-          time.restart();
-          for (unsigned int i = 0; i < n_mv; ++i)
-            system_matrix->vmult_new(dummy_solution, dummy_rhs);
-          Kokkos::fence();
+      return best;
+    };
 
-          Utilities::MPI::MinMaxAvg stat =
-            Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+    const double best_dealii = time_vmult([&]() { system_matrix->vmult_dealii(dst_dealii, src); });
+    const double best_bk3    = time_vmult([&]() { system_matrix->vmult_bk3(dst_bk3, src); });
+    const double best_batched =
+      time_vmult([&]() { system_matrix->vmult_dealii_batched(dst_batched, src); });
+    const double best_batched_fused =
+      time_vmult([&]() { system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src); });
 
-          best_vmult_new = std::min(best_vmult_new, stat.max);
-        }
-      }
-
-
+    // Speedups are relative to vmult_dealii() (real deal.II kernels) --
+    // that's the baseline this whole comparison is meant to answer "how
+    // much faster than actual deal.II" for. Correctness (rel_err) stays
+    // relative to vmult_bk3(), the validated ground truth.
     vmult_comparison_table.add_value("cells", triangulation.n_global_active_cells());
     vmult_comparison_table.add_value("dofs", dof_handler.n_dofs());
-    vmult_comparison_table.add_value("vmult", best_vmult);
-    vmult_comparison_table.add_value("vmult_new", best_vmult_new);
-    vmult_comparison_table.add_value("speedup", best_vmult / best_vmult_new);
+    vmult_comparison_table.add_value("t_dealii", best_dealii);
+    vmult_comparison_table.add_value("t_bk3", best_bk3);
+    vmult_comparison_table.add_value("t_batched", best_batched);
+    vmult_comparison_table.add_value("t_batched_fused", best_batched_fused);
+    vmult_comparison_table.add_value("speedup_bk3_vs_dealii", best_dealii / best_bk3);
+    vmult_comparison_table.add_value("speedup_batched_vs_dealii", best_dealii / best_batched);
+    vmult_comparison_table.add_value("speedup_batched_fused_vs_dealii",
+                                     best_dealii / best_batched_fused);
+    vmult_comparison_table.add_value("rel_err_dealii_vs_bk3", rel_err_dealii);
+    vmult_comparison_table.add_value("rel_err_batched_vs_bk3", rel_err_batched);
+    vmult_comparison_table.add_value("rel_err_batched_fused_vs_bk3", rel_err_batched_fused);
   }
 
 
@@ -602,16 +662,16 @@ namespace multigrid
 
         setup_matrix_free();
 
-        compute_rhs();
+        // Per Ivan's direction, this run deliberately does not exercise the
+        // CG solver -- compute_rhs()/solve() stay defined (and correct)
+        // above but uncalled for now; only the vmult-variant comparison
+        // below is exercised.
+        // compute_rhs();
+        // solve();
 
         pcout << "Total setup time: " << setup_time << std::endl;
-
-        solve();
         pcout << std::endl;
 
-        pcout << std::endl;
-        pcout << std::endl;
-        // matvec_ghost_timing();
         vmult_comparison_timing();
         pcout << std::endl;
         pcout << std::endl;
@@ -619,27 +679,23 @@ namespace multigrid
 
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
           {
-            convergence_table.set_scientific("cg_time", true);
-            convergence_table.set_precision("cg_time", 3);
-            convergence_table.set_scientific("norm", true);
-            convergence_table.set_precision("norm", 3);
-            convergence_table.set_scientific("abs_err", true);
-            convergence_table.set_precision("abs_err", 3);
-            convergence_table.set_scientific("rel_err", true);
-            convergence_table.set_precision("rel_err", 3);
-
-            convergence_table.write_text(std::cout);
-
-            std::cout << std::endl << std::endl;
-
-
-
-            vmult_comparison_table.set_scientific("vmult", true);
-            vmult_comparison_table.set_precision("vmult", 4);
-            vmult_comparison_table.set_scientific("vmult_new", true);
-            vmult_comparison_table.set_precision("vmult_new", 4);
-            vmult_comparison_table.set_precision("speedup", 3);
-
+            vmult_comparison_table.set_scientific("t_dealii", true);
+            vmult_comparison_table.set_precision("t_dealii", 4);
+            vmult_comparison_table.set_scientific("t_bk3", true);
+            vmult_comparison_table.set_precision("t_bk3", 4);
+            vmult_comparison_table.set_scientific("t_batched", true);
+            vmult_comparison_table.set_precision("t_batched", 4);
+            vmult_comparison_table.set_scientific("t_batched_fused", true);
+            vmult_comparison_table.set_precision("t_batched_fused", 4);
+            vmult_comparison_table.set_precision("speedup_bk3_vs_dealii", 3);
+            vmult_comparison_table.set_precision("speedup_batched_vs_dealii", 3);
+            vmult_comparison_table.set_precision("speedup_batched_fused_vs_dealii", 3);
+            vmult_comparison_table.set_scientific("rel_err_dealii_vs_bk3", true);
+            vmult_comparison_table.set_precision("rel_err_dealii_vs_bk3", 3);
+            vmult_comparison_table.set_scientific("rel_err_batched_vs_bk3", true);
+            vmult_comparison_table.set_precision("rel_err_batched_vs_bk3", 3);
+            vmult_comparison_table.set_scientific("rel_err_batched_fused_vs_bk3", true);
+            vmult_comparison_table.set_precision("rel_err_batched_fused_vs_bk3", 3);
 
             vmult_comparison_table.write_text(std::cout);
 

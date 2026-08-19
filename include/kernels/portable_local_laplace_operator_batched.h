@@ -5,6 +5,7 @@
 
 #include <deal.II/matrix_free/portable_matrix_free.h>
 
+#include "matrix_free/portable_batched_fe_evaluation.h"
 #include "matrix_free/portable_evaluation_kernels.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -77,6 +78,74 @@ namespace Portable
                                                                        data->threadIdx,
                                                                        data->blockSize);
   }
+
+
+
+  // Batched analog of step-64's LocalHelmholtzOperator, minus the mass term,
+  // built purely from Custom::Parallel::FEEvaluation's deal.II-Portable::
+  // FEEvaluation-faithful accessor API (read_dof_values()/evaluate(flags)/
+  // get_gradient()/submit_gradient()/integrate(flags)/
+  // distribute_local_to_global()) -- the on-the-fly inv_jacobian/JxW
+  // geometric-factor path, not LocalLaplaceOperatorBatched's G_tensor-fused
+  // evaluate_gradients_and_multiply_symmetric_tensor() above. Same math,
+  // same operator, different code path -- see
+  // correctness_tests/check_correctness_batched_fe_evaluation for the
+  // bit-identical-to-machine-precision cross-check against vmult().
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+  class LocalLaplaceOperatorGeneric
+  {
+  public:
+    LocalLaplaceOperatorGeneric() = default;
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const Custom::Parallel::BatchData<dim, Number> *data,
+               const Custom::Parallel::DeviceView<Number>     &src,
+               Custom::Parallel::DeviceView<Number>           &dst) const
+    {
+      Custom::Parallel::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, Number> fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+      fe_eval.evaluate(EvaluationFlags::gradients);
+
+      data->for_each_quad_point(
+        [&](const int point) { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+
+      fe_eval.integrate(EvaluationFlags::gradients);
+
+      fe_eval.distribute_local_to_global(dst);
+    }
+  };
+
+  // Same operator as LocalLaplaceOperatorGeneric above, but built from
+  // FEEvaluation's split evaluate_values()/evaluate_gradients()/
+  // integrate_gradients()/integrate_values() instead of the combined,
+  // EvaluationFlags-driven evaluate()/integrate().
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+  class LocalLaplaceOperatorGenericSplit
+  {
+  public:
+    LocalLaplaceOperatorGenericSplit() = default;
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const Custom::Parallel::BatchData<dim, Number> *data,
+               const Custom::Parallel::DeviceView<Number>     &src,
+               Custom::Parallel::DeviceView<Number>           &dst) const
+    {
+      Custom::Parallel::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, Number> fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+      fe_eval.evaluate_values();
+      fe_eval.evaluate_gradients();
+
+      data->for_each_quad_point(
+        [&](const int point) { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+
+      fe_eval.integrate_gradients();
+      fe_eval.integrate_values();
+
+      fe_eval.distribute_local_to_global(dst);
+    }
+  };
 
 
 

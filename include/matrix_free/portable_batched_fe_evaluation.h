@@ -9,40 +9,6 @@
 
 DEAL_II_NAMESPACE_OPEN
 
-// Batched analog of deal.II's own Portable::FEEvaluation
-// (matrix_free/portable_fe_evaluation.h), built on the abstractions in
-// portable_evaluation_kernels.h/portable_local_laplace_operator_batched.h
-// instead of deal.II's own one-cell-per-team internals. Named in
-// Custom::Parallel (not dealii::Portable) purely to avoid colliding with
-// deal.II's real Portable::FEEvaluation, which lives in the exact same
-// (dealii::Portable) namespace and is commonly included in the same
-// translation unit -- same reasoning as every other Custom::Parallel type
-// in this codebase mirroring a real Portable:: counterpart under a
-// different namespace.
-//
-// Deliberately mirrors deal.II's real read_dof_values()/evaluate()/
-// get_value()/get_gradient()/submit_value()/submit_gradient()/integrate()/
-// distribute_local_to_global() split so a per-quadrature-point Functor can
-// be written exactly like step-64's HelmholtzOperatorQuad -- see
-// correctness_tests/check_correctness_batched_fe_evaluation/program.cc for
-// a worked Laplace example. The `q_point`/`point` argument these take is a
-// *batch-flat* index over [0, c_nelmtPerBatch * n_q_points), not a
-// per-cell index in [0, n_q_points) as in deal.II's unbatched class --
-// Portable::LaplaceOperatorBatchData::for_each_quad_point() (kernels/
-// portable_local_laplace_operator_batched.h) is the counterpart of
-// deal.II's own Data::for_each_quad_point() that supplies exactly this
-// index, spread across the whole team/batch in one call.
-//
-// get_gradient()/submit_gradient() apply the reference-to-physical mapping
-// on the fly via inv_jacobian/JxW (two separate multiplies, mirroring
-// deal.II's own get_gradient()/submit_gradient() and this project's
-// unbatched LocalLaplaceOperator's step 5 exactly), not
-// LaplaceOperatorBatchData::G_tensor's BK3-style precomputed symmetric
-// tensor -- the on-the-fly geometric-factor path deferred when
-// LaplaceOperatorBatchData was first designed, now built out for this more
-// general, deal.II-faithful accessor API. LocalLaplaceOperatorBatched's own
-// fused G_tensor path (kernels/portable_local_laplace_operator_batched.h)
-// is untouched and still the one cell_loop_batched() uses.
 namespace Custom
 {
   namespace Parallel
@@ -87,12 +53,12 @@ namespace Custom
       read_dof_values(const Custom::Parallel::DeviceView<Number> &src) const
       {
         Custom::Parallel::read_dof_values<dim, n_local_dofs_1d>(data->team_member,
-                                                                src,
                                                                 data->dof_indices,
+                                                                data->cell_range_ids,
+                                                                src,
                                                                 data->values,
                                                                 data->batchIdx,
                                                                 data->nelmtPerBatch,
-                                                                data->cell_range_ids,
                                                                 data->c_nelmtPerBatch,
                                                                 data->threadIdx,
                                                                 data->blockSize);
@@ -102,171 +68,119 @@ namespace Custom
       distribute_local_to_global(Custom::Parallel::DeviceView<Number> &dst) const
       {
         Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(data->team_member,
+                                                                           data->dof_indices,
+                                                                           data->cell_range_ids,
                                                                            data->values,
                                                                            dst,
-                                                                           data->dof_indices,
                                                                            data->batchIdx,
                                                                            data->nelmtPerBatch,
-                                                                           data->cell_range_ids,
                                                                            data->c_nelmtPerBatch,
                                                                            data->threadIdx,
                                                                            data->blockSize);
       }
 
-      // Deal.II-style evaluate(): a single EvaluatorTensorProduct instance
-      // (`eval`, holding both shape_values and co_shape_gradients) serves
-      // both the dof->quad values transform (BK3 steps 2-4, via values<>())
-      // and the gradient step (BK3 steps 5-6, via co_gradients<>()) --
-      // mirroring real deal.II's own
-      // FEEvaluationImplTransformToCollocation::evaluate() exactly, which
-      // likewise reuses one `eval` object for both, rather than going
-      // through FEEvaluationImplTransformToCollocation::evaluate_values()'s
-      // separate wrapper (still used, unchanged, by
-      // LocalLaplaceOperatorBatched). The values<> transform always runs
-      // (needed as co_gradients<>()'s own input regardless of which flags
-      // were requested); the gradient step issues one separate
-      // co_gradients<direction,...>() call per direction (not
-      // LocalLaplaceOperatorBatched's fused, register-cached single pass),
-      // so this class's performance can be measured against the fused path
-      // directly: same math, same per-point work, but dim separate
-      // passes/team_barrier()s instead of one. No early return for
-      // EvaluationFlags::nothing, matching deal.II's own TransformToCollocation
-      // evaluate().
       DEAL_II_HOST_DEVICE void
       evaluate(const EvaluationFlags::EvaluationFlags evaluation_flag) const
       {
-        const Custom::Parallel::EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                                       dim,
-                                                       n_local_dofs_1d,
-                                                       n_q_points_1d,
-                                                       Number>
-          eval(data->team_member,
-               data->shape_values,
-               nullptr,
-               data->co_shape_gradients,
-               nullptr,
-               data->c_nelmtPerBatch,
-               data->threadIdx,
-               data->blockSize);
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
 
-        if constexpr (dim == 1)
-          {
-            eval.template values<0, true, false>(data->values, data->values);
-          }
-        else if constexpr (dim == 2)
-          {
-            eval.template values<0, true, false>(data->values, data->scratch);
-            eval.template values<1, true, false>(data->scratch, data->values);
-          }
-        else // dim == 3
-          {
-            eval.template values<0, true, false>(data->values, data->scratch);
-            eval.template values<1, true, false>(data->scratch,
-                                                 data->scratch + data->quad_size_per_batch);
-            eval.template values<2, true, false>(data->scratch + data->quad_size_per_batch,
-                                                 data->values);
-          }
-
-        if (evaluation_flag & EvaluationFlags::gradients)
-          {
-            eval.template co_gradients<0, true, false>(data->values, data->gradients);
-            if constexpr (dim > 1)
-              eval.template co_gradients<1, true, false>(data->values,
-                                                         data->gradients +
-                                                           data->quad_size_per_batch);
-            if constexpr (dim > 2)
-              eval.template co_gradients<2, true, false>(data->values,
-                                                         data->gradients +
-                                                           2 * data->quad_size_per_batch);
-          }
+        fe_eval.evaluate(data->values, data->gradients, data->scratch, evaluation_flag);
       }
 
-      // Deal.II-style integrate(): the same single `eval` instance handles
-      // both the gradient step (BK3 steps 5-6 in reverse, via
-      // co_gradients<>()) and the final quad->dof values transform (BK3
-      // steps 7-9, via values<>()) -- mirroring real deal.II's own
-      // FEEvaluationImplTransformToCollocation::integrate() exactly,
-      // including its conditional `add` on the first co_gradients() call:
-      // when values were *also* submitted (`values` already holds
-      // submit_value()'s JxW-multiplied contribution), that first call
-      // accumulates onto it instead of overwriting it, and every subsequent
-      // direction's call always accumulates. The final values<> transform
-      // always runs afterward, exactly as in deal.II's own integrate(),
-      // which also has no early return for EvaluationFlags::nothing.
       DEAL_II_HOST_DEVICE void
       integrate(const EvaluationFlags::EvaluationFlags integration_flag) const
       {
-        const Custom::Parallel::EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                                       dim,
-                                                       n_local_dofs_1d,
-                                                       n_q_points_1d,
-                                                       Number>
-          eval(data->team_member,
-               data->shape_values,
-               nullptr,
-               data->co_shape_gradients,
-               nullptr,
-               data->c_nelmtPerBatch,
-               data->threadIdx,
-               data->blockSize);
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
 
-        if (integration_flag & EvaluationFlags::gradients)
-          {
-            const bool add_values = static_cast<bool>(integration_flag & EvaluationFlags::values);
+        fe_eval.integrate(data->values, data->gradients, data->scratch, integration_flag);
+      }
 
-            if constexpr (dim == 1)
-              {
-                if (add_values)
-                  eval.template co_gradients<0, false, true>(data->gradients, data->values);
-                else
-                  eval.template co_gradients<0, false, false>(data->gradients, data->values);
-              }
-            else if constexpr (dim == 2)
-              {
-                if (add_values)
-                  eval.template co_gradients<1, false, true>(data->gradients +
-                                                               data->quad_size_per_batch,
-                                                             data->values);
-                else
-                  eval.template co_gradients<1, false, false>(data->gradients +
-                                                                data->quad_size_per_batch,
-                                                              data->values);
-                eval.template co_gradients<0, false, true>(data->gradients, data->values);
-              }
-            else if constexpr (dim == 3)
-              {
-                if (add_values)
-                  eval.template co_gradients<2, false, true>(data->gradients +
-                                                               2 * data->quad_size_per_batch,
-                                                             data->values);
-                else
-                  eval.template co_gradients<2, false, false>(data->gradients +
-                                                                2 * data->quad_size_per_batch,
-                                                              data->values);
-                eval.template co_gradients<1, false, true>(data->gradients +
-                                                             data->quad_size_per_batch,
-                                                           data->values);
-                eval.template co_gradients<0, false, true>(data->gradients, data->values);
-              }
-          }
+      DEAL_II_HOST_DEVICE void
+      evaluate_values() const
+      {
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
 
-        if constexpr (dim == 1)
-          {
-            eval.template values<0, false, false>(data->values, data->values);
-          }
-        else if constexpr (dim == 2)
-          {
-            eval.template values<1, false, false>(data->values, data->scratch);
-            eval.template values<0, false, false>(data->scratch, data->values);
-          }
-        else // dim == 3
-          {
-            eval.template values<2, false, false>(data->values, data->scratch);
-            eval.template values<1, false, false>(data->scratch,
-                                                  data->scratch + data->quad_size_per_batch);
-            eval.template values<0, false, false>(data->scratch + data->quad_size_per_batch,
-                                                  data->values);
-          }
+        fe_eval.evaluate_values(data->values, data->values, data->scratch);
+      }
+
+      template <bool add = false>
+      DEAL_II_HOST_DEVICE void
+      evaluate_gradients() const
+      {
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
+
+        fe_eval.template evaluate_gradients<add>(data->values, data->gradients);
+      }
+
+      DEAL_II_HOST_DEVICE void
+      integrate_values() const
+      {
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
+
+        fe_eval.integrate_values(data->values, data->values, data->scratch);
+      }
+
+      template <bool add = false>
+      DEAL_II_HOST_DEVICE void
+      integrate_gradients() const
+      {
+        const Custom::Parallel::
+          FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+            fe_eval(data->team_member,
+                    data->shape_values,
+                    data->co_shape_gradients,
+                    data->nelmtPerBatch,
+                    data->c_nelmtPerBatch,
+                    data->batchIdx,
+                    data->threadIdx,
+                    data->blockSize);
+
+        fe_eval.template integrate_gradients<add>(data->gradients, data->values);
       }
 
       DEAL_II_HOST_DEVICE Number

@@ -6,16 +6,36 @@
 //
 // Two independent checks:
 //
-//  1. run_test(): builds a real Portable::LaplaceOperator for ground truth
-//     (vmult(), the already-validated unbatched path) and, on the exact same
-//     Portable::MatrixFree instance, drives cell_loop_batched_launch()
-//     (include/kernels/portable_local_laplace_operator_batched.h) with a
-//     small LocalLaplaceOperatorGeneric Functor that computes the identical
-//     stiffness operator purely via
-//     read_dof_values()/evaluate(gradients)/get_gradient()/submit_gradient()/
-//     integrate(gradients)/distribute_local_to_global() -- i.e. the
-//     on-the-fly inv_jacobian/JxW path, not LocalLaplaceOperatorBatched's
-//     G_tensor-fused one. Compares the two dst vectors on random input.
+//  1. run_test(): builds a real Portable::LaplaceOperator on a Dirichlet-only
+//     (globally, not adaptively, refined -- no hanging nodes) problem and
+//     compares its ground-truth vmult_bk3() (best-performing, fully-abstracted
+//     BK3 kernel) against three other entry points (operators/
+//     portable_laplace_operator.h):
+//       - vmult_dealii(): real deal.II's own Portable::FEEvaluation/
+//         MatrixFree::cell_loop() (LocalLaplaceOperatorStep64, kernels/
+//         portable_local_laplace_operator.h) -- unlike every kernel this
+//         project writes itself, this one does NOT mask constrained DoFs
+//         internally (real deal.II only auto-masks hanging-node
+//         constraints, not Dirichlet ones -- the reverse of this project's
+//         own kernels, which mask Dirichlet but don't support hanging nodes
+//         yet; Ivan's words: "it's on my long todo list to enable
+//         [Dirichlet masking] in deal.II as well"). Made comparable by
+//         zeroing src's (and, belt-and-suspenders, every dst's) constrained
+//         entries via MatrixFree::set_constrained_values() before comparing
+//         -- see below.
+//       - vmult_dealii_batched(): LocalLaplaceOperatorGeneric (kernels/
+//         portable_local_laplace_operator_batched.h) -- the standard,
+//         step-64-style pattern (read_dof_values()/evaluate(gradients)/
+//         get_gradient()/submit_gradient()/integrate(gradients)/
+//         distribute_local_to_global()), batched via cell_loop_batched().
+//       - vmult_dealii_batched_fused(): LocalLaplaceOperatorGenericSplit,
+//         same math via the split evaluate_values()/evaluate_gradients()/
+//         integrate_gradients()/integrate_values() instead of the combined,
+//         EvaluationFlags-driven evaluate()/integrate().
+//     None of these three use LocalLaplaceOperatorBatched's G_tensor-fused
+//     path (that's vmult_bk3()) -- all three go through FEEvaluation's
+//     on-the-fly inv_jacobian/JxW multiply instead. Compares all four dst
+//     vectors on random (Dirichlet-zeroed) input.
 //
 //  2. run_integrate_add_test(): isolates the new `add` template parameter
 //     on FEEvaluationImplTransformToCollocation::integrate_gradients()
@@ -62,35 +82,6 @@ using namespace dealii;
 
 using Number = double;
 
-// Batched analog of step-64's LocalHelmholtzOperator, minus the mass term
-// (coef == 0), so it computes exactly the same isotropic Laplace stiffness
-// operator as Portable::LaplaceOperator -- built purely from
-// Custom::Parallel::FEEvaluation's accessor API instead of
-// LocalLaplaceOperatorBatched's G_tensor-fused evaluate_gradients_and_
-// multiply_symmetric_tensor().
-template <int dim, int fe_degree, int n_q_points_1d, typename Number>
-class LocalLaplaceOperatorGeneric
-{
-public:
-  DEAL_II_HOST_DEVICE void
-  operator()(const Custom::Parallel::BatchData<dim, Number> *data,
-             const Custom::Parallel::DeviceView<Number>     &src,
-             Custom::Parallel::DeviceView<Number>           &dst) const
-  {
-    Custom::Parallel::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, Number> fe_eval(data);
-
-    fe_eval.read_dof_values(src);
-    fe_eval.evaluate(EvaluationFlags::gradients);
-
-    data->for_each_quad_point([&](const int point)
-                                { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
-
-    fe_eval.integrate(EvaluationFlags::gradients);
-
-    fe_eval.distribute_local_to_global(dst);
-  }
-};
-
 template <int dim, int fe_degree>
 bool
 run_test()
@@ -104,8 +95,14 @@ run_test()
   DoFHandler<dim> dof_handler(triangulation);
   dof_handler.distribute_dofs(fe);
 
+  // No make_hanging_node_constraints() -- the mesh below is only globally
+  // (not adaptively) refined, so there are no hanging nodes yet, and this
+  // project's own kernels (BK3, batched FEEvaluation) only mask Dirichlet
+  // boundary constraints so far, not hanging-node ones (the reverse of what
+  // real deal.II's own Portable::MatrixFree/FEEvaluation does internally --
+  // hanging nodes yes, Dirichlet no). Keep this test Dirichlet-only until
+  // that's reconciled.
   AffineConstraints<Number> constraints;
-  DoFTools::make_hanging_node_constraints(dof_handler, constraints);
   VectorTools::interpolate_boundary_values(dof_handler,
                                            0,
                                            Functions::ZeroFunction<dim>(),
@@ -115,85 +112,14 @@ run_test()
   Portable::LaplaceOperator<dim, fe_degree, Number> laplace_operator(
     dof_handler, constraints, /*overlap_communication_computation=*/false);
 
-  const auto        &matrix_free   = laplace_operator.get_matrix_free();
-  const auto        &colored_graph = matrix_free.get_colored_graph();
-  const unsigned int n_colors      = colored_graph.size();
-
-  // -- setup_dof_indices_per_color(), following
-  //    Portable::LaplaceOperator::setup_dof_indices_per_color() -- can't
-  //    reach the operator's own copy (private), so duplicated here, same as
-  //    correctness_tests/check_correctness_common_kernels/program.cc does. --
-  constexpr int             n_1d         = fe_degree + 1;
-  constexpr unsigned int    n_local_dofs = Utilities::pow(n_1d, dim);
-  std::vector<unsigned int> lex_numbering(n_local_dofs);
-  {
-    const Quadrature<1> dummy_quadrature(std::vector<Point<1>>(1, Point<1>()));
-    dealii::internal::MatrixFreeFunctions::ShapeInfo<double> shape_info;
-    shape_info.reinit(dummy_quadrature, dof_handler.get_fe(), 0);
-    lex_numbering = shape_info.lexicographic_numbering;
-  }
-
-  std::vector<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>>
-    dof_indices_per_color(n_colors);
-
-  {
-    std::vector<types::global_dof_index> local_dof_indices(n_local_dofs);
-    std::vector<types::global_dof_index> subdomain_local_dof_indices(n_local_dofs);
-
-    const auto &partitioner = matrix_free.get_vector_partitioner();
-
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        if (colored_graph[color].size() == 0)
-          continue;
-
-        const auto &mf_data = matrix_free.get_data(color);
-        const auto &graph   = colored_graph[color];
-
-        dof_indices_per_color[color] =
-          Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("dof_indices_" + std::to_string(color), Kokkos::WithoutInitializing),
-            n_local_dofs,
-            mf_data.n_cells);
-
-        auto dof_indices_host = Kokkos::create_mirror_view(dof_indices_per_color[color]);
-
-        for (unsigned int cell_id = 0; cell_id < mf_data.n_cells; ++cell_id)
-          {
-            auto triacell = graph[cell_id];
-
-            typename DoFHandler<dim>::cell_iterator cell =
-              triacell->as_dof_handler_iterator(dof_handler);
-
-            cell->get_dof_indices(local_dof_indices);
-            triacell->get_dof_indices(subdomain_local_dof_indices);
-
-            if (partitioner)
-              for (auto &index : local_dof_indices)
-                index = partitioner->global_to_local(index);
-
-            for (unsigned int i = 0; i < n_local_dofs; ++i)
-              {
-                const auto global_dof          = local_dof_indices[lex_numbering[i]];
-                const auto subdomain_local_dof = subdomain_local_dof_indices[lex_numbering[i]];
-
-                if (constraints.is_constrained(subdomain_local_dof))
-                  dof_indices_host(i, cell_id) = numbers::invalid_unsigned_int;
-                else
-                  dof_indices_host(i, cell_id) = global_dof;
-              }
-          }
-
-        Kokkos::deep_copy(dof_indices_per_color[color], dof_indices_host);
-        Kokkos::fence();
-      }
-  }
-
-  // -- random input, apply both paths, compare --
-  LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> src, dst_orig, dst_generic;
+  // -- random input, apply all paths, compare --
+  LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> src, dst_bk3, dst_dealii,
+    dst_generic, dst_generic_split;
   laplace_operator.initialize_dof_vector(src);
-  laplace_operator.initialize_dof_vector(dst_orig);
+  laplace_operator.initialize_dof_vector(dst_bk3);
+  laplace_operator.initialize_dof_vector(dst_dealii);
   laplace_operator.initialize_dof_vector(dst_generic);
+  laplace_operator.initialize_dof_vector(dst_generic_split);
 
   {
     std::mt19937                           gen(42);
@@ -205,69 +131,71 @@ run_test()
     src.import_elements(rw, VectorOperation::insert);
   }
 
-  laplace_operator.vmult(dst_orig, src);
+  // vmult_dealii() drives real deal.II's own Portable::FEEvaluation/
+  // MatrixFree::cell_loop(), which -- unlike this project's own masked
+  // kernels -- reads the *actual* src value at Dirichlet-constrained DoFs
+  // rather than always treating it as zero. Zero those entries in src
+  // up front so every vmult variant below sees the same (homogeneous
+  // Dirichlet) input; this project's own kernels are invariant to this
+  // already (they never read src at constrained DoFs at all), so this only
+  // changes what vmult_dealii() sees.
+  laplace_operator.get_matrix_free().set_constrained_values(0., src);
 
-  {
-    dst_generic = 0.;
+  // vmult_bk3() is ground truth here (see file-header comment above) -- not
+  // vmult().
+  laplace_operator.vmult_bk3(dst_bk3, src);
+  laplace_operator.vmult_dealii(dst_dealii, src);
 
-    constexpr bool is_serial =
-      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+  // vmult_dealii_batched()/vmult_dealii_batched_fused() (operators/
+  // portable_laplace_operator.h) drive LocalLaplaceOperatorGeneric/
+  // LocalLaplaceOperatorGenericSplit through cell_loop_batched() internally
+  // -- exercise those production entry points directly, no manual
+  // dof_indices_per_color/color-loop replication needed.
+  laplace_operator.vmult_dealii_batched(dst_generic, src);
+  laplace_operator.vmult_dealii_batched_fused(dst_generic_split, src);
 
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    if (is_serial)
-      {
-        numBlocks       = 1u;
-        threadsPerBlock = 1u;
-      }
+  // Belt-and-suspenders: also zero the constrained entries of every dst
+  // before comparing (each vmult already leaves them at 0 given the
+  // zeroed src above, via either copy_constrained_values() (vmult_dealii())
+  // or simply never writing them (the masked kernels) -- this just makes
+  // that explicit rather than relying on it).
+  laplace_operator.get_matrix_free().set_constrained_values(0., dst_bk3);
+  laplace_operator.get_matrix_free().set_constrained_values(0., dst_dealii);
+  laplace_operator.get_matrix_free().set_constrained_values(0., dst_generic);
+  laplace_operator.get_matrix_free().set_constrained_values(0., dst_generic_split);
 
-    // No BK3-style G_tensor is used by LocalLaplaceOperatorGeneric (it goes
-    // through FEEvaluation::get_gradient()/submit_gradient()'s on-the-fly
-    // inv_jacobian path instead), so an empty placeholder View is enough --
-    // LaplaceOperatorBatchData::G_tensor is simply never read on this path.
-    const Kokkos::View<Number *, MemorySpace::Default::kokkos_space> unused_G_tensor;
-
-    src.update_ghost_values();
-
-    for (unsigned int color = 0; color < n_colors; ++color)
-      {
-        const auto &gpu_data = matrix_free.get_data(color, 0);
-        if (gpu_data.n_cells > 0)
-          Portable::cell_loop_batched_launch<dim, fe_degree, fe_degree + 1, Number>(
-            LocalLaplaceOperatorGeneric<dim, fe_degree, fe_degree + 1, Number>{},
-            gpu_data,
-            dof_indices_per_color[color],
-            unused_G_tensor,
-            src,
-            dst_generic,
-            numBlocks,
-            threadsPerBlock);
-      }
-
-    dst_generic.compress(VectorOperation::add);
-    src.zero_out_ghost_values();
-    matrix_free.copy_constrained_values(src, dst_generic);
-  }
-
-  LinearAlgebra::ReadWriteVector<Number> rw_orig(dst_orig.locally_owned_elements());
+  LinearAlgebra::ReadWriteVector<Number> rw_orig(dst_bk3.locally_owned_elements());
+  LinearAlgebra::ReadWriteVector<Number> rw_dealii(dst_dealii.locally_owned_elements());
   LinearAlgebra::ReadWriteVector<Number> rw_generic(dst_generic.locally_owned_elements());
-  rw_orig.import_elements(dst_orig, VectorOperation::insert);
+  LinearAlgebra::ReadWriteVector<Number> rw_generic_split(dst_generic_split.locally_owned_elements());
+  rw_orig.import_elements(dst_bk3, VectorOperation::insert);
+  rw_dealii.import_elements(dst_dealii, VectorOperation::insert);
   rw_generic.import_elements(dst_generic, VectorOperation::insert);
+  rw_generic_split.import_elements(dst_generic_split, VectorOperation::insert);
 
-  double max_abs_diff = 0.;
-  double max_abs_val  = 0.;
-  for (const auto idx : dst_orig.locally_owned_elements())
+  double max_abs_diff        = 0.;
+  double max_abs_diff_split  = 0.;
+  double max_abs_diff_dealii = 0.;
+  double max_abs_val         = 0.;
+  for (const auto idx : dst_bk3.locally_owned_elements())
     {
       max_abs_diff = std::max(max_abs_diff, std::abs(rw_orig(idx) - rw_generic(idx)));
-      max_abs_val  = std::max(max_abs_val, std::abs(rw_orig(idx)));
+      max_abs_diff_split =
+        std::max(max_abs_diff_split, std::abs(rw_orig(idx) - rw_generic_split(idx)));
+      max_abs_diff_dealii = std::max(max_abs_diff_dealii, std::abs(rw_orig(idx) - rw_dealii(idx)));
+      max_abs_val         = std::max(max_abs_val, std::abs(rw_orig(idx)));
     }
 
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
+  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val) &&
+                    max_abs_diff_split < 1e-10 * std::max(1., max_abs_val) &&
+                    max_abs_diff_dealii < 1e-10 * std::max(1., max_abs_val);
 
   std::cout << "dim = " << dim << ", fe_degree = " << fe_degree
             << ", n_dofs = " << dof_handler.n_dofs() << std::endl;
-  std::cout << "  max |vmult|                = " << max_abs_val << std::endl;
-  std::cout << "  max |vmult - fe_eval_based| = " << max_abs_diff << std::endl;
+  std::cout << "  max |vmult_bk3|                       = " << max_abs_val << std::endl;
+  std::cout << "  max |vmult_bk3 - vmult_dealii|         = " << max_abs_diff_dealii << std::endl;
+  std::cout << "  max |vmult_bk3 - fe_eval_based|        = " << max_abs_diff << std::endl;
+  std::cout << "  max |vmult_bk3 - fe_eval_based_split|  = " << max_abs_diff_split << std::endl;
   std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
 
   return pass;

@@ -117,11 +117,18 @@ namespace Portable
       const bool                                                              ghost_exchange_on,
       const bool                                                              computation_on) const;
 
+    // Templated on Functor so it serves as the shared color-loop/overlap-
+    // communication launcher for every cell_loop_batched_launch()-based
+    // vmult variant (LocalLaplaceOperatorBatched's G_tensor-fused path,
+    // LocalLaplaceOperatorGeneric's on-the-fly-inv_jacobian step-64-style
+    // path, and LocalLaplaceOperatorGenericSplit's split-methods variant) --
+    // the body only depends on Functor through cell_loop_batched_launch()
+    // itself, which is already generic.
+    template <typename Functor>
     void
-    cell_loop_batched(
-      const LocalLaplaceOperatorBatched<dim, fe_degree, fe_degree + 1, number> &cell_operator,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>   &src,
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>         &dst) const;
+    cell_loop_batched(const Functor &cell_operator,
+                      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+                      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst) const;
 
     static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
 
@@ -183,9 +190,10 @@ namespace Portable
   {
     dst = 0.;
 
-    LocalLaplaceOperator<dim, fe_degree, fe_degree + 1, number> cell_operator;
+    // LocalLaplaceOperator<dim, fe_degree, fe_degree + 1, number> cell_operator;
+    LocalLaplaceOperatorStep64<dim, fe_degree, fe_degree + 1, number> cell_operator;
 
-    this->cell_loop(cell_operator, src, dst);
+    matrix_free.cell_loop(cell_operator, src, dst);
 
     matrix_free.copy_constrained_values(src, dst);
   }
@@ -224,7 +232,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -284,23 +292,47 @@ namespace Portable
   }
 
 
+  // Batched, step-64-style deal.II kernel: Custom::Parallel::FEEvaluation's
+  // combined, EvaluationFlags-driven evaluate()/integrate() plus on-the-fly
+  // get_gradient()/submit_gradient() (inv_jacobian/JxW applied per point),
+  // multiple cells per team via cell_loop_batched_launch() -- the "standard"
+  // step-64 HelmholtzOperatorQuad pattern, just batched instead of one team
+  // per cell. See LocalLaplaceOperatorGeneric (kernels/
+  // portable_local_laplace_operator_batched.h).
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    DEAL_II_NOT_IMPLEMENTED();
+    dst = 0.;
+
+    LocalLaplaceOperatorGeneric<dim, fe_degree, fe_degree + 1, number> cell_operator;
+
+    this->cell_loop_batched(cell_operator, src, dst);
+
+    matrix_free.copy_constrained_values(src, dst);
   }
 
 
+  // Same as vmult_dealii_batched() above, but built from FEEvaluation's
+  // split evaluate_values()/evaluate_gradients()/integrate_gradients()/
+  // integrate_values() instead of the combined evaluate()/integrate(). See
+  // LocalLaplaceOperatorGenericSplit (kernels/
+  // portable_local_laplace_operator_batched.h).
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched_fused(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    DEAL_II_NOT_IMPLEMENTED();
+    dst = 0.;
+
+    LocalLaplaceOperatorGenericSplit<dim, fe_degree, fe_degree + 1, number> cell_operator;
+
+    this->cell_loop_batched(cell_operator, src, dst);
+
+    matrix_free.copy_constrained_values(src, dst);
   }
 
 
@@ -400,11 +432,12 @@ namespace Portable
   }
 
   template <int dim, int fe_degree, typename number>
+  template <typename Functor>
   void
   LaplaceOperator<dim, fe_degree, number>::cell_loop_batched(
-    const LocalLaplaceOperatorBatched<dim, fe_degree, fe_degree + 1, number> &cell_operator,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>   &src,
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>         &dst) const
+    const Functor                                                          &cell_operator,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst) const
   {
     const auto        &colored_graph = matrix_free.get_colored_graph();
     const unsigned int n_colors      = colored_graph.size();

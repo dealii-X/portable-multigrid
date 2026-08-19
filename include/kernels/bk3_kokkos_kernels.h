@@ -25,7 +25,7 @@ namespace BK3
     using CellRangeIdView = Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>;
 
 
-    template <int dim, int n_local_dofs_1d, int n_quad_points_1d, typename Number>
+    template <int dim, int fe_degree, int n_quad_points_1d, typename Number>
     void
     KokkosKernelAbstracted(const DeviceView<Number> d_shape_values,
                            const DeviceView<Number> d_co_shape_gradients,
@@ -42,6 +42,7 @@ namespace BK3
         return;
 
       constexpr int n_quad_points_total = Utilities::pow(n_quad_points_1d, dim);
+      constexpr int n_local_dofs_1d     = fe_degree + 1;
 
       // finding the batch size
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
@@ -120,9 +121,9 @@ namespace BK3
                 // 1. read dof values from global memory to shared memory
                 {
                   Custom::Parallel::read_dof_values<dim, n_local_dofs_1d>(team_member,
-                                                                          d_in,
                                                                           dof_indices,
                                                                           cell_range_ids,
+                                                                          d_in,
                                                                           s_values,
                                                                           batchIdx,
                                                                           nelmtPerBatch,
@@ -132,18 +133,16 @@ namespace BK3
                 }
 
 
-                const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim,
-                                                                               n_local_dofs_1d,
-                                                                               n_quad_points_1d,
-                                                                               Number>
-                  fe_eval(team_member,
-                          s_shape_values,
-                          s_co_shape_gradients,
-                          nelmtPerBatch,
-                          c_nelmtPerBatch,
-                          batchIdx,
-                          threadIdx,
-                          blockSize);
+                const Custom::Parallel::
+                  FEEvaluationImplTransformToCollocation<dim, fe_degree, n_quad_points_1d, Number>
+                    fe_eval(team_member,
+                            s_shape_values,
+                            s_co_shape_gradients,
+                            nelmtPerBatch,
+                            c_nelmtPerBatch,
+                            batchIdx,
+                            threadIdx,
+                            blockSize);
 
                 // 2. interpolate from dof values to quadrature points
                 {
@@ -182,7 +181,7 @@ namespace BK3
                     threadIdx,
                     blockSize);
                 }
-                
+
                 batchIdx += team_member.league_size();
               }
           });
@@ -921,9 +920,10 @@ namespace BK3
     //                       DeviceView<Number>       out_device,
     //                       const DoFIndicesView     dof_indices,
     //                       const unsigned int       n_cells,
-    //                       unsigned int             numThreads      = numbers::invalid_unsigned_int,
-    //                       unsigned int             threadsPerBlock = numbers::invalid_unsigned_int,
-    //                       const CellRangeIdView    cell_range_ids  = CellRangeIdView())
+    //                       unsigned int             numThreads      =
+    //                       numbers::invalid_unsigned_int, unsigned int             threadsPerBlock
+    //                       = numbers::invalid_unsigned_int, const CellRangeIdView cell_range_ids
+    //                       = CellRangeIdView())
 
     // {
     //   if (n_cells == 0)
@@ -946,7 +946,8 @@ namespace BK3
 
     //   {
     //     const unsigned int scratch_pad_size = 5 * n_q_points_total; // working scratch arrays:
-    //                                                                 // s_wsp0, s_wsp1, rqr,rqq, rqt
+    //                                                                 // s_wsp0, s_wsp1, rqr,rqq,
+    //                                                                 rqt
 
     //     unsigned int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
     //                          n_q_points_1d * n_q_points_1d +   // co-shape gradients
@@ -1057,8 +1058,8 @@ namespace BK3
     //                      tid += blockSize)
     //                   {
     //                     const int p = tid / (n_local_dofs_1d * n_local_dofs_1d);
-    //                     const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-    //                     const int k = tid % n_local_dofs_1d;
+    //                     const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) /
+    //                     n_local_dofs_1d; const int k = tid % n_local_dofs_1d;
 
     //                     Number sum = 0.0;
     //                     for (unsigned int i = 0; i < n_local_dofs_1d; ++i)
@@ -1067,7 +1068,8 @@ namespace BK3
     //                                       j * n_local_dofs_1d + i] *
     //                                shape_values_scratch[i * n_q_points_1d + p];
     //                       }
-    //                     s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] = sum;
+    //                     s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] =
+    //                     sum;
     //                   }
     //                 team_member.team_barrier();
 
@@ -1077,15 +1079,15 @@ namespace BK3
     //                      tid += blockSize)
     //                   {
     //                     const int i = tid / (n_q_points_1d * n_local_dofs_1d);
-    //                     const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-    //                     const int k = tid % n_local_dofs_1d;
+    //                     const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) /
+    //                     n_local_dofs_1d; const int k = tid % n_local_dofs_1d;
 
     //                     Number sum = 0.0;
     //                     for (unsigned int j = 0; j < n_local_dofs_1d; j++)
     //                       {
     //                         sum +=
-    //                           s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + i] *
-    //                           shape_values_scratch[j * n_q_points_1d + q];
+    //                           s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + i]
+    //                           * shape_values_scratch[j * n_q_points_1d + q];
     //                       }
 
     //                     s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + i] = sum;
@@ -1259,7 +1261,8 @@ namespace BK3
     //                 Number sum = 0.0;
     //                 for (unsigned int r = 0; r < n_q_points_1d; ++r)
     //                   {
-    //                     sum += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
+    //                     sum += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p]
+    //                     *
     //                            shape_values_scratch[k * n_local_dofs_1d + r];
     //                   }
     //                 s_wsp0[k * n_q_points_1d * n_local_dofs_1d + q * n_q_points_1d + p] = sum;
@@ -1278,7 +1281,8 @@ namespace BK3
     //                 Number sum = 0.0;
     //                 for (unsigned int q = 0; q < n_q_points_1d; q++)
     //                   {
-    //                     sum += s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
+    //                     sum += s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p]
+    //                     *
     //                            shape_values_scratch[j * n_q_points_1d + q];
     //                   }
     //                 s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] = sum;
@@ -1297,10 +1301,12 @@ namespace BK3
     //                 Number sum = 0.0;
     //                 for (unsigned int p = 0; p < n_q_points_1d; ++p)
     //                   {
-    //                     sum += s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] *
+    //                     sum += s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d +
+    //                     p] *
     //                            shape_values_scratch[i * n_q_points_1d + p];
     //                   }
-    //                 s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d + j * n_local_dofs_1d + i] = sum;
+    //                 s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d + j * n_local_dofs_1d + i] =
+    //                 sum;
     //               }
     //             team_member.team_barrier();
 

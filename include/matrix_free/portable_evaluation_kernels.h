@@ -1,7 +1,10 @@
 #ifndef kernels_portable_evaluation_kernels_h
 #define kernels_portable_evaluation_kernels_h
 
+#include <deal.II/matrix_free/evaluation_flags.h>
+
 #include "matrix_free/portable_tensor_product_kernels.h"
+
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -58,9 +61,9 @@ namespace Custom
     template <int dim, int n_dofs_1d, typename Number>
     DEAL_II_HOST_DEVICE inline void
     read_dof_values(const TeamHandle         &team_member,
-                    const DeviceView<Number> &d_in,
                     const DoFIndicesView     &dof_indices,
                     const CellRangeIdView    &cell_range_ids,
+                    const DeviceView<Number> &d_in,
                     Number                   *values,
                     const int                 batchIdx,
                     const int                 nelmtPerBatch,
@@ -130,7 +133,7 @@ namespace Custom
     }
 
 
-    template <int dim, int n_rows, int n_columns, typename Number>
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
     struct FEEvaluationImplTransformToCollocation
     {
     public:
@@ -151,10 +154,118 @@ namespace Custom
         , batchIdx(batchIdx)
         , threadIdx(threadIdx)
         , blockSize(blockSize)
-        , quad_size_per_batch(Utilities::pow(n_columns, dim) * nelmtPerBatch)
+        , quad_size_per_batch(Utilities::pow(n_q_points_1d, dim) * nelmtPerBatch)
       {}
 
 
+
+      DEAL_II_HOST_DEVICE void
+      evaluate(Number                                *values,
+               Number                                *gradients,
+               Number                                *scratch,
+               const EvaluationFlags::EvaluationFlags evaluation_flag) const
+      {
+        static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
+
+        const EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
+                                     dim,
+                                     fe_degree + 1,
+                                     n_q_points_1d,
+                                     Number>
+          eval(team_member,
+               shape_values,
+               nullptr, // no gradients
+               shape_gradient_collocation,
+               scratch,
+               c_nelmtPerBatch,
+               threadIdx,
+               blockSize);
+
+        eval.template values<0, true, false, true>(values, values);
+        if constexpr (dim > 1)
+          eval.template values<1, true, false, true>(values, values);
+        if constexpr (dim > 2)
+          eval.template values<2, true, false, true>(values, values);
+
+        if (evaluation_flag & EvaluationFlags::gradients)
+          {
+            eval.template co_gradients<0, true, false, false>(values, gradients);
+            if constexpr (dim > 1)
+              eval.template co_gradients<1, true, false, false>(values,
+                                                                gradients + quad_size_per_batch);
+            if constexpr (dim > 2)
+              eval.template co_gradients<2, true, false, false>(values,
+                                                                gradients +
+                                                                  2 * quad_size_per_batch);
+          }
+      }
+
+      DEAL_II_HOST_DEVICE void
+      integrate(Number                                *values,
+                Number                                *gradients,
+                Number                                *scratch,
+                const EvaluationFlags::EvaluationFlags integration_flag) const
+      {
+        static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
+
+        const EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
+                                     dim,
+                                     fe_degree + 1,
+                                     n_q_points_1d,
+                                     Number>
+          eval(team_member,
+               shape_values,
+               nullptr, // no gradients
+               shape_gradient_collocation,
+               scratch,
+               c_nelmtPerBatch,
+               threadIdx,
+               blockSize);
+
+        if (integration_flag & EvaluationFlags::gradients)
+          {
+            if constexpr (dim == 1)
+              {
+                if (integration_flag & EvaluationFlags::values)
+                  eval.template co_gradients<0, false, true, false>(gradients, values);
+                else
+                  eval.template co_gradients<0, false, false, false>(gradients, values);
+              }
+            else if constexpr (dim == 2)
+              {
+                if (integration_flag & EvaluationFlags::values)
+                  eval.template co_gradients<1, false, true, false>(gradients + quad_size_per_batch,
+                                                                    values);
+                else
+                  eval.template co_gradients<1, false, false, false>(gradients +
+                                                                       quad_size_per_batch,
+                                                                     values);
+                eval.template co_gradients<0, false, true, false>(gradients, values);
+              }
+            else if constexpr (dim == 3)
+              {
+                if (integration_flag & EvaluationFlags::values)
+                  eval.template co_gradients<2, false, true, false>(gradients +
+                                                                      2 * quad_size_per_batch,
+                                                                    values);
+                else
+                  eval.template co_gradients<2, false, false, false>(gradients +
+                                                                       2 * quad_size_per_batch,
+                                                                     values);
+                eval.template co_gradients<1, false, true, false>(gradients + quad_size_per_batch,
+                                                                  values);
+                eval.template co_gradients<0, false, true, false>(gradients, values);
+              }
+            else
+              Assert(false, ExcMessage("dim must not exceed 3!"));
+          }
+
+        if constexpr (dim > 2)
+          eval.template values<2, false, false, true>(values, values);
+        if constexpr (dim > 1)
+          eval.template values<1, false, false, true>(values, values);
+        eval.template values<0, false, false, true>(values, values);
+      }
 
       DEAL_II_HOST_DEVICE void
       evaluate_values(Number *in, Number *out, Number *scratch) const
@@ -163,8 +274,8 @@ namespace Custom
 
         const EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
                                      dim,
-                                     n_rows,
-                                     n_columns,
+                                     fe_degree + 1,
+                                     n_q_points_1d,
                                      Number>
           evaluator(team_member,
                     shape_values,
@@ -199,8 +310,8 @@ namespace Custom
 
         const EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
                                      dim,
-                                     n_rows,
-                                     n_columns,
+                                     fe_degree + 1,
+                                     n_q_points_1d,
                                      Number>
           evaluator(team_member,
                     shape_values,
@@ -228,39 +339,65 @@ namespace Custom
           }
       }
 
+      template <bool add = false>
       DEAL_II_HOST_DEVICE void
       evaluate_gradients(const Number *in, Number *out) const
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
-        constexpr int nq_total          = Utilities::pow(n_columns, dim);
-        constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
+        constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
+        constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
         for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
 
-            for (int last = 0; last < n_columns; ++last)
+            int    idx_d[dim - 1], stride_d[dim - 1];
+            Number reg[dim][n_q_points_1d];
+
+            for (int d = 0; d < dim - 1; ++d)
               {
-                const int point = reminder + last * co_dimension_size;
+                stride_d[d] = Utilities::pow(n_q_points_1d, d);
+                idx_d[d]    = (reminder / stride_d[d]) % n_q_points_1d;
+              }
+
+            for (int n = 0; n < n_q_points_1d; ++n)
+              {
+                for (int d = 0; d < dim - 1; ++d)
+                  reg[d][n] = shape_gradient_collocation[n * n_q_points_1d + idx_d[d]];
+
+                reg[dim - 1][n] = in[elmnt_idx * n_q_points + reminder + n * co_dimension_size];
+              }
+
+            for (int last = 0; last < n_q_points_1d; ++last)
+              {
+                const int q_point = reminder + last * co_dimension_size;
+
+                Number result[dim];
+                for (int d = 0; d < dim - 1; ++d)
+                  {
+                    const int q_point_base = q_point - idx_d[d] * stride_d[d];
+                    const int in_base      = elmnt_idx * n_q_points + q_point_base;
+
+                    Number res_d = 0;
+                    for (int n = 0; n < n_q_points_1d; ++n)
+                      res_d += reg[d][n] * in[in_base + n * stride_d[d]];
+                    result[d] = res_d;
+                  }
+                {
+                  Number res_d = 0;
+                  for (int n = 0; n < n_q_points_1d; ++n)
+                    res_d += shape_gradient_collocation[n * n_q_points_1d + last] * reg[dim - 1][n];
+                  result[dim - 1] = res_d;
+                }
 
                 for (int d = 0; d < dim; ++d)
                   {
-                    const int stride_d   = Utilities::pow(n_columns, d);
-                    const int idx_d      = (point / stride_d) % n_columns;
-                    const int point_base = point - idx_d * stride_d;
-                    // Base index for values, invariant across the n-loop
-                    // below -- hoisted so it isn't recomputed n_columns
-                    // times per direction.
-                    const int in_base = elmnt_idx * nq_total + point_base;
-
-                    Number q_d = 0;
-                    for (int n = 0; n < n_columns; ++n)
-                      q_d += shape_gradient_collocation[n * n_columns + idx_d] *
-                             in[in_base + n * stride_d];
-
-                    out[d * quad_size_per_batch + elmnt_idx * nq_total + point] = q_d;
+                    if constexpr (add)
+                      out[d * quad_size_per_batch + elmnt_idx * n_q_points + q_point] += result[d];
+                    else
+                      out[d * quad_size_per_batch + elmnt_idx * n_q_points + q_point] = result[d];
                   }
               }
           }
@@ -268,6 +405,7 @@ namespace Custom
         team_member.team_barrier();
       }
 
+      template <bool add = false>
       DEAL_II_HOST_DEVICE void
       evaluate_gradients_and_multiply_symmetric_tensor(const DeviceView<Number> &d_G,
                                                        const CellRangeIdView    &cell_range_ids,
@@ -276,9 +414,9 @@ namespace Custom
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
-        constexpr int nq_total                   = Utilities::pow(n_columns, dim);
+        constexpr int n_q_points                 = Utilities::pow(n_q_points_1d, dim);
         constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
-        constexpr int co_dimension_size          = Utilities::pow(n_columns, dim - 1);
+        constexpr int co_dimension_size          = Utilities::pow(n_q_points_1d, dim - 1);
 
         for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
           {
@@ -289,45 +427,44 @@ namespace Custom
             if (cell_range_ids.size() > 0)
               global_cell_index = cell_range_ids(global_cell_index);
 
-            const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * nq_total;
+            const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * n_q_points;
 
-            int    idx[dim - 1];
-            Number reg[dim][n_columns];
+            int    idx_d[dim - 1], stride_d[dim - 1];
+            Number reg[dim][n_q_points_1d];
 
             for (int d = 0; d < dim - 1; ++d)
               {
-                const int stride_d = Utilities::pow(n_columns, d);
-                idx[d]             = (reminder / stride_d) % n_columns;
+                stride_d[d] = Utilities::pow(n_q_points_1d, d);
+                idx_d[d]    = (reminder / stride_d[d]) % n_q_points_1d;
               }
 
-            for (int n = 0; n < n_columns; ++n)
+            for (int n = 0; n < n_q_points_1d; ++n)
               {
                 for (int d = 0; d < dim - 1; ++d)
-                  reg[d][n] = shape_gradient_collocation[n * n_columns + idx[d]];
-                reg[dim - 1][n] = in[elmnt_idx * nq_total + reminder + n * co_dimension_size];
+                  reg[d][n] = shape_gradient_collocation[n * n_q_points_1d + idx_d[d]];
+                reg[dim - 1][n] = in[elmnt_idx * n_q_points + reminder + n * co_dimension_size];
               }
 
-            for (int last = 0; last < n_columns; ++last)
+            for (int last = 0; last < n_q_points_1d; ++last)
               {
-                const int point = reminder + last * co_dimension_size;
+                const int q_point = reminder + last * co_dimension_size;
 
-                Number q[dim];
+                Number res[dim];
                 for (int d = 0; d < dim - 1; ++d)
                   {
-                    const int stride_d   = Utilities::pow(n_columns, d);
-                    const int point_base = point - idx[d] * stride_d;
-                    const int in_base    = elmnt_idx * nq_total + point_base;
+                    const int q_point_base = q_point - idx_d[d] * stride_d[d];
+                    const int in_base      = elmnt_idx * n_q_points + q_point_base;
 
-                    Number q_d = 0;
-                    for (int n = 0; n < n_columns; ++n)
-                      q_d += reg[d][n] * in[in_base + n * stride_d];
-                    q[d] = q_d;
+                    Number res_d = 0;
+                    for (int n = 0; n < n_q_points_1d; ++n)
+                      res_d += reg[d][n] * in[in_base + n * stride_d[d]];
+                    res[d] = res_d;
                   }
                 {
-                  Number q_d = 0;
-                  for (int n = 0; n < n_columns; ++n)
-                    q_d += shape_gradient_collocation[n * n_columns + last] * reg[dim - 1][n];
-                  q[dim - 1] = q_d;
+                  Number res_d = 0;
+                  for (int n = 0; n < n_q_points_1d; ++n)
+                    res_d += shape_gradient_collocation[n * n_q_points_1d + last] * reg[dim - 1][n];
+                  res[dim - 1] = res_d;
                 }
 
                 Number G[dim][dim];
@@ -335,9 +472,10 @@ namespace Custom
                 for (int d1 = 0; d1 < dim; ++d1)
                   for (int d2 = d1; d2 < dim; ++d2)
                     {
-                      const Number value = d_G[cell_g_offset + component_index * nq_total + point];
-                      G[d1][d2]          = value;
-                      G[d2][d1]          = value;
+                      const Number value =
+                        d_G[cell_g_offset + component_index * n_q_points + q_point];
+                      G[d1][d2] = value;
+                      G[d2][d1] = value;
                       ++component_index;
                     }
 
@@ -345,9 +483,12 @@ namespace Custom
                   {
                     Number value_out = 0;
                     for (int d2 = 0; d2 < dim; ++d2)
-                      value_out += G[d1][d2] * q[d2];
+                      value_out += G[d1][d2] * res[d2];
 
-                    out[d1 * quad_size_per_batch + elmnt_idx * nq_total + point] = value_out;
+                    if constexpr (add)
+                      out[d1 * quad_size_per_batch + elmnt_idx * n_q_points + q_point] += value_out;
+                    else
+                      out[d1 * quad_size_per_batch + elmnt_idx * n_q_points + q_point] = value_out;
                   }
               }
           }
@@ -355,72 +496,55 @@ namespace Custom
         team_member.team_barrier();
       }
 
-
-      // `add` mirrors real deal.II's own FEEvaluationImplTransformToCollocation
-      // ::integrate()'s conditional `add` on its first co_gradients() call:
-      // when the caller also submitted values (so `values` already holds
-      // submit_value()'s JxW-multiplied contribution), add<true> accumulates
-      // this method's gradient-integration result on top instead of
-      // overwriting it, fusing the two contributions before
-      // integrate_values() (BK3's steps 7-9) transforms the combined
-      // collocation-space result back to dof space -- see
-      // kernels/portable_batched_fe_evaluation.h's FEEvaluation::integrate().
-      // Defaults to false so every existing call site (this project's own
-      // gradients-only fused Laplace path) is unaffected.
       template <bool add = false>
       DEAL_II_HOST_DEVICE void
       integrate_gradients(const Number *gradients, Number *values) const
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
-        constexpr int nq_total          = Utilities::pow(n_columns, dim);
-        constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
+        constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
+        constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
         for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
 
-            int    idx[dim - 1];
-            Number r_shape[dim - 1][n_columns];
-            Number r_grad[n_columns];
+            int    idx[dim - 1], stride_d[dim - 1];
+            Number reg[dim][n_q_points_1d];
 
             for (int d = 0; d < dim - 1; ++d)
               {
-                const int stride_d = Utilities::pow(n_columns, d);
-                idx[d]             = (reminder / stride_d) % n_columns;
-                for (int n = 0; n < n_columns; ++n)
-                  r_shape[d][n] = shape_gradient_collocation[idx[d] * n_columns + n];
+                stride_d[d] = Utilities::pow(n_q_points_1d, d);
+                idx[d]      = (reminder / stride_d[d]) % n_q_points_1d;
+                for (int n = 0; n < n_q_points_1d; ++n)
+                  reg[d][n] = shape_gradient_collocation[idx[d] * n_q_points_1d + n];
               }
-            for (int n = 0; n < n_columns; ++n)
-              r_grad[n] = gradients[(dim - 1) * quad_size_per_batch + elmnt_idx * nq_total +
-                                    reminder + n * co_dimension_size];
+            for (int n = 0; n < n_q_points_1d; ++n)
+              reg[dim - 1][n] = gradients[(dim - 1) * quad_size_per_batch + elmnt_idx * n_q_points +
+                                          reminder + n * co_dimension_size];
 
-            for (int last = 0; last < n_columns; ++last)
+            for (int last = 0; last < n_q_points_1d; ++last)
               {
-                const int point = reminder + last * co_dimension_size;
+                const int q_point = reminder + last * co_dimension_size;
 
-                Number tmp0 = 0;
+                Number result = 0;
                 for (int d = 0; d < dim - 1; ++d)
                   {
-                    const int stride_d   = Utilities::pow(n_columns, d);
-                    const int point_base = point - idx[d] * stride_d;
-                    // Base index into the gradients pool, invariant across
-                    // the n-loop below -- hoisted so it isn't recomputed
-                    // n_columns times per direction.
+                    const int point_base = q_point - idx[d] * stride_d[d];
                     const int grad_base =
-                      d * quad_size_per_batch + elmnt_idx * nq_total + point_base;
+                      d * quad_size_per_batch + elmnt_idx * n_q_points + point_base;
 
-                    for (int n = 0; n < n_columns; ++n)
-                      tmp0 += gradients[grad_base + n * stride_d] * r_shape[d][n];
+                    for (int n = 0; n < n_q_points_1d; ++n)
+                      result += gradients[grad_base + n * stride_d[d]] * reg[d][n];
                   }
-                for (int n = 0; n < n_columns; ++n)
-                  tmp0 += r_grad[n] * shape_gradient_collocation[last * n_columns + n];
+                for (int n = 0; n < n_q_points_1d; ++n)
+                  result += reg[dim - 1][n] * shape_gradient_collocation[last * n_q_points_1d + n];
 
                 if constexpr (add)
-                  values[elmnt_idx * nq_total + point] += tmp0;
+                  values[elmnt_idx * n_q_points + q_point] += result;
                 else
-                  values[elmnt_idx * nq_total + point] = tmp0;
+                  values[elmnt_idx * n_q_points + q_point] = result;
               }
           }
 
