@@ -111,9 +111,11 @@ namespace multigrid
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> system_rhs_device;
 
     // Concrete type (not LaplaceOperatorBase) -- vmult_comparison_timing()
-    // below calls vmult_bk3()/vmult_dealii_batched()/
-    // vmult_dealii_batched_fused() directly, none of which are in
-    // LaplaceOperatorBase's virtual interface (only vmult() is).
+    // below calls vmult_bk3()/vmult_bk3_not_abstracted()/
+    // vmult_dealii_batched()/vmult_dealii_batched_fused()/
+    // vmult_dealii_batched_view()/vmult_dealii_batched_fused_view()
+    // directly, none of which are in LaplaceOperatorBase's virtual
+    // interface (only vmult() is).
     std::unique_ptr<Portable::LaplaceOperator<dim, fe_degree, double>> system_matrix;
 
     const unsigned int refinement_cycles = 10;
@@ -126,7 +128,11 @@ namespace multigrid
 
     ConvergenceTable ghost_timing_table;
 
-    ConvergenceTable vmult_comparison_table;
+    ConvergenceTable vmult_timing_table;
+
+    ConvergenceTable vmult_speedup_table;
+
+    ConvergenceTable vmult_norm_table;
 
 
     ConditionalOStream pcout;
@@ -464,27 +470,43 @@ namespace multigrid
   //   ghost_timing_table.add_value("mv_ghost_only", best_only_ghost);
   // }
 
-  // Correctness + performance comparison of LaplaceOperator's four vmult
+  // Correctness + performance comparison of LaplaceOperator's seven vmult
   // variants -- vmult_dealii() (standard, unbatched, real deal.II kernels --
-  // the speedup baseline every other variant is measured against here),
-  // vmult_bk3() (best-performing, fully-abstracted BK3 kernel -- the
-  // correctness ground truth, not the speedup baseline), vmult_dealii_batched()
-  // (step-64-style batched, combined evaluate()/integrate()), and
+  // the speedup baseline every other variant except vmult_bk3_not_
+  // abstracted() is measured against here), vmult_bk3() (best-performing,
+  // fully-abstracted BK3 kernel -- the correctness ground truth, not the
+  // speedup baseline), vmult_bk3_not_abstracted() (same math, but through
+  // BK3::Parallel::KokkosKernel -- the original, hand-specialized kernel
+  // before it was rewritten to be generically sum-factorized -- measured
+  // against vmult_bk3() instead of vmult_dealii(), since the point of this
+  // one is "what did abstracting the kernel cost/gain"), vmult_dealii_
+  // batched() (step-64-style batched, combined evaluate()/integrate()),
   // vmult_dealii_batched_fused() (same, via the split evaluate_values()/
-  // evaluate_gradients()/integrate_gradients()/integrate_values()). Per
+  // evaluate_gradients()/integrate_gradients()/integrate_values()), and
+  // their View-based counterparts vmult_dealii_batched_view()/
+  // vmult_dealii_batched_fused_view() (kernels/portable_local_laplace_
+  // operator_batched_view.h, Custom::Parallel::FEEvaluationView-based). Per
   // Ivan's direction, this deliberately does not exercise the CG solver --
-  // see solve() above, currently uncalled from run().
+  // see solve() above, currently uncalled from run(). Timing, speedup, and
+  // norm (correctness) results go into three separate tables
+  // (vmult_timing_table/vmult_speedup_table/vmult_norm_table) since they're
+  // logically distinct comparisons with different columns, and mixing them
+  // into one wide table made all three harder to read.
   template <int dim, int fe_degree>
   void
   LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src, dst_dealii, dst_bk3,
-      dst_batched, dst_batched_fused;
+      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view,
+      dst_batched_fused_view;
     system_matrix->initialize_dof_vector(src);
     system_matrix->initialize_dof_vector(dst_dealii);
     system_matrix->initialize_dof_vector(dst_bk3);
+    system_matrix->initialize_dof_vector(dst_bk3_abstracted);
     system_matrix->initialize_dof_vector(dst_batched);
     system_matrix->initialize_dof_vector(dst_batched_fused);
+    system_matrix->initialize_dof_vector(dst_batched_view);
+    system_matrix->initialize_dof_vector(dst_batched_fused_view);
 
     {
       std::mt19937                           gen(42);
@@ -507,78 +529,114 @@ namespace multigrid
 
     // -- correctness: vmult_bk3() is ground truth --
     system_matrix->vmult_bk3(dst_bk3, src);
+    system_matrix->vmult_bk3_abstracted(dst_bk3_abstracted, src);
     system_matrix->vmult_dealii(dst_dealii, src);
     system_matrix->vmult_dealii_batched(dst_batched, src);
     system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src);
+    system_matrix->vmult_dealii_batched_view(dst_batched_view, src);
+    system_matrix->vmult_dealii_batched_fused_view(dst_batched_fused_view, src);
 
     // Belt-and-suspenders: each vmult already leaves the constrained entries
     // at 0 given the zeroed src above (via either copy_constrained_values()
     // in vmult_dealii(), or simply never writing them in the masked
     // kernels) -- this just makes that explicit.
     system_matrix->get_matrix_free().set_constrained_values(0., dst_bk3);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_bk3_abstracted);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_dealii);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_fused);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_view);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_fused_view);
 
     const double norm_bk3 = dst_bk3.l2_norm();
 
-    auto rel_err_vs_bk3 = [&](const LinearAlgebra::distributed::Vector<double, MemorySpace::Default>
-                                 &dst) {
-      LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst;
-      diff -= dst_bk3;
-      return norm_bk3 > 0 ? diff.l2_norm() / norm_bk3 : 0.;
-    };
+    auto rel_err_vs_bk3 =
+      [&](const LinearAlgebra::distributed::Vector<double, MemorySpace::Default> &dst)
+      {
+        LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst;
+        diff -= dst_bk3;
+        return norm_bk3 > 0 ? diff.l2_norm() / norm_bk3 : 0.;
+      };
 
-    const double rel_err_dealii  = rel_err_vs_bk3(dst_dealii);
-    const double rel_err_batched = rel_err_vs_bk3(dst_batched);
-    const double rel_err_batched_fused = rel_err_vs_bk3(dst_batched_fused);
+    const double rel_err_dealii             = rel_err_vs_bk3(dst_dealii);
+    const double rel_err_bk3_abstracted = rel_err_vs_bk3(dst_bk3_abstracted);
+    const double rel_err_batched            = rel_err_vs_bk3(dst_batched);
+    const double rel_err_batched_fused      = rel_err_vs_bk3(dst_batched_fused);
+    const double rel_err_batched_view       = rel_err_vs_bk3(dst_batched_view);
+    const double rel_err_batched_fused_view = rel_err_vs_bk3(dst_batched_fused_view);
 
     // -- performance: best-of-5, same methodology as the rest of this file --
     const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
 
-    auto time_vmult = [&](const std::function<void()> &func) {
-      double best = 1e10;
-      Timer  time;
-      for (unsigned int i = 0; i < 5; ++i)
-        {
-          Kokkos::fence();
-          time.restart();
-          for (unsigned int j = 0; j < n_mv; ++j)
-            func();
-          Kokkos::fence();
+    auto time_vmult = [&](const std::function<void()> &func)
+      {
+        double best = 1e10;
+        Timer  time;
+        for (unsigned int i = 0; i < 5; ++i)
+          {
+            Kokkos::fence();
+            time.restart();
+            for (unsigned int j = 0; j < n_mv; ++j)
+              func();
+            Kokkos::fence();
 
-          const Utilities::MPI::MinMaxAvg stat =
-            Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+            const Utilities::MPI::MinMaxAvg stat =
+              Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
 
-          best = std::min(best, stat.max);
-        }
-      return best;
-    };
+            best = std::min(best, stat.max);
+          }
+        return best;
+      };
 
     const double best_dealii = time_vmult([&]() { system_matrix->vmult_dealii(dst_dealii, src); });
     const double best_bk3    = time_vmult([&]() { system_matrix->vmult_bk3(dst_bk3, src); });
+    const double best_bk3_abstracted =
+      time_vmult([&]() { system_matrix->vmult_bk3_abstracted(dst_bk3_abstracted, src); });
     const double best_batched =
       time_vmult([&]() { system_matrix->vmult_dealii_batched(dst_batched, src); });
     const double best_batched_fused =
       time_vmult([&]() { system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src); });
+    const double best_batched_view =
+      time_vmult([&]() { system_matrix->vmult_dealii_batched_view(dst_batched_view, src); });
+    const double best_batched_fused_view = time_vmult(
+      [&]() { system_matrix->vmult_dealii_batched_fused_view(dst_batched_fused_view, src); });
+
+    vmult_timing_table.add_value("cells", triangulation.n_global_active_cells());
+    vmult_timing_table.add_value("dofs", dof_handler.n_dofs());
+    vmult_timing_table.add_value("t_bk3", best_bk3);
+    vmult_timing_table.add_value("t_bk3_abstracted", best_bk3_abstracted);
+    vmult_timing_table.add_value("t_dealii", best_dealii);
+    vmult_timing_table.add_value("t_batched", best_batched);
+    vmult_timing_table.add_value("t_batched_fused", best_batched_fused);
+    vmult_timing_table.add_value("t_batched_view", best_batched_view);
+    vmult_timing_table.add_value("t_batched_fused_view", best_batched_fused_view);
 
     // Speedups are relative to vmult_dealii() (real deal.II kernels) --
     // that's the baseline this whole comparison is meant to answer "how
-    // much faster than actual deal.II" for. Correctness (rel_err) stays
-    // relative to vmult_bk3(), the validated ground truth.
-    vmult_comparison_table.add_value("cells", triangulation.n_global_active_cells());
-    vmult_comparison_table.add_value("dofs", dof_handler.n_dofs());
-    vmult_comparison_table.add_value("t_dealii", best_dealii);
-    vmult_comparison_table.add_value("t_bk3", best_bk3);
-    vmult_comparison_table.add_value("t_batched", best_batched);
-    vmult_comparison_table.add_value("t_batched_fused", best_batched_fused);
-    vmult_comparison_table.add_value("speedup_bk3_vs_dealii", best_dealii / best_bk3);
-    vmult_comparison_table.add_value("speedup_batched_vs_dealii", best_dealii / best_batched);
-    vmult_comparison_table.add_value("speedup_batched_fused_vs_dealii",
-                                     best_dealii / best_batched_fused);
-    vmult_comparison_table.add_value("rel_err_dealii_vs_bk3", rel_err_dealii);
-    vmult_comparison_table.add_value("rel_err_batched_vs_bk3", rel_err_batched);
-    vmult_comparison_table.add_value("rel_err_batched_fused_vs_bk3", rel_err_batched_fused);
+    // much faster than actual deal.II" for. bk3_not_abstracted is the one
+    // exception: it's measured against vmult_bk3() instead, since the
+    // question there is specifically "how much did abstracting the kernel
+    // cost/gain", not "how much faster than deal.II".
+    vmult_speedup_table.add_value("cells", triangulation.n_global_active_cells());
+    vmult_speedup_table.add_value("dofs", dof_handler.n_dofs());
+    vmult_speedup_table.add_value("bk3_abstracted_vs_bk3", best_bk3 / best_bk3_abstracted);
+    vmult_speedup_table.add_value("bk3_vs_dealii", best_dealii / best_bk3);
+    vmult_speedup_table.add_value("batched_vs_dealii", best_dealii / best_batched);
+    vmult_speedup_table.add_value("batched_view_vs_dealii", best_dealii / best_batched_view);
+    vmult_speedup_table.add_value("batched_fused_vs_dealii", best_dealii / best_batched_fused);
+    vmult_speedup_table.add_value("batched_fused_view_vs_dealii",
+                                  best_dealii / best_batched_fused_view);
+
+    // Correctness (rel_err) stays relative to vmult_bk3(), the validated
+    // ground truth.
+    vmult_norm_table.add_value("cells", triangulation.n_global_active_cells());
+    vmult_norm_table.add_value("dofs", dof_handler.n_dofs());
+    vmult_norm_table.add_value("rel_err_bk3_abstracted_vs_bk3", rel_err_bk3_abstracted);
+    vmult_norm_table.add_value("rel_err_dealii_vs_bk3", rel_err_dealii);
+    vmult_norm_table.add_value("rel_err_batched_vs_bk3", rel_err_batched);
+    vmult_norm_table.add_value("rel_err_batched_fused_vs_bk3", rel_err_batched_fused);
+    vmult_norm_table.add_value("rel_err_batched_view_vs_bk3", rel_err_batched_view);
+    vmult_norm_table.add_value("rel_err_batched_fused_view_vs_bk3", rel_err_batched_fused_view);
   }
 
 
@@ -679,25 +737,53 @@ namespace multigrid
 
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
           {
-            vmult_comparison_table.set_scientific("t_dealii", true);
-            vmult_comparison_table.set_precision("t_dealii", 4);
-            vmult_comparison_table.set_scientific("t_bk3", true);
-            vmult_comparison_table.set_precision("t_bk3", 4);
-            vmult_comparison_table.set_scientific("t_batched", true);
-            vmult_comparison_table.set_precision("t_batched", 4);
-            vmult_comparison_table.set_scientific("t_batched_fused", true);
-            vmult_comparison_table.set_precision("t_batched_fused", 4);
-            vmult_comparison_table.set_precision("speedup_bk3_vs_dealii", 3);
-            vmult_comparison_table.set_precision("speedup_batched_vs_dealii", 3);
-            vmult_comparison_table.set_precision("speedup_batched_fused_vs_dealii", 3);
-            vmult_comparison_table.set_scientific("rel_err_dealii_vs_bk3", true);
-            vmult_comparison_table.set_precision("rel_err_dealii_vs_bk3", 3);
-            vmult_comparison_table.set_scientific("rel_err_batched_vs_bk3", true);
-            vmult_comparison_table.set_precision("rel_err_batched_vs_bk3", 3);
-            vmult_comparison_table.set_scientific("rel_err_batched_fused_vs_bk3", true);
-            vmult_comparison_table.set_precision("rel_err_batched_fused_vs_bk3", 3);
+            vmult_timing_table.set_scientific("t_dealii", true);
+            vmult_timing_table.set_precision("t_dealii", 4);
+            vmult_timing_table.set_scientific("t_bk3", true);
+            vmult_timing_table.set_precision("t_bk3", 4);
+            vmult_timing_table.set_scientific("t_bk3_not_abstracted", true);
+            vmult_timing_table.set_precision("t_bk3_not_abstracted", 4);
+            vmult_timing_table.set_scientific("t_batched", true);
+            vmult_timing_table.set_precision("t_batched", 4);
+            vmult_timing_table.set_scientific("t_batched_fused", true);
+            vmult_timing_table.set_precision("t_batched_fused", 4);
+            vmult_timing_table.set_scientific("t_batched_view", true);
+            vmult_timing_table.set_precision("t_batched_view", 4);
+            vmult_timing_table.set_scientific("t_batched_fused_view", true);
+            vmult_timing_table.set_precision("t_batched_fused_view", 4);
 
-            vmult_comparison_table.write_text(std::cout);
+            vmult_speedup_table.set_precision("bk3_vs_dealii", 3);
+            vmult_speedup_table.set_precision("bk3_not_abstracted_vs_bk3", 3);
+            vmult_speedup_table.set_precision("batched_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_view_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_fused_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_fused_view_vs_dealii", 3);
+
+            vmult_norm_table.set_scientific("rel_err_dealii_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_dealii_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_bk3_not_abstracted_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_bk3_not_abstracted_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_fused_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_fused_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_view_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_view_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_fused_view_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_fused_view_vs_bk3", 3);
+
+            std::cout << "-- vmult timing comparison --" << std::endl;
+            vmult_timing_table.write_text(std::cout);
+
+            std::cout << std::endl;
+
+            std::cout << "-- vmult speedup comparison (vs. vmult_dealii) --" << std::endl;
+            vmult_speedup_table.write_text(std::cout);
+
+            std::cout << std::endl;
+
+            std::cout << "-- vmult norm (correctness) comparison --" << std::endl;
+            vmult_norm_table.write_text(std::cout);
 
             std::cout << std::endl << std::endl;
           }

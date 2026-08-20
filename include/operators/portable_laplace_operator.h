@@ -11,6 +11,7 @@
 #include "kernels/bk3_kokkos_kernels.h"
 #include "kernels/portable_local_laplace_operator.h"
 #include "kernels/portable_local_laplace_operator_batched.h"
+#include "kernels/portable_local_laplace_operator_batched_view.h"
 #include "operators/portable_laplace_operator_quad.h"
 
 
@@ -40,12 +41,27 @@ namespace Portable
               const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
+    vmult_bk3_abstracted(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
     vmult_dealii_batched(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     vmult_dealii_batched_fused(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
+    vmult_dealii_batched_view(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
+    vmult_dealii_batched_fused_view(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
@@ -117,18 +133,18 @@ namespace Portable
       const bool                                                              ghost_exchange_on,
       const bool                                                              computation_on) const;
 
-    // Templated on Functor so it serves as the shared color-loop/overlap-
-    // communication launcher for every cell_loop_batched_launch()-based
-    // vmult variant (LocalLaplaceOperatorBatched's G_tensor-fused path,
-    // LocalLaplaceOperatorGeneric's on-the-fly-inv_jacobian step-64-style
-    // path, and LocalLaplaceOperatorGenericSplit's split-methods variant) --
-    // the body only depends on Functor through cell_loop_batched_launch()
-    // itself, which is already generic.
     template <typename Functor>
     void
     cell_loop_batched(const Functor &cell_operator,
                       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
                       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst) const;
+
+    template <typename Functor>
+    void
+    cell_loop_batched_view(
+      const Functor                                                          &cell_operator,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst) const;
 
     static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
 
@@ -232,6 +248,100 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
+            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock);
+          }
+      };
+
+    if (matrix_free.use_overlap_communication_computation())
+      {
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 && colored_graph[1].size() > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          {
+            if (colored_graph[color].size() > color)
+              do_color(color);
+          }
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_bk3_abstracted(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+
+    DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
+      dst_device(dst.get_values(), dst.locally_owned_size());
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    // helper to process one color
+    auto do_color = [&](const unsigned int color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
             BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
@@ -292,13 +402,6 @@ namespace Portable
   }
 
 
-  // Batched, step-64-style deal.II kernel: Custom::Parallel::FEEvaluation's
-  // combined, EvaluationFlags-driven evaluate()/integrate() plus on-the-fly
-  // get_gradient()/submit_gradient() (inv_jacobian/JxW applied per point),
-  // multiple cells per team via cell_loop_batched_launch() -- the "standard"
-  // step-64 HelmholtzOperatorQuad pattern, just batched instead of one team
-  // per cell. See LocalLaplaceOperatorGeneric (kernels/
-  // portable_local_laplace_operator_batched.h).
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched(
@@ -315,11 +418,6 @@ namespace Portable
   }
 
 
-  // Same as vmult_dealii_batched() above, but built from FEEvaluation's
-  // split evaluate_values()/evaluate_gradients()/integrate_gradients()/
-  // integrate_values() instead of the combined evaluate()/integrate(). See
-  // LocalLaplaceOperatorGenericSplit (kernels/
-  // portable_local_laplace_operator_batched.h).
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched_fused(
@@ -331,6 +429,39 @@ namespace Portable
     LocalLaplaceOperatorGenericSplit<dim, fe_degree, fe_degree + 1, number> cell_operator;
 
     this->cell_loop_batched(cell_operator, src, dst);
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched_view(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+
+    LocalLaplaceOperatorGenericView<dim, fe_degree, fe_degree + 1, number> cell_operator;
+
+    this->cell_loop_batched_view(cell_operator, src, dst);
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+  // View-based counterpart of vmult_dealii_batched_fused() above.
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched_fused_view(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+
+    LocalLaplaceOperatorGenericSplitView<dim, fe_degree, fe_degree + 1, number> cell_operator;
+
+    this->cell_loop_batched_view(cell_operator, src, dst);
 
     matrix_free.copy_constrained_values(src, dst);
   }
@@ -468,6 +599,87 @@ namespace Portable
             gpu_data,
             this->dof_indices_per_color[color],
             this->G_tensors[color],
+            src,
+            dst,
+            numBlocks,
+            threadsPerBlock);
+      };
+
+    if (matrix_free.use_overlap_communication_computation())
+      {
+        src.update_ghost_values_start(0);
+
+        // In parallel, it's possible that some processors do not own any
+        // cells.
+        if (colored_graph.size() > 0 && matrix_free.get_data(0, 0).n_cells > 0)
+          do_color(0);
+
+        src.update_ghost_values_finish();
+
+        // In serial this color does not exist because there are no ghost
+        // cells
+        if (colored_graph.size() > 1 && matrix_free.get_data(1, 0).n_cells > 0)
+          {
+            do_color(1);
+
+            // We need a synchronization point because we don't want
+            // device-aware MPI to start the MPI communication until the
+            // kernel is done.
+            Kokkos::fence();
+          }
+
+        dst.compress_start(0, VectorOperation::add);
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells
+        if (colored_graph.size() > 2 && matrix_free.get_data(2, 0).n_cells > 0)
+          do_color(2);
+        dst.compress_finish(VectorOperation::add);
+      }
+    else
+      {
+        src.update_ghost_values();
+
+        for (unsigned int color = 0; color < n_colors; ++color)
+          do_color(color);
+
+        dst.compress(VectorOperation::add);
+      }
+
+    src.zero_out_ghost_values();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  template <typename Functor>
+  void
+  LaplaceOperator<dim, fe_degree, number>::cell_loop_batched_view(
+    const Functor                                                          &cell_operator,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst) const
+  {
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    // helper to process one color
+    auto do_color = [&](const unsigned int color)
+      {
+        const auto &gpu_data = matrix_free.get_data(color, 0);
+
+        if (gpu_data.n_cells > 0)
+          cell_loop_batched_launch_view<dim, fe_degree, fe_degree + 1, number>(
+            cell_operator,
+            gpu_data,
+            this->dof_indices_per_color[color],
             src,
             dst,
             numBlocks,

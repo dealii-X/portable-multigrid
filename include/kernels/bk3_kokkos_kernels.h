@@ -25,7 +25,7 @@ namespace BK3
     using CellRangeIdView = Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>;
 
 
-    template <int dim, int fe_degree, int n_quad_points_1d, typename Number>
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
     void
     KokkosKernelAbstracted(const DeviceView<Number> d_shape_values,
                            const DeviceView<Number> d_co_shape_gradients,
@@ -41,7 +41,7 @@ namespace BK3
       if (n_cells == 0)
         return;
 
-      constexpr int n_quad_points_total = Utilities::pow(n_quad_points_1d, dim);
+      constexpr int n_quad_points_total = Utilities::pow(n_q_points_1d, dim);
       constexpr int n_local_dofs_1d     = fe_degree + 1;
 
       // finding the batch size
@@ -67,12 +67,12 @@ namespace BK3
       const int threadsPerBlock =
         std::max(1,
                  ((threads_per_block == numbers::invalid_unsigned_int) ?
-                    (Utilities::pow(n_quad_points_1d, dim - 1) * nelmtPerBatch) :
+                    (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
                     static_cast<int>(threads_per_block)));
 
       {
-        const int ssize = n_local_dofs_1d * n_quad_points_1d +  // shape values
-                          n_quad_points_1d * n_quad_points_1d + // co-shape gradients
+        const int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
+                          n_q_points_1d * n_q_points_1d +   // co-shape gradients
                           n_scratch_arrays * nelmtPerBatch *
                             n_quad_points_total; // values slot + dim gradients-pool slots
 
@@ -87,21 +87,21 @@ namespace BK3
             Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
             Number *s_shape_values       = scratch;
-            Number *s_co_shape_gradients = s_shape_values + n_quad_points_1d * n_local_dofs_1d;
+            Number *s_co_shape_gradients = s_shape_values + n_q_points_1d * n_local_dofs_1d;
 
-            Number *s_values    = s_co_shape_gradients + n_quad_points_1d * n_quad_points_1d;
+            Number *s_values    = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
             Number *s_gradients = s_values + nelmtPerBatch * n_quad_points_total;
 
             const int threadIdx = team_member.team_rank();
             const int blockSize = team_member.team_size();
 
             // copy to shared memory
-            for (int tid = threadIdx; tid < n_local_dofs_1d * n_quad_points_1d; tid += blockSize)
+            for (int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d; tid += blockSize)
               {
                 s_shape_values[tid] = d_shape_values[tid];
               }
 
-            for (int tid = threadIdx; tid < n_quad_points_1d * n_quad_points_1d; tid += blockSize)
+            for (int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d; tid += blockSize)
               {
                 s_co_shape_gradients[tid] = d_co_shape_gradients[tid];
               }
@@ -134,7 +134,7 @@ namespace BK3
 
 
                 const Custom::Parallel::
-                  FEEvaluationImplTransformToCollocation<dim, fe_degree, n_quad_points_1d, Number>
+                  FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
                     fe_eval(team_member,
                             s_shape_values,
                             s_co_shape_gradients,

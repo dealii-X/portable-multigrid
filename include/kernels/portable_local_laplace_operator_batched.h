@@ -81,16 +81,6 @@ namespace Portable
 
 
 
-  // Batched analog of step-64's LocalHelmholtzOperator, minus the mass term,
-  // built purely from Custom::Parallel::FEEvaluation's deal.II-Portable::
-  // FEEvaluation-faithful accessor API (read_dof_values()/evaluate(flags)/
-  // get_gradient()/submit_gradient()/integrate(flags)/
-  // distribute_local_to_global()) -- the on-the-fly inv_jacobian/JxW
-  // geometric-factor path, not LocalLaplaceOperatorBatched's G_tensor-fused
-  // evaluate_gradients_and_multiply_symmetric_tensor() above. Same math,
-  // same operator, different code path -- see
-  // correctness_tests/check_correctness_batched_fe_evaluation for the
-  // bit-identical-to-machine-precision cross-check against vmult().
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
   class LocalLaplaceOperatorGeneric
   {
@@ -116,10 +106,6 @@ namespace Portable
     }
   };
 
-  // Same operator as LocalLaplaceOperatorGeneric above, but built from
-  // FEEvaluation's split evaluate_values()/evaluate_gradients()/
-  // integrate_gradients()/integrate_values() instead of the combined,
-  // EvaluationFlags-driven evaluate()/integrate().
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
   class LocalLaplaceOperatorGenericSplit
   {

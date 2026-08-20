@@ -6,6 +6,8 @@
 
 #include <Kokkos_Core.hpp>
 
+#include <type_traits>
+
 DEAL_II_NAMESPACE_OPEN
 
 namespace Custom
@@ -119,6 +121,96 @@ namespace Custom
 
 
     /**
+     * Kokkos::View-based overload of apply_matrix_vector_product()
+     * above with `matrix`/`in`/`out` passed as Kokkos::Views.
+     */
+    template <int  n_rows,
+              int  n_columns,
+              bool contract_over_rows,
+              bool add,
+              int  stride_in,
+              int  stride_out,
+              typename ViewTypeMatrix,
+              typename ViewTypeIn,
+              typename ViewTypeOut,
+              typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
+    DEAL_II_HOST_DEVICE inline void
+    apply_matrix_vector_product(const ViewTypeMatrix matrix, const ViewTypeIn in, ViewTypeOut out)
+    {
+      using Number = typename ViewTypeOut::non_const_value_type;
+
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
+      Number r_in[mm];
+      for (int k = 0; k < mm; ++k)
+        r_in[k] = in(k * stride_in);
+
+      for (int q = 0; q < nn; ++q)
+        {
+          Number sum = 0;
+          for (int k = 0; k < mm; ++k)
+            {
+              const int row = contract_over_rows ? k : q;
+              const int col = contract_over_rows ? q : k;
+              sum += matrix(row * n_columns + col) * r_in[k];
+            }
+
+          if constexpr (add)
+            out(q * stride_out) += sum;
+          else
+            out(q * stride_out) = sum;
+        }
+    }
+
+    /**
+     * View-based overload of the runtime-stride apply_matrix_vector_product()
+     * above.
+     */
+    template <int  n_rows,
+              int  n_columns,
+              bool contract_over_rows,
+              bool add,
+              typename ViewTypeMatrix,
+              typename ViewTypeIn,
+              typename ViewTypeOut,
+              typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
+    DEAL_II_HOST_DEVICE inline void
+    apply_matrix_vector_product(const ViewTypeMatrix matrix,
+                                const ViewTypeIn     in,
+                                ViewTypeOut          out,
+                                const int            stride_in,
+                                const int            stride_out)
+    {
+      using Number = typename ViewTypeOut::non_const_value_type;
+
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
+      Number r_in[mm];
+      for (int k = 0; k < mm; ++k)
+        r_in[k] = in(k * stride_in);
+
+      for (int q = 0; q < nn; ++q)
+        {
+          Number sum = 0;
+          for (int k = 0; k < mm; ++k)
+            {
+              const int row = contract_over_rows ? k : q;
+              const int col = contract_over_rows ? q : k;
+              sum += matrix(row * n_columns + col) * r_in[k];
+            }
+
+          if constexpr (add)
+            out(q * stride_out) += sum;
+          else
+            out(q * stride_out) = sum;
+        }
+    }
+
+
+
+    /**
      * Helper function that applies sum factorization in a specified direction using batched kernel
      * and apply_matrix_vector_product().
      *
@@ -199,6 +291,63 @@ namespace Custom
     }
 
     /**
+     * View-based overload of apply() above.
+     */
+    template <int  dim,
+              int  direction,
+              int  n_rows,
+              int  n_columns,
+              bool contract_over_rows,
+              bool add,
+              typename ViewTypeMatrix,
+              typename ViewTypeIn,
+              typename ViewTypeOut,
+              typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
+    DEAL_II_HOST_DEVICE inline void
+    apply(const TeamHandle    &team_member,
+          const ViewTypeMatrix matrix,
+          const ViewTypeIn     in,
+          ViewTypeOut          out,
+          const int            c_nelmtPerBatch,
+          const int            threadIdx,
+          const int            blockSize)
+    {
+      static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
+
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
+      constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
+      constexpr int n_blocks2 = Utilities::pow(n_rows, dim - direction - 1);
+
+      constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
+      constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
+
+      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_blocks1 * n_blocks2; tid += blockSize)
+        {
+          const int e   = tid / (n_blocks1 * n_blocks2);
+          const int rem = tid % (n_blocks1 * n_blocks2);
+          const int i2  = rem / n_blocks1;
+          const int i1  = rem % n_blocks1;
+
+          const int in_offset  = e * n_in_per_elmt + i2 * n_blocks1 * mm + i1;
+          const int out_offset = e * n_out_per_elmt + i2 * n_blocks1 * nn + i1;
+
+          apply_matrix_vector_product<n_rows,
+                                      n_columns,
+                                      contract_over_rows,
+                                      add,
+                                      n_blocks1,
+                                      n_blocks1>(
+            matrix,
+            Kokkos::subview(in, Kokkos::make_pair(in_offset, static_cast<int>(in.extent(0)))),
+            Kokkos::subview(out, Kokkos::make_pair(out_offset, static_cast<int>(out.extent(0)))));
+        }
+
+      team_member.team_barrier();
+    }
+
+    /**
      * Helper function that copies or adds the first N entries of src to
      * dst, depending on the template argument "add".
      */
@@ -214,9 +363,35 @@ namespace Custom
       for (int tid = threadIdx; tid < N; tid += blockSize)
         {
           if constexpr (add)
-            Kokkos::atomic_add(&dst[tid], src[tid]);
+            dst[tid] += src[tid];
           else
             dst[tid] = src[tid];
+        }
+
+      team_member.team_barrier();
+    }
+
+    /**
+     * View-based overload of populate_view() above.
+     */
+    template <bool add,
+              typename ViewTypeOut,
+              typename ViewTypeIn,
+              typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
+    DEAL_II_HOST_DEVICE inline void
+    populate_view(const TeamHandle &team_member,
+                  ViewTypeOut       dst,
+                  const ViewTypeIn  src,
+                  const int         N,
+                  const int         threadIdx,
+                  const int         blockSize)
+    {
+      for (int tid = threadIdx; tid < N; tid += blockSize)
+        {
+          if constexpr (add)
+            dst(tid) += src(tid);
+          else
+            dst(tid) = src(tid);
         }
 
       team_member.team_barrier();
@@ -356,6 +531,176 @@ namespace Custom
       const Number     *shape_gradients;
       const Number     *co_shape_gradients;
       Number           *temp;
+      const int         c_nelmtPerBatch;
+      const int         threadIdx;
+      const int         blockSize;
+    };
+
+
+
+    /**
+     * Kokkos::View-based counterpart of EvaluatorTensorProduct with
+     * shape_values/shape_gradients/co_shape_gradients/temp, and
+     * the per-call in/out buffers, are all Kokkos::Views.
+     */
+    template <EvaluatorVariant variant,
+              int              dim,
+              int              n_rows,
+              int              n_columns,
+              typename Number,
+              typename ShapeDataType = Kokkos::View<
+                Number *,
+                MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+                Kokkos::MemoryTraits<Kokkos::Unmanaged>>>
+    struct EvaluatorTensorProductView
+    {};
+
+    template <int dim, int n_rows, int n_columns, typename Number, typename ShapeDataType>
+    struct EvaluatorTensorProductView<evaluate_general,
+                                      dim,
+                                      n_rows,
+                                      n_columns,
+                                      Number,
+                                      ShapeDataType>
+    {
+    public:
+      using SharedView =
+        Kokkos::View<Number *,
+                     MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+      DEAL_II_HOST_DEVICE
+      EvaluatorTensorProductView(const TeamHandle &team_member,
+                                 ShapeDataType     shape_values,
+                                 ShapeDataType     shape_gradients,
+                                 ShapeDataType     co_shape_gradients,
+                                 SharedView        temp,
+                                 const int         c_nelmtPerBatch,
+                                 const int         threadIdx,
+                                 const int         blockSize)
+        : team_member(team_member)
+        , shape_values(shape_values)
+        , shape_gradients(shape_gradients)
+        , co_shape_gradients(co_shape_gradients)
+        , temp(temp)
+        , c_nelmtPerBatch(c_nelmtPerBatch)
+        , threadIdx(threadIdx)
+        , blockSize(blockSize)
+      {}
+
+      /**
+       * Evaluate/integrate the values of a finite element function at the
+       * quadrature points for a given @p direction.
+       */
+      template <int  direction,
+                bool dof_to_quad,
+                bool add,
+                bool in_place = false,
+                typename ViewTypeIn,
+                typename ViewTypeOut>
+      DEAL_II_HOST_DEVICE void
+      values(const ViewTypeIn in, ViewTypeOut out) const
+      {
+        if constexpr (in_place)
+          {
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
+              team_member, shape_values, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+
+            constexpr int nn        = dof_to_quad ? n_columns : n_rows;
+            constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
+            constexpr int n_blocks2 = Utilities::pow(n_rows, dim - direction - 1);
+
+            populate_view<add>(team_member,
+                               out,
+                               temp,
+                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
+                               threadIdx,
+                               blockSize);
+          }
+        else
+          {
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
+              team_member, shape_values, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+          }
+      }
+
+      /**
+       * Evaluate/integrate the gradient of a finite element function at the
+       * quadrature points for a given @p direction.
+       */
+      template <int  direction,
+                bool dof_to_quad,
+                bool add,
+                bool in_place = false,
+                typename ViewTypeIn,
+                typename ViewTypeOut>
+      DEAL_II_HOST_DEVICE void
+      gradients(const ViewTypeIn in, ViewTypeOut out) const
+      {
+        if constexpr (in_place)
+          {
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
+              team_member, shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+
+            constexpr int nn        = dof_to_quad ? n_columns : n_rows;
+            constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
+            constexpr int n_blocks2 = Utilities::pow(n_rows, dim - direction - 1);
+
+            populate_view<add>(team_member,
+                               out,
+                               temp,
+                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
+                               threadIdx,
+                               blockSize);
+          }
+        else
+          {
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
+              team_member, shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+          }
+      }
+
+      /**
+       * Evaluate the gradient of a finite element function at the quadrature
+       * points for a given @p direction for collocation methods.
+       */
+      template <int  direction,
+                bool dof_to_quad,
+                bool add,
+                bool in_place = false,
+                typename ViewTypeIn,
+                typename ViewTypeOut>
+      DEAL_II_HOST_DEVICE void
+      co_gradients(const ViewTypeIn in, ViewTypeOut out) const
+      {
+        if constexpr (in_place)
+          {
+            apply<dim, direction, n_columns, n_columns, dof_to_quad, false>(
+              team_member, co_shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+
+            constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
+            constexpr int n_blocks2 = Utilities::pow(n_columns, dim - direction - 1);
+
+            populate_view<add>(team_member,
+                               out,
+                               temp,
+                               c_nelmtPerBatch * n_blocks1 * n_columns * n_blocks2,
+                               threadIdx,
+                               blockSize);
+          }
+        else
+          {
+            apply<dim, direction, n_columns, n_columns, dof_to_quad, add>(
+              team_member, co_shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+          }
+      }
+
+    private:
+      const TeamHandle &team_member;
+      ShapeDataType     shape_values;
+      ShapeDataType     shape_gradients;
+      ShapeDataType     co_shape_gradients;
+      SharedView        temp;
       const int         c_nelmtPerBatch;
       const int         threadIdx;
       const int         blockSize;
