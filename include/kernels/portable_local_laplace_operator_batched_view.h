@@ -178,10 +178,10 @@ namespace Portable
         // n_scratch_arrays derivation above for the reasoning.
         Number *s_gradients;
         Number *s_scratch;
-        if constexpr (needs_gradients)
+        if (needs_gradients)
           {
             s_gradients = s_values + n_elements_per_batch * nq_total;
-            if constexpr (needs_values)
+            if (needs_values)
               s_scratch = s_gradients + dim * n_elements_per_batch * nq_total; // general: separate
             else
               s_scratch = s_gradients; // gradients-only: alias onto gradients
