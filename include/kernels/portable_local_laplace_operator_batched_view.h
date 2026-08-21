@@ -29,8 +29,8 @@ namespace Portable
       fe_eval.read_dof_values(src);
       fe_eval.evaluate(EvaluationFlags::gradients);
 
-      data->for_each_quad_point(
-        [&](const int point) { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+      data->for_each_quad_point([&](const int point)
+                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate(EvaluationFlags::gradients);
 
@@ -55,8 +55,8 @@ namespace Portable
       fe_eval.evaluate_values();
       fe_eval.evaluate_gradients();
 
-      data->for_each_quad_point(
-        [&](const int point) { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+      data->for_each_quad_point([&](const int point)
+                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate_gradients();
       fe_eval.integrate_values();
@@ -99,18 +99,19 @@ namespace Portable
     // characteristics identical.
     constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-    const int nelmtPerBatch =
+    const int n_elements_per_batch =
       std::max(1, static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)));
 
-    const int numBlocks = std::max(1,
-                                   ((n_blocks == numbers::invalid_unsigned_int) ?
-                                      ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
-                                      static_cast<int>(n_blocks)));
+    const int numBlocks =
+      std::max(1,
+               ((n_blocks == numbers::invalid_unsigned_int) ?
+                  ((nelmt + n_elements_per_batch - 1) / n_elements_per_batch / 2) :
+                  static_cast<int>(n_blocks)));
 
     const int threadsPerBlock =
       std::max(1,
                ((threads_per_block == numbers::invalid_unsigned_int) ?
-                  (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
+                  (Utilities::pow(n_q_points_1d, dim - 1) * n_elements_per_batch) :
                   static_cast<int>(threads_per_block)));
 
     const Custom::Parallel::DeviceView<Number> src_device(src.get_values(),
@@ -118,10 +119,10 @@ namespace Portable
     const Custom::Parallel::DeviceView<Number> dst_device(dst.get_values(),
                                                           dst.locally_owned_size());
 
-    const int ssize =
-      n_1d * n_q_points_1d +                       // shape values
-      n_q_points_1d * n_q_points_1d +              // co-shape gradients
-      n_scratch_arrays * nelmtPerBatch * nq_total; // values + gradients pool + dedicated scratch
+    const int ssize = n_1d * n_q_points_1d +          // shape values
+                      n_q_points_1d * n_q_points_1d + // co-shape gradients
+                      n_scratch_arrays * n_elements_per_batch *
+                        nq_total; // values + gradients pool + dedicated scratch
 
     const unsigned int shmem_size = ssize * sizeof(Number);
 
@@ -137,64 +138,63 @@ namespace Portable
         Number *s_co_shape_gradients = s_shape_values + n_1d * n_q_points_1d;
 
         Number *s_values    = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
-        Number *s_gradients = s_values + nelmtPerBatch * nq_total;
-        Number *s_scratch   = s_gradients + dim * nelmtPerBatch * nq_total;
+        Number *s_gradients = s_values + n_elements_per_batch * nq_total;
+        Number *s_scratch   = s_gradients + dim * n_elements_per_batch * nq_total;
 
-        const int quad_size_per_batch = nelmtPerBatch * nq_total;
+        const int n_q_points_per_batch = n_elements_per_batch * nq_total;
 
-        const int threadIdx = team_member.team_rank();
-        const int blockSize = team_member.team_size();
+        const int thread_id  = team_member.team_rank();
+        const int block_size = team_member.team_size();
 
-        for (int tid = threadIdx; tid < n_1d * n_q_points_1d; tid += blockSize)
+        for (int tid = thread_id; tid < n_1d * n_q_points_1d; tid += block_size)
           s_shape_values[tid] = precomputed_data.shape_values[tid];
 
-        for (int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d; tid += blockSize)
+        for (int tid = thread_id; tid < n_q_points_1d * n_q_points_1d; tid += block_size)
           s_co_shape_gradients[tid] = precomputed_data.co_shape_gradients[tid];
 
         team_member.team_barrier();
 
-        using ScratchViewType =
-          typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
-        using GradientsViewType =
-          typename Custom::Parallel::ShapeDataView<Number>::GradientsView;
+        using ScratchViewType   = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
+        using GradientsViewType = typename Custom::Parallel::ShapeDataView<Number>::GradientsView;
 
         ScratchViewType   v_shape_values(s_shape_values, n_1d * n_q_points_1d);
-        ScratchViewType   v_co_shape_gradients(s_co_shape_gradients,
-                                              n_q_points_1d * n_q_points_1d);
-        ScratchViewType   v_values(s_values, quad_size_per_batch);
-        GradientsViewType v_gradients(s_gradients, quad_size_per_batch, dim);
-        ScratchViewType   v_scratch(s_scratch, (dim - 1) * quad_size_per_batch);
+        ScratchViewType   v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
+        ScratchViewType   v_values(s_values, n_q_points_per_batch);
+        GradientsViewType v_gradients(s_gradients, n_q_points_per_batch, dim);
+        ScratchViewType   v_scratch(s_scratch, (dim - 1) * n_q_points_per_batch);
 
         const Custom::Parallel::ShapeDataView<Number> shape_data{
           v_shape_values, v_co_shape_gradients, v_values, v_gradients, v_scratch};
 
-        const Custom::Parallel::PrecomputedData<dim, Number> our_precomputed{
-          precomputed_data, dof_indices, cell_range_ids};
+        const Custom::Parallel::PrecomputedData<dim, Number> our_precomputed{precomputed_data,
+                                                                             dof_indices,
+                                                                             cell_range_ids};
 
-        int batchIdx = team_member.league_rank();
+        int batch_index = team_member.league_rank();
 
-        while (batchIdx < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+        while (batch_index < (nelmt + n_elements_per_batch - 1) / n_elements_per_batch)
           {
-            // current nelmtPerBatch (edge case, last batch size can be
+            // current n_elements_per_batch (edge case, last batch size can be
             // less)
-            const int c_nelmtPerBatch = (batchIdx * nelmtPerBatch + nelmtPerBatch > nelmt) ?
-                                          (nelmt - batchIdx * nelmtPerBatch) :
-                                          nelmtPerBatch;
+            const int n_elements_in_current_batch =
+              (batch_index * n_elements_per_batch + n_elements_per_batch > nelmt) ?
+                (nelmt - batch_index * n_elements_per_batch) :
+                n_elements_per_batch;
 
             const Custom::Parallel::BatchDataView<dim, Number> data{team_member,
                                                                     our_precomputed,
                                                                     shape_data,
-                                                                    batchIdx,
-                                                                    nelmtPerBatch,
-                                                                    c_nelmtPerBatch,
-                                                                    threadIdx,
-                                                                    blockSize,
-                                                                    quad_size_per_batch};
+                                                                    batch_index,
+                                                                    n_elements_per_batch,
+                                                                    n_elements_in_current_batch,
+                                                                    thread_id,
+                                                                    block_size,
+                                                                    n_q_points_per_batch};
 
             Custom::Parallel::DeviceView<Number> nonconst_dst = dst_device;
             func(&data, src_device, nonconst_dst);
 
-            batchIdx += team_member.league_size();
+            batch_index += team_member.league_size();
           }
       });
 

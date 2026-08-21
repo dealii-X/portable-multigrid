@@ -55,9 +55,9 @@ namespace Custom
       DEAL_II_HOST_DEVICE unsigned int
       get_global_cell_index(const int point) const
       {
-        const int    nq_total          = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int    nq_total          = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int    e                 = point / nq_total;
-        unsigned int global_cell_index = data->batchIdx * data->nelmtPerBatch + e;
+        unsigned int global_cell_index = data->batch_index * data->n_elements_per_batch + e;
         if (data->precomputed_data.cell_range_ids.size() > 0)
           global_cell_index = data->precomputed_data.cell_range_ids(global_cell_index);
         return global_cell_index;
@@ -72,11 +72,11 @@ namespace Custom
           data->precomputed_data.cell_range_ids,
           src,
           data->shape_data.values,
-          data->batchIdx,
-          data->nelmtPerBatch,
-          data->c_nelmtPerBatch,
-          data->threadIdx,
-          data->blockSize);
+          data->batch_index,
+          data->n_elements_per_batch,
+          data->n_elements_in_current_batch,
+          data->thread_id,
+          data->block_size);
       }
 
       DEAL_II_HOST_DEVICE void
@@ -88,11 +88,11 @@ namespace Custom
           data->precomputed_data.cell_range_ids,
           data->shape_data.values,
           dst,
-          data->batchIdx,
-          data->nelmtPerBatch,
-          data->c_nelmtPerBatch,
-          data->threadIdx,
-          data->blockSize);
+          data->batch_index,
+          data->n_elements_per_batch,
+          data->n_elements_in_current_batch,
+          data->thread_id,
+          data->block_size);
       }
 
       DEAL_II_HOST_DEVICE void
@@ -118,8 +118,8 @@ namespace Custom
       evaluate_gradients() const
       {
         FEEvalImpl::template evaluate_gradients<add>(data,
-                                                      data->shape_data.values,
-                                                      data->shape_data.gradients);
+                                                     data->shape_data.values,
+                                                     data->shape_data.gradients);
       }
 
       DEAL_II_HOST_DEVICE void
@@ -133,8 +133,8 @@ namespace Custom
       integrate_gradients() const
       {
         FEEvalImpl::template integrate_gradients<add>(data,
-                                                       data->shape_data.gradients,
-                                                       data->shape_data.values);
+                                                      data->shape_data.gradients,
+                                                      data->shape_data.values);
       }
 
       DEAL_II_HOST_DEVICE Number
@@ -146,7 +146,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_value(const Number &value, const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -157,7 +157,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE gradient_type
       get_gradient(const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -176,7 +176,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_gradient(const gradient_type &gradient, const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 

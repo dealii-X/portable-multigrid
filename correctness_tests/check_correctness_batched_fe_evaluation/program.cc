@@ -167,7 +167,8 @@ run_test()
   LinearAlgebra::ReadWriteVector<Number> rw_orig(dst_bk3.locally_owned_elements());
   LinearAlgebra::ReadWriteVector<Number> rw_dealii(dst_dealii.locally_owned_elements());
   LinearAlgebra::ReadWriteVector<Number> rw_generic(dst_generic.locally_owned_elements());
-  LinearAlgebra::ReadWriteVector<Number> rw_generic_split(dst_generic_split.locally_owned_elements());
+  LinearAlgebra::ReadWriteVector<Number> rw_generic_split(
+    dst_generic_split.locally_owned_elements());
   rw_orig.import_elements(dst_bk3, VectorOperation::insert);
   rw_dealii.import_elements(dst_dealii, VectorOperation::insert);
   rw_generic.import_elements(dst_generic, VectorOperation::insert);
@@ -248,12 +249,12 @@ run_integrate_add_test()
 
   Kokkos::parallel_for(
     policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int threadIdx = team_member.team_rank();
-      const int blockSize = team_member.team_size();
-      const int batchIdx  = team_member.league_rank();
+      const int thread_id   = team_member.team_rank();
+      const int block_size  = team_member.team_size();
+      const int batch_index = team_member.league_rank();
 
       const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nq, nq, Number> fe_eval(
-        team_member, nullptr, co_shape_gradients.data(), 1, 1, batchIdx, threadIdx, blockSize);
+        team_member, nullptr, co_shape_gradients.data(), 1, 1, batch_index, thread_id, block_size);
 
       fe_eval.template integrate_gradients<false>(gradients.data(), values_noadd.data());
       fe_eval.template integrate_gradients<true>(gradients.data(), values_add.data());

@@ -246,9 +246,9 @@ namespace Custom
           const Number     *matrix,
           const Number     *in,
           Number           *out,
-          const int         c_nelmtPerBatch,
-          const int         threadIdx,
-          const int         blockSize)
+          const int         n_elements_in_current_batch,
+          const int         thread_id,
+          const int         block_size)
     {
       static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
 
@@ -269,7 +269,8 @@ namespace Custom
       constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
       constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_blocks1 * n_blocks2; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_blocks1 * n_blocks2;
+           tid += block_size)
         {
           const int e   = tid / (n_blocks1 * n_blocks2);
           const int rem = tid % (n_blocks1 * n_blocks2);
@@ -308,9 +309,9 @@ namespace Custom
           const ViewTypeMatrix matrix,
           const ViewTypeIn     in,
           ViewTypeOut          out,
-          const int            c_nelmtPerBatch,
-          const int            threadIdx,
-          const int            blockSize)
+          const int            n_elements_in_current_batch,
+          const int            thread_id,
+          const int            block_size)
     {
       static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
 
@@ -323,7 +324,8 @@ namespace Custom
       constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
       constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_blocks1 * n_blocks2; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_blocks1 * n_blocks2;
+           tid += block_size)
         {
           const int e   = tid / (n_blocks1 * n_blocks2);
           const int rem = tid % (n_blocks1 * n_blocks2);
@@ -357,10 +359,10 @@ namespace Custom
                   Number           *dst,
                   const Number     *src,
                   const int         N,
-                  const int         threadIdx,
-                  const int         blockSize)
+                  const int         thread_id,
+                  const int         block_size)
     {
-      for (int tid = threadIdx; tid < N; tid += blockSize)
+      for (int tid = thread_id; tid < N; tid += block_size)
         {
           if constexpr (add)
             dst[tid] += src[tid];
@@ -383,10 +385,10 @@ namespace Custom
                   ViewTypeOut       dst,
                   const ViewTypeIn  src,
                   const int         N,
-                  const int         threadIdx,
-                  const int         blockSize)
+                  const int         thread_id,
+                  const int         block_size)
     {
-      for (int tid = threadIdx; tid < N; tid += blockSize)
+      for (int tid = thread_id; tid < N; tid += block_size)
         {
           if constexpr (add)
             dst(tid) += src(tid);
@@ -420,17 +422,17 @@ namespace Custom
                              const Number     *shape_gradients,
                              const Number     *co_shape_gradients,
                              Number           *temp,
-                             const int         c_nelmtPerBatch,
-                             const int         threadIdx,
-                             const int         blockSize)
+                             const int         n_elements_in_current_batch,
+                             const int         thread_id,
+                             const int         block_size)
         : team_member(team_member)
         , shape_values(shape_values)
         , shape_gradients(shape_gradients)
         , co_shape_gradients(co_shape_gradients)
         , temp(temp)
-        , c_nelmtPerBatch(c_nelmtPerBatch)
-        , threadIdx(threadIdx)
-        , blockSize(blockSize)
+        , n_elements_in_current_batch(n_elements_in_current_batch)
+        , thread_id(thread_id)
+        , block_size(block_size)
       {}
 
       /**
@@ -444,7 +446,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member, shape_values, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              shape_values,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -453,14 +461,19 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
-              team_member, shape_values, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
+                                                                       shape_values,
+                                                                       in,
+                                                                       out,
+                                                                       n_elements_in_current_batch,
+                                                                       thread_id,
+                                                                       block_size);
           }
       }
 
@@ -475,7 +488,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member, shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              shape_gradients,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -484,14 +503,19 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
-              team_member, shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
+                                                                       shape_gradients,
+                                                                       in,
+                                                                       out,
+                                                                       n_elements_in_current_batch,
+                                                                       thread_id,
+                                                                       block_size);
           }
       }
 
@@ -506,7 +530,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, false>(
-              team_member, co_shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              co_shape_gradients,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
             constexpr int n_blocks2 = Utilities::pow(n_columns, dim - direction - 1);
@@ -514,14 +544,20 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * n_columns * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * n_columns * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, add>(
-              team_member, co_shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              co_shape_gradients,
+              in,
+              out,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
           }
       }
 
@@ -531,9 +567,9 @@ namespace Custom
       const Number     *shape_gradients;
       const Number     *co_shape_gradients;
       Number           *temp;
-      const int         c_nelmtPerBatch;
-      const int         threadIdx;
-      const int         blockSize;
+      const int         n_elements_in_current_batch;
+      const int         thread_id;
+      const int         block_size;
     };
 
 
@@ -575,17 +611,17 @@ namespace Custom
                                  ShapeDataType     shape_gradients,
                                  ShapeDataType     co_shape_gradients,
                                  SharedView        temp,
-                                 const int         c_nelmtPerBatch,
-                                 const int         threadIdx,
-                                 const int         blockSize)
+                                 const int         n_elements_in_current_batch,
+                                 const int         thread_id,
+                                 const int         block_size)
         : team_member(team_member)
         , shape_values(shape_values)
         , shape_gradients(shape_gradients)
         , co_shape_gradients(co_shape_gradients)
         , temp(temp)
-        , c_nelmtPerBatch(c_nelmtPerBatch)
-        , threadIdx(threadIdx)
-        , blockSize(blockSize)
+        , n_elements_in_current_batch(n_elements_in_current_batch)
+        , thread_id(thread_id)
+        , block_size(block_size)
       {}
 
       /**
@@ -604,7 +640,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member, shape_values, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              shape_values,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -613,14 +655,19 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
-              team_member, shape_values, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
+                                                                       shape_values,
+                                                                       in,
+                                                                       out,
+                                                                       n_elements_in_current_batch,
+                                                                       thread_id,
+                                                                       block_size);
           }
       }
 
@@ -640,7 +687,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member, shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              shape_gradients,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -649,14 +702,19 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * nn * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
-              team_member, shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
+                                                                       shape_gradients,
+                                                                       in,
+                                                                       out,
+                                                                       n_elements_in_current_batch,
+                                                                       thread_id,
+                                                                       block_size);
           }
       }
 
@@ -676,7 +734,13 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, false>(
-              team_member, co_shape_gradients, in, temp, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              co_shape_gradients,
+              in,
+              temp,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
 
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
             constexpr int n_blocks2 = Utilities::pow(n_columns, dim - direction - 1);
@@ -684,14 +748,20 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               c_nelmtPerBatch * n_blocks1 * n_columns * n_blocks2,
-                               threadIdx,
-                               blockSize);
+                               n_elements_in_current_batch * n_blocks1 * n_columns * n_blocks2,
+                               thread_id,
+                               block_size);
           }
         else
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, add>(
-              team_member, co_shape_gradients, in, out, c_nelmtPerBatch, threadIdx, blockSize);
+              team_member,
+              co_shape_gradients,
+              in,
+              out,
+              n_elements_in_current_batch,
+              thread_id,
+              block_size);
           }
       }
 
@@ -701,9 +771,9 @@ namespace Custom
       ShapeDataType     shape_gradients;
       ShapeDataType     co_shape_gradients;
       SharedView        temp;
-      const int         c_nelmtPerBatch;
-      const int         threadIdx;
-      const int         blockSize;
+      const int         n_elements_in_current_batch;
+      const int         thread_id;
+      const int         block_size;
     };
   } // namespace Parallel
 } // namespace Custom

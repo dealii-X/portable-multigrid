@@ -41,9 +41,9 @@ namespace Custom
       DEAL_II_HOST_DEVICE unsigned int
       get_global_cell_index(const int point) const
       {
-        const int    nq_total          = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int    nq_total          = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int    e                 = point / nq_total;
-        unsigned int global_cell_index = data->batchIdx * data->nelmtPerBatch + e;
+        unsigned int global_cell_index = data->batch_index * data->n_elements_per_batch + e;
         if (data->cell_range_ids.size() > 0)
           global_cell_index = data->cell_range_ids(global_cell_index);
         return global_cell_index;
@@ -57,26 +57,27 @@ namespace Custom
                                                                 data->cell_range_ids,
                                                                 src,
                                                                 data->values,
-                                                                data->batchIdx,
-                                                                data->nelmtPerBatch,
-                                                                data->c_nelmtPerBatch,
-                                                                data->threadIdx,
-                                                                data->blockSize);
+                                                                data->batch_index,
+                                                                data->n_elements_per_batch,
+                                                                data->n_elements_in_current_batch,
+                                                                data->thread_id,
+                                                                data->block_size);
       }
 
       DEAL_II_HOST_DEVICE void
       distribute_local_to_global(Custom::Parallel::DeviceView<Number> &dst) const
       {
-        Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(data->team_member,
-                                                                           data->dof_indices,
-                                                                           data->cell_range_ids,
-                                                                           data->values,
-                                                                           dst,
-                                                                           data->batchIdx,
-                                                                           data->nelmtPerBatch,
-                                                                           data->c_nelmtPerBatch,
-                                                                           data->threadIdx,
-                                                                           data->blockSize);
+        Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(
+          data->team_member,
+          data->dof_indices,
+          data->cell_range_ids,
+          data->values,
+          dst,
+          data->batch_index,
+          data->n_elements_per_batch,
+          data->n_elements_in_current_batch,
+          data->thread_id,
+          data->block_size);
       }
 
       DEAL_II_HOST_DEVICE void
@@ -87,11 +88,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.evaluate(data->values, data->gradients, data->scratch, evaluation_flag);
       }
@@ -104,11 +105,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.integrate(data->values, data->gradients, data->scratch, integration_flag);
       }
@@ -121,11 +122,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.evaluate_values(data->values, data->values, data->scratch);
       }
@@ -139,11 +140,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.template evaluate_gradients<add>(data->values, data->gradients);
       }
@@ -156,11 +157,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.integrate_values(data->values, data->values, data->scratch);
       }
@@ -174,11 +175,11 @@ namespace Custom
             fe_eval(data->team_member,
                     data->shape_values,
                     data->co_shape_gradients,
-                    data->nelmtPerBatch,
-                    data->c_nelmtPerBatch,
-                    data->batchIdx,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_per_batch,
+                    data->n_elements_in_current_batch,
+                    data->batch_index,
+                    data->thread_id,
+                    data->block_size);
 
         fe_eval.template integrate_gradients<add>(data->gradients, data->values);
       }
@@ -192,7 +193,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_value(const Number &value, const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -202,7 +203,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE gradient_type
       get_gradient(const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -212,7 +213,7 @@ namespace Custom
             Number tmp = 0.;
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
               tmp += data->inv_jacobian(point_local, global_cell, d_2, d_1) *
-                     data->gradients[d_2 * data->quad_size_per_batch + point];
+                     data->gradients[d_2 * data->n_q_points_per_batch + point];
             grad[d_1] = tmp;
           }
         return grad;
@@ -221,7 +222,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_gradient(const gradient_type &gradient, const int point) const
       {
-        const int          nq_total    = data->quad_size_per_batch / data->nelmtPerBatch;
+        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -232,7 +233,7 @@ namespace Custom
             Number tmp = 0.;
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
               tmp += data->inv_jacobian(point_local, global_cell, d_1, d_2) * gradient[d_2];
-            data->gradients[d_1 * data->quad_size_per_batch + point] = tmp * jxw;
+            data->gradients[d_1 * data->n_q_points_per_batch + point] = tmp * jxw;
           }
       }
 

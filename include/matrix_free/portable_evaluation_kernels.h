@@ -30,11 +30,11 @@ namespace Custom
 
       const Custom::Parallel::DoFIndicesView &dof_indices;
 
-      const int batchIdx;
-      const int nelmtPerBatch;
-      const int c_nelmtPerBatch;
-      const int threadIdx;
-      const int blockSize;
+      const int batch_index;
+      const int n_elements_per_batch;
+      const int n_elements_in_current_batch;
+      const int thread_id;
+      const int block_size;
 
       const Custom::Parallel::CellRangeIdView &cell_range_ids;
 
@@ -42,16 +42,16 @@ namespace Custom
       Number *gradients;
       Number *scratch;
 
-      const int quad_size_per_batch;
+      const int n_q_points_per_batch;
 
       template <typename Functor>
       DEAL_II_HOST_DEVICE void
       for_each_quad_point(const Functor &func) const
       {
-        const int nq_total = quad_size_per_batch / nelmtPerBatch;
-        const int n_points = c_nelmtPerBatch * nq_total;
+        const int nq_total = n_q_points_per_batch / n_elements_per_batch;
+        const int n_points = n_elements_in_current_batch * nq_total;
 
-        for (int tid = threadIdx; tid < n_points; tid += blockSize)
+        for (int tid = thread_id; tid < n_points; tid += block_size)
           func(tid);
 
         team_member.team_barrier();
@@ -66,22 +66,22 @@ namespace Custom
                     const CellRangeIdView    &cell_range_ids,
                     const DeviceView<Number> &d_in,
                     Number                   *values,
-                    const int                 batchIdx,
-                    const int                 nelmtPerBatch,
-                    const int                 c_nelmtPerBatch,
-                    const int                 threadIdx,
-                    const int                 blockSize)
+                    const int                 batch_index,
+                    const int                 n_elements_per_batch,
+                    const int                 n_elements_in_current_batch,
+                    const int                 thread_id,
+                    const int                 block_size)
     {
       static_assert(dim >= 1, "dim must be at least 1");
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_dofs_total; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_dofs_total; tid += block_size)
         {
           const int elmnt_idx = tid / n_dofs_total;
           const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batchIdx * nelmtPerBatch + elmnt_idx;
+          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
           if (cell_range_ids.size() > 0)
             global_cell_index = cell_range_ids(global_cell_index);
 
@@ -104,22 +104,22 @@ namespace Custom
                                const CellRangeIdView &cell_range_ids,
                                const Number          *values,
                                DeviceView<Number>     d_out,
-                               const int              batchIdx,
-                               const int              nelmtPerBatch,
-                               const int              c_nelmtPerBatch,
-                               const int              threadIdx,
-                               const int              blockSize)
+                               const int              batch_index,
+                               const int              n_elements_per_batch,
+                               const int              n_elements_in_current_batch,
+                               const int              thread_id,
+                               const int              block_size)
     {
       static_assert(dim >= 1, "dim must be at least 1");
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_dofs_total; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_dofs_total; tid += block_size)
         {
           const int elmnt_idx = tid / n_dofs_total;
           const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batchIdx * nelmtPerBatch + elmnt_idx;
+          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
           if (cell_range_ids.size() > 0)
             global_cell_index = cell_range_ids(global_cell_index);
 
@@ -142,20 +142,20 @@ namespace Custom
       FEEvaluationImplTransformToCollocation(const TeamHandle &team_member,
                                              const Number     *shape_values,
                                              const Number     *shape_gradient_collocation,
-                                             const int         nelmtPerBatch,
-                                             const int         c_nelmtPerBatch,
-                                             const int         batchIdx,
-                                             const int         threadIdx,
-                                             const int         blockSize)
+                                             const int         n_elements_per_batch,
+                                             const int         n_elements_in_current_batch,
+                                             const int         batch_index,
+                                             const int         thread_id,
+                                             const int         block_size)
         : team_member(team_member)
         , shape_values(shape_values)
         , shape_gradient_collocation(shape_gradient_collocation)
-        , nelmtPerBatch(nelmtPerBatch)
-        , c_nelmtPerBatch(c_nelmtPerBatch)
-        , batchIdx(batchIdx)
-        , threadIdx(threadIdx)
-        , blockSize(blockSize)
-        , quad_size_per_batch(Utilities::pow(n_q_points_1d, dim) * nelmtPerBatch)
+        , n_elements_per_batch(n_elements_per_batch)
+        , n_elements_in_current_batch(n_elements_in_current_batch)
+        , batch_index(batch_index)
+        , thread_id(thread_id)
+        , block_size(block_size)
+        , n_q_points_per_batch(Utilities::pow(n_q_points_1d, dim) * n_elements_per_batch)
       {}
 
 
@@ -178,9 +178,9 @@ namespace Custom
                nullptr, // no gradients
                shape_gradient_collocation,
                scratch,
-               c_nelmtPerBatch,
-               threadIdx,
-               blockSize);
+               n_elements_in_current_batch,
+               thread_id,
+               block_size);
 
         eval.template values<0, true, false, true>(values, values);
         if constexpr (dim > 1)
@@ -193,11 +193,11 @@ namespace Custom
             eval.template co_gradients<0, true, false, false>(values, gradients);
             if constexpr (dim > 1)
               eval.template co_gradients<1, true, false, false>(values,
-                                                                gradients + quad_size_per_batch);
+                                                                gradients + n_q_points_per_batch);
             if constexpr (dim > 2)
               eval.template co_gradients<2, true, false, false>(values,
                                                                 gradients +
-                                                                  2 * quad_size_per_batch);
+                                                                  2 * n_q_points_per_batch);
           }
       }
 
@@ -219,9 +219,9 @@ namespace Custom
                nullptr, // no gradients
                shape_gradient_collocation,
                scratch,
-               c_nelmtPerBatch,
-               threadIdx,
-               blockSize);
+               n_elements_in_current_batch,
+               thread_id,
+               block_size);
 
         if (integration_flag & EvaluationFlags::gradients)
           {
@@ -235,11 +235,12 @@ namespace Custom
             else if constexpr (dim == 2)
               {
                 if (integration_flag & EvaluationFlags::values)
-                  eval.template co_gradients<1, false, true, false>(gradients + quad_size_per_batch,
+                  eval.template co_gradients<1, false, true, false>(gradients +
+                                                                      n_q_points_per_batch,
                                                                     values);
                 else
                   eval.template co_gradients<1, false, false, false>(gradients +
-                                                                       quad_size_per_batch,
+                                                                       n_q_points_per_batch,
                                                                      values);
                 eval.template co_gradients<0, false, true, false>(gradients, values);
               }
@@ -247,13 +248,13 @@ namespace Custom
               {
                 if (integration_flag & EvaluationFlags::values)
                   eval.template co_gradients<2, false, true, false>(gradients +
-                                                                      2 * quad_size_per_batch,
+                                                                      2 * n_q_points_per_batch,
                                                                     values);
                 else
                   eval.template co_gradients<2, false, false, false>(gradients +
-                                                                       2 * quad_size_per_batch,
+                                                                       2 * n_q_points_per_batch,
                                                                      values);
-                eval.template co_gradients<1, false, true, false>(gradients + quad_size_per_batch,
+                eval.template co_gradients<1, false, true, false>(gradients + n_q_points_per_batch,
                                                                   values);
                 eval.template co_gradients<0, false, true, false>(gradients, values);
               }
@@ -283,9 +284,9 @@ namespace Custom
                     nullptr, // no gradients
                     nullptr, // no co-gradients
                     nullptr, // no temp
-                    c_nelmtPerBatch,
-                    threadIdx,
-                    blockSize);
+                    n_elements_in_current_batch,
+                    thread_id,
+                    block_size);
 
         if constexpr (dim == 1)
           {
@@ -299,8 +300,8 @@ namespace Custom
         else // dim == 3
           {
             evaluator.template values<0, true, false>(in, scratch);
-            evaluator.template values<1, true, false>(scratch, scratch + quad_size_per_batch);
-            evaluator.template values<2, true, false>(scratch + quad_size_per_batch, out);
+            evaluator.template values<1, true, false>(scratch, scratch + n_q_points_per_batch);
+            evaluator.template values<2, true, false>(scratch + n_q_points_per_batch, out);
           }
       }
 
@@ -319,9 +320,9 @@ namespace Custom
                     nullptr, // no gradients
                     nullptr, // no co-gradients
                     nullptr, // no temp
-                    c_nelmtPerBatch,
-                    threadIdx,
-                    blockSize);
+                    n_elements_in_current_batch,
+                    thread_id,
+                    block_size);
 
         if constexpr (dim == 1)
           {
@@ -335,8 +336,8 @@ namespace Custom
         else // dim == 3
           {
             evaluator.template values<2, false, false>(in, scratch);
-            evaluator.template values<1, false, false>(scratch, scratch + quad_size_per_batch);
-            evaluator.template values<0, false, false>(scratch + quad_size_per_batch, out);
+            evaluator.template values<1, false, false>(scratch, scratch + n_q_points_per_batch);
+            evaluator.template values<0, false, false>(scratch + n_q_points_per_batch, out);
           }
       }
 
@@ -349,7 +350,8 @@ namespace Custom
         constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
         constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
+        for (int tid = thread_id; tid < n_elements_in_current_batch * co_dimension_size;
+             tid += block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
@@ -399,9 +401,9 @@ namespace Custom
                 for (int d = 0; d < dim; ++d)
                   {
                     if constexpr (add)
-                      out[d * quad_size_per_batch + elmnt_idx * n_q_points + q_point] += result[d];
+                      out[d * n_q_points_per_batch + elmnt_idx * n_q_points + q_point] += result[d];
                     else
-                      out[d * quad_size_per_batch + elmnt_idx * n_q_points + q_point] = result[d];
+                      out[d * n_q_points_per_batch + elmnt_idx * n_q_points + q_point] = result[d];
                   }
               }
           }
@@ -422,12 +424,13 @@ namespace Custom
         constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
         constexpr int co_dimension_size          = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
+        for (int tid = thread_id; tid < n_elements_in_current_batch * co_dimension_size;
+             tid += block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
 
-            unsigned int global_cell_index = batchIdx * nelmtPerBatch + elmnt_idx;
+            unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
             if (cell_range_ids.size() > 0)
               global_cell_index = cell_range_ids(global_cell_index);
 
@@ -491,9 +494,10 @@ namespace Custom
                       value_out += G[d1][d2] * res[d2];
 
                     if constexpr (add)
-                      out[d1 * quad_size_per_batch + elmnt_idx * n_q_points + q_point] += value_out;
+                      out[d1 * n_q_points_per_batch + elmnt_idx * n_q_points + q_point] +=
+                        value_out;
                     else
-                      out[d1 * quad_size_per_batch + elmnt_idx * n_q_points + q_point] = value_out;
+                      out[d1 * n_q_points_per_batch + elmnt_idx * n_q_points + q_point] = value_out;
                   }
               }
           }
@@ -510,7 +514,8 @@ namespace Custom
         constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
         constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = threadIdx; tid < c_nelmtPerBatch * co_dimension_size; tid += blockSize)
+        for (int tid = thread_id; tid < n_elements_in_current_batch * co_dimension_size;
+             tid += block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
@@ -527,8 +532,9 @@ namespace Custom
                   reg[d][n] = shape_gradient_collocation[idx[d] * n_q_points_1d + n];
               }
             for (int n = 0; n < n_q_points_1d; ++n)
-              reg[dim - 1][n] = gradients[(dim - 1) * quad_size_per_batch + elmnt_idx * n_q_points +
-                                          reminder + n * co_dimension_size];
+              reg[dim - 1][n] =
+                gradients[(dim - 1) * n_q_points_per_batch + elmnt_idx * n_q_points + reminder +
+                          n * co_dimension_size];
 
             for (int last = 0; last < n_q_points_1d; ++last)
               {
@@ -539,7 +545,7 @@ namespace Custom
                   {
                     const int point_base = q_point - idx[d] * stride_d[d];
                     const int grad_base =
-                      d * quad_size_per_batch + elmnt_idx * n_q_points + point_base;
+                      d * n_q_points_per_batch + elmnt_idx * n_q_points + point_base;
 
                     for (int n = 0; n < n_q_points_1d; ++n)
                       result += gradients[grad_base + n * stride_d[d]] * reg[d][n];
@@ -561,12 +567,12 @@ namespace Custom
       const TeamHandle &team_member;
       const Number     *shape_values;
       const Number     *shape_gradient_collocation;
-      const int         nelmtPerBatch;
-      const int         c_nelmtPerBatch;
-      const int         batchIdx;
-      const int         threadIdx;
-      const int         blockSize;
-      const int         quad_size_per_batch;
+      const int         n_elements_per_batch;
+      const int         n_elements_in_current_batch;
+      const int         batch_index;
+      const int         thread_id;
+      const int         block_size;
+      const int         n_q_points_per_batch;
     };
   } // namespace Parallel
 } // namespace Custom

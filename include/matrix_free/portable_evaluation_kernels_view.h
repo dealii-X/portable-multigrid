@@ -36,9 +36,9 @@ namespace Custom
       ScratchView shape_values;
       ScratchView co_shape_gradients;
 
-      ScratchView    values;
-      GradientsView  gradients;
-      ScratchView    scratch_pad;
+      ScratchView   values;
+      GradientsView gradients;
+      ScratchView   scratch_pad;
     };
 
     template <int dim, typename Number>
@@ -51,22 +51,22 @@ namespace Custom
       const Custom::Parallel::PrecomputedData<dim, Number> &precomputed_data;
       const Custom::Parallel::ShapeDataView<Number>        &shape_data;
 
-      const int batchIdx;
-      const int nelmtPerBatch;
-      const int c_nelmtPerBatch;
-      const int threadIdx;
-      const int blockSize;
+      const int batch_index;
+      const int n_elements_per_batch;
+      const int n_elements_in_current_batch;
+      const int thread_id;
+      const int block_size;
 
-      const int quad_size_per_batch;
+      const int n_q_points_per_batch;
 
       template <typename Functor>
       DEAL_II_HOST_DEVICE void
       for_each_quad_point(const Functor &func) const
       {
-        const int nq_total = quad_size_per_batch / nelmtPerBatch;
-        const int n_points = c_nelmtPerBatch * nq_total;
+        const int nq_total = n_q_points_per_batch / n_elements_per_batch;
+        const int n_points = n_elements_in_current_batch * nq_total;
 
-        for (int tid = threadIdx; tid < n_points; tid += blockSize)
+        for (int tid = thread_id; tid < n_points; tid += block_size)
           func(tid);
 
         team_member.team_barrier();
@@ -75,21 +75,21 @@ namespace Custom
       DEAL_II_HOST_DEVICE unsigned int
       local_q_point_id(const unsigned int cell, const unsigned int q_point) const
       {
-        const int n_q_points = quad_size_per_batch / nelmtPerBatch;
+        const int n_q_points = n_q_points_per_batch / n_elements_per_batch;
 
         AssertIndexRange(cell, precomputed_data.data.n_cells);
         AssertIndexRange(q_point, static_cast<unsigned int>(n_q_points));
 
         return (precomputed_data.data.row_start / precomputed_data.data.padding_length + cell) *
-                n_q_points +
-              q_point;
+                 n_q_points +
+               q_point;
       }
 
       DEAL_II_HOST_DEVICE
       typename Portable::MatrixFree<dim, Number>::point_type &
       get_quadrature_point(const unsigned int cell, const unsigned int q_point) const
       {
-        const int n_q_points = quad_size_per_batch / nelmtPerBatch;
+        const int n_q_points = n_q_points_per_batch / n_elements_per_batch;
 
         AssertIndexRange(cell, precomputed_data.data.n_cells);
         AssertIndexRange(q_point, static_cast<unsigned int>(n_q_points));
@@ -102,15 +102,15 @@ namespace Custom
     struct FEEvaluationImplTransformToCollocationView
     {
       DEAL_II_HOST_DEVICE static void
-      evaluate(const BatchDataView<dim, Number>       *data,
-              const EvaluationFlags::EvaluationFlags evaluation_flag)
+      evaluate(const BatchDataView<dim, Number>      *data,
+               const EvaluationFlags::EvaluationFlags evaluation_flag)
       {
         static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
 
         const auto &shape_data = data->shape_data;
 
-        const auto scratch_for_eval = Kokkos::subview(
-          shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+        const auto scratch_for_eval =
+          Kokkos::subview(shape_data.scratch_pad, Kokkos::make_pair(0, data->n_q_points_per_batch));
 
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
@@ -118,13 +118,13 @@ namespace Custom
                                          n_q_points_1d,
                                          Number>
           eval(data->team_member,
-              shape_data.shape_values,
-              typename ShapeDataView<Number>::ScratchView(), // no gradients
-              shape_data.co_shape_gradients,
-              scratch_for_eval,
-              data->c_nelmtPerBatch,
-              data->threadIdx,
-              data->blockSize);
+               shape_data.shape_values,
+               typename ShapeDataView<Number>::ScratchView(), // no gradients
+               shape_data.co_shape_gradients,
+               scratch_for_eval,
+               data->n_elements_in_current_batch,
+               data->thread_id,
+               data->block_size);
 
         eval.template values<0, true, false, true>(shape_data.values, shape_data.values);
         if constexpr (dim > 1)
@@ -146,15 +146,15 @@ namespace Custom
       }
 
       DEAL_II_HOST_DEVICE static void
-      integrate(const BatchDataView<dim, Number>       *data,
-               const EvaluationFlags::EvaluationFlags integration_flag)
+      integrate(const BatchDataView<dim, Number>      *data,
+                const EvaluationFlags::EvaluationFlags integration_flag)
       {
         static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
 
         const auto &shape_data = data->shape_data;
 
-        const auto scratch_for_eval = Kokkos::subview(
-          shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+        const auto scratch_for_eval =
+          Kokkos::subview(shape_data.scratch_pad, Kokkos::make_pair(0, data->n_q_points_per_batch));
 
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
@@ -162,13 +162,13 @@ namespace Custom
                                          n_q_points_1d,
                                          Number>
           eval(data->team_member,
-              shape_data.shape_values,
-              typename ShapeDataView<Number>::ScratchView(), // no gradients
-              shape_data.co_shape_gradients,
-              scratch_for_eval,
-              data->c_nelmtPerBatch,
-              data->threadIdx,
-              data->blockSize);
+               shape_data.shape_values,
+               typename ShapeDataView<Number>::ScratchView(), // no gradients
+               shape_data.co_shape_gradients,
+               scratch_for_eval,
+               data->n_elements_in_current_batch,
+               data->thread_id,
+               data->block_size);
 
         if (integration_flag & EvaluationFlags::gradients)
           {
@@ -218,9 +218,7 @@ namespace Custom
 
       template <typename ViewTypeIn, typename ViewTypeOut>
       DEAL_II_HOST_DEVICE static void
-      evaluate_values(const BatchDataView<dim, Number> *data,
-                      const ViewTypeIn                  in,
-                      ViewTypeOut                        out)
+      evaluate_values(const BatchDataView<dim, Number> *data, const ViewTypeIn in, ViewTypeOut out)
       {
         static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
 
@@ -236,9 +234,9 @@ namespace Custom
                     typename ShapeDataView<Number>::ScratchView(), // no gradients
                     typename ShapeDataView<Number>::ScratchView(), // no co-gradients
                     typename ShapeDataView<Number>::ScratchView(), // temp unused (no in_place here)
-                    data->c_nelmtPerBatch,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_in_current_batch,
+                    data->thread_id,
+                    data->block_size);
 
         if constexpr (dim == 1)
           {
@@ -246,20 +244,20 @@ namespace Custom
           }
         else if constexpr (dim == 2)
           {
-            const auto scratch = Kokkos::subview(
-              shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+            const auto scratch = Kokkos::subview(shape_data.scratch_pad,
+                                                 Kokkos::make_pair(0, data->n_q_points_per_batch));
 
             evaluator.template values<0, true, false>(in, scratch);
             evaluator.template values<1, true, false>(scratch, out);
           }
         else // dim == 3
           {
-            const auto scratch0 = Kokkos::subview(
-              shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+            const auto scratch0 = Kokkos::subview(shape_data.scratch_pad,
+                                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
             const auto scratch1 =
               Kokkos::subview(shape_data.scratch_pad,
-                              Kokkos::make_pair(data->quad_size_per_batch,
-                                                2 * data->quad_size_per_batch));
+                              Kokkos::make_pair(data->n_q_points_per_batch,
+                                                2 * data->n_q_points_per_batch));
 
             evaluator.template values<0, true, false>(in, scratch0);
             evaluator.template values<1, true, false>(scratch0, scratch1);
@@ -269,9 +267,7 @@ namespace Custom
 
       template <typename ViewTypeIn, typename ViewTypeOut>
       DEAL_II_HOST_DEVICE static void
-      integrate_values(const BatchDataView<dim, Number> *data,
-                       const ViewTypeIn                  in,
-                       ViewTypeOut                        out)
+      integrate_values(const BatchDataView<dim, Number> *data, const ViewTypeIn in, ViewTypeOut out)
       {
         static_assert(dim >= 1 && dim <= 3, "dim must be 1, 2, or 3");
 
@@ -287,9 +283,9 @@ namespace Custom
                     typename ShapeDataView<Number>::ScratchView(), // no gradients
                     typename ShapeDataView<Number>::ScratchView(), // no co-gradients
                     typename ShapeDataView<Number>::ScratchView(), // temp unused (no in_place here)
-                    data->c_nelmtPerBatch,
-                    data->threadIdx,
-                    data->blockSize);
+                    data->n_elements_in_current_batch,
+                    data->thread_id,
+                    data->block_size);
 
         if constexpr (dim == 1)
           {
@@ -297,20 +293,20 @@ namespace Custom
           }
         else if constexpr (dim == 2)
           {
-            const auto scratch = Kokkos::subview(
-              shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+            const auto scratch = Kokkos::subview(shape_data.scratch_pad,
+                                                 Kokkos::make_pair(0, data->n_q_points_per_batch));
 
             evaluator.template values<1, false, false>(in, scratch);
             evaluator.template values<0, false, false>(scratch, out);
           }
         else // dim == 3
           {
-            const auto scratch0 = Kokkos::subview(
-              shape_data.scratch_pad, Kokkos::make_pair(0, data->quad_size_per_batch));
+            const auto scratch0 = Kokkos::subview(shape_data.scratch_pad,
+                                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
             const auto scratch1 =
               Kokkos::subview(shape_data.scratch_pad,
-                              Kokkos::make_pair(data->quad_size_per_batch,
-                                                2 * data->quad_size_per_batch));
+                              Kokkos::make_pair(data->n_q_points_per_batch,
+                                                2 * data->n_q_points_per_batch));
 
             evaluator.template values<2, false, false>(in, scratch0);
             evaluator.template values<1, false, false>(scratch0, scratch1);
@@ -322,7 +318,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE static void
       evaluate_gradients(const BatchDataView<dim, Number> *data,
                          const ViewTypeIn                  in,
-                         ViewTypeOut                        out)
+                         ViewTypeOut                       out)
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
@@ -331,8 +327,8 @@ namespace Custom
         constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
         constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = data->threadIdx; tid < data->c_nelmtPerBatch * co_dimension_size;
-            tid += data->blockSize)
+        for (int tid = data->thread_id; tid < data->n_elements_in_current_batch * co_dimension_size;
+             tid += data->block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
@@ -395,9 +391,9 @@ namespace Custom
       template <bool add = false, typename ViewTypeIn, typename ViewTypeOut>
       DEAL_II_HOST_DEVICE static void
       evaluate_gradients_and_multiply_symmetric_tensor(const BatchDataView<dim, Number> *data,
-                                                        const DeviceView<Number> &d_G,
-                                                        const ViewTypeIn           in,
-                                                        ViewTypeOut                out)
+                                                       const DeviceView<Number>         &d_G,
+                                                       const ViewTypeIn                  in,
+                                                       ViewTypeOut                       out)
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
@@ -408,13 +404,14 @@ namespace Custom
         constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
         constexpr int co_dimension_size          = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = data->threadIdx; tid < data->c_nelmtPerBatch * co_dimension_size;
-            tid += data->blockSize)
+        for (int tid = data->thread_id; tid < data->n_elements_in_current_batch * co_dimension_size;
+             tid += data->block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
 
-            unsigned int global_cell_index = data->batchIdx * data->nelmtPerBatch + elmnt_idx;
+            unsigned int global_cell_index =
+              data->batch_index * data->n_elements_per_batch + elmnt_idx;
             if (cell_range_ids.size() > 0)
               global_cell_index = cell_range_ids(global_cell_index);
 
@@ -492,7 +489,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE static void
       integrate_gradients(const BatchDataView<dim, Number> *data,
                           const ViewTypeGrad                gradients,
-                          ViewTypeVal                        values)
+                          ViewTypeVal                       values)
       {
         static_assert(dim >= 1, "dim must be at least 1");
 
@@ -501,8 +498,8 @@ namespace Custom
         constexpr int n_q_points        = Utilities::pow(n_q_points_1d, dim);
         constexpr int co_dimension_size = Utilities::pow(n_q_points_1d, dim - 1);
 
-        for (int tid = data->threadIdx; tid < data->c_nelmtPerBatch * co_dimension_size;
-            tid += data->blockSize)
+        for (int tid = data->thread_id; tid < data->n_elements_in_current_batch * co_dimension_size;
+             tid += data->block_size)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
@@ -561,22 +558,22 @@ namespace Custom
                     const CellRangeIdView    &cell_range_ids,
                     const DeviceView<Number> &d_in,
                     ViewTypeValues            values,
-                    const int                 batchIdx,
-                    const int                 nelmtPerBatch,
-                    const int                 c_nelmtPerBatch,
-                    const int                 threadIdx,
-                    const int                 blockSize)
+                    const int                 batch_index,
+                    const int                 n_elements_per_batch,
+                    const int                 n_elements_in_current_batch,
+                    const int                 thread_id,
+                    const int                 block_size)
     {
       static_assert(dim >= 1, "dim must be at least 1");
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_dofs_total; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_dofs_total; tid += block_size)
         {
           const int elmnt_idx = tid / n_dofs_total;
           const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batchIdx * nelmtPerBatch + elmnt_idx;
+          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
           if (cell_range_ids.size() > 0)
             global_cell_index = cell_range_ids(global_cell_index);
 
@@ -603,22 +600,22 @@ namespace Custom
                                const CellRangeIdView &cell_range_ids,
                                const ViewTypeValues   values,
                                DeviceView<Number>     d_out,
-                               const int              batchIdx,
-                               const int              nelmtPerBatch,
-                               const int              c_nelmtPerBatch,
-                               const int              threadIdx,
-                               const int              blockSize)
+                               const int              batch_index,
+                               const int              n_elements_per_batch,
+                               const int              n_elements_in_current_batch,
+                               const int              thread_id,
+                               const int              block_size)
     {
       static_assert(dim >= 1, "dim must be at least 1");
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      for (int tid = threadIdx; tid < c_nelmtPerBatch * n_dofs_total; tid += blockSize)
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_dofs_total; tid += block_size)
         {
           const int elmnt_idx = tid / n_dofs_total;
           const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batchIdx * nelmtPerBatch + elmnt_idx;
+          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
           if (cell_range_ids.size() > 0)
             global_cell_index = cell_range_ids(global_cell_index);
 
