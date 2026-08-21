@@ -1,0 +1,1126 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) Stages/2026
+Settings of parameters: 
+Number of MPI ranks:            4
+Polynomial degree:              8
+Minimum size:                   1
+Maximum size:                   10000000000000000
+Use doubling mesh:              1
+
+Testing FE_Q<3>(8)
+Cycle 0
+Number of degrees of freedom: 729 = (1 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)6.6e-05s/0.00192022s
+Setup matrices   (CPU/wall) 0.030248s/0.0307354s
+Total setup time: 0.0326129
+
+
+
+-- vmult timing comparison --
+cells dofs   t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1  729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1  729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+
+-- vmult norm (correctness) comparison --
+cells dofs rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1  729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+
+
+Cycle 1
+Number of degrees of freedom: 1377 = (1 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.000415s/0.000420025s
+Setup matrices   (CPU/wall) 0.019619s/0.0196242s
+Total setup time: 0.0200308
+
+
+
+-- vmult timing comparison --
+cells dofs   t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1  729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2 1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1  729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2 1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+
+-- vmult norm (correctness) comparison --
+cells dofs rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1  729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2 1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+
+
+Cycle 2
+Number of degrees of freedom: 2601 = (1 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.000987s/0.000991888s
+Setup matrices   (CPU/wall) 0.018525s/0.0185344s
+Total setup time: 0.0195038
+
+
+
+-- vmult timing comparison --
+cells dofs   t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1  729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2 1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4 2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1  729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2 1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4 2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+
+-- vmult norm (correctness) comparison --
+cells dofs rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1  729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2 1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4 2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+
+
+Cycle 3
+Number of degrees of freedom: 4913 = (2 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.000705s/0.000711124s
+Setup matrices   (CPU/wall) 0.031884s/0.0318945s
+Total setup time: 0.0325817
+
+
+
+-- vmult timing comparison --
+cells dofs   t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1  729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2 1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4 2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8 4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1  729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2 1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4 2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8 4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+
+-- vmult norm (correctness) comparison --
+cells dofs rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1  729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2 1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4 2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8 4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+
+
+Cycle 4
+Number of degrees of freedom: 9537 = (2 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.002101s/0.00225715s
+Setup matrices   (CPU/wall) 0.051627s/0.0516374s
+Total setup time: 0.0538631
+
+
+
+-- vmult timing comparison --
+cells dofs   t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1  729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2 1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4 2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8 4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16 9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1  729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2 1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4 2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8 4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16 9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+
+-- vmult norm (correctness) comparison --
+cells dofs rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1  729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2 1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4 2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8 4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16 9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+
+
+Cycle 5
+Number of degrees of freedom: 18513 = (3 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.003788s/0.00430403s
+Setup matrices   (CPU/wall) 0.048618s/0.0487795s
+Total setup time: 0.053056
+
+
+
+-- vmult timing comparison --
+cells dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1   729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2  1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4  2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8  4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16  9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32 18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1   729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2  1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4  2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8  4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16  9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32 18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+
+-- vmult norm (correctness) comparison --
+cells dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1   729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2  1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4  2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8  4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16  9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32 18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+
+
+Cycle 6
+Number of degrees of freedom: 35937 = (4 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.006326s/0.00706516s
+Setup matrices   (CPU/wall) 0.051686s/0.0518972s
+Total setup time: 0.0589378
+
+
+
+-- vmult timing comparison --
+cells dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1   729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2  1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4  2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8  4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16  9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32 18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64 35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1   729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2  1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4  2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8  4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16  9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32 18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64 35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+
+-- vmult norm (correctness) comparison --
+cells dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1   729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2  1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4  2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8  4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16  9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32 18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64 35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+
+
+Cycle 7
+Number of degrees of freedom: 70785 = (5 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.006459s/0.00750519s
+Setup matrices   (CPU/wall) 0.091885s/0.0966212s
+Total setup time: 0.104101
+
+
+
+-- vmult timing comparison --
+cells dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1   729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2  1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4  2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8  4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16  9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32 18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64 35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128 70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1   729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2  1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4  2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8  4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16  9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32 18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64 35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128 70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+
+-- vmult norm (correctness) comparison --
+cells dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1   729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2  1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4  2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8  4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16  9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32 18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64 35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128 70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+
+
+Cycle 8
+Number of degrees of freedom: 139425 = (6 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.006949s/0.00776791s
+Setup matrices   (CPU/wall) 0.191566s/0.192039s
+Total setup time: 0.199785
+
+
+
+-- vmult timing comparison --
+cells  dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1    729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2   1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4   2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8   4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16   9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32  18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64  35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128  70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256 139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1    729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2   1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4   2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8   4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16   9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32  18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64  35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128  70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256 139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+
+-- vmult norm (correctness) comparison --
+cells  dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1    729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2   1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4   2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8   4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16   9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32  18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64  35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128  70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256 139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+
+
+Cycle 9
+Number of degrees of freedom: 274625 = (8 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0s/0.00939165s
+Setup matrices   (CPU/wall) 0.305837s/0.316728s
+Total setup time: 0.326097
+
+
+
+-- vmult timing comparison --
+cells  dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1    729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2   1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4   2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8   4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16   9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32  18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64  35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128  70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256 139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512 274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1    729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2   1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4   2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8   4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16   9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32  18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64  35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128  70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256 139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512 274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+
+-- vmult norm (correctness) comparison --
+cells  dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1    729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2   1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4   2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8   4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16   9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32  18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64  35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128  70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256 139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512 274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+
+
+Cycle 10
+Number of degrees of freedom: 545025 = (10 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.00947s/0.010444s
+Setup matrices   (CPU/wall) 0.572243s/0.573338s
+Total setup time: 0.583761
+
+
+
+-- vmult timing comparison --
+cells  dofs    t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1    729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2   1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4   2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8   4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16   9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32  18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64  35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128  70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256 139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512 274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024 545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs  bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1    729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2   1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4   2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8   4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16   9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32  18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64  35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128  70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256 139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512 274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024 545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+
+-- vmult norm (correctness) comparison --
+cells  dofs  rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1    729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2   1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4   2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8   4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16   9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32  18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64  35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128  70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256 139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512 274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024 545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+
+
+Cycle 11
+Number of degrees of freedom: 1081665 = (12 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.01291s/0.0136711s
+Setup matrices   (CPU/wall) 1.0658s/1.06702s
+Total setup time: 1.08067
+
+
+
+-- vmult timing comparison --
+cells  dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1     729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2    1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4    2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8    4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16    9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32   18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64   35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128   70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256  139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512  274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024  545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048 1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1     729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2    1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4    2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8    4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16    9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32   18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64   35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128   70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256  139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512  274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024  545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048 1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+
+-- vmult norm (correctness) comparison --
+cells  dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1     729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2    1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4    2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8    4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16    9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32   18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64   35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128   70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256  139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512  274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024  545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048 1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+
+
+Cycle 12
+Number of degrees of freedom: 2146689 = (16 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.008472s/0.0190109s
+Setup matrices   (CPU/wall) 2.09092s/2.10153s
+Total setup time: 2.12052
+
+
+
+-- vmult timing comparison --
+cells  dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1     729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2    1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4    2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8    4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16    9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32   18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64   35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128   70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256  139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512  274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024  545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048 1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+ 4096 2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1     729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2    1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4    2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8    4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16    9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32   18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64   35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128   70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256  139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512  274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024  545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048 1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+ 4096 2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+
+-- vmult norm (correctness) comparison --
+cells  dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1     729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2    1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4    2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8    4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16    9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32   18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64   35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128   70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256  139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512  274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024  545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048 1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+ 4096 2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+
+
+Cycle 13
+Number of degrees of freedom: 4276737 = (20 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.034716s/0.0355192s
+Setup matrices   (CPU/wall) 4.0266s/4.05632s
+Total setup time: 4.0918
+
+
+
+-- vmult timing comparison --
+cells  dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1     729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2    1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4    2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8    4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16    9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32   18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64   35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128   70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256  139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512  274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024  545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048 1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+ 4096 2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+ 8192 4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1     729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2    1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4    2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8    4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16    9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32   18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64   35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128   70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256  139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512  274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024  545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048 1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+ 4096 2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+ 8192 4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+
+-- vmult norm (correctness) comparison --
+cells  dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1     729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2    1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4    2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8    4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16    9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32   18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64   35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128   70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256  139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512  274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024  545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048 1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+ 4096 2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 8192 4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+
+
+Cycle 14
+Number of degrees of freedom: 8520321 = (25 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.052904s/0.053176s
+Setup matrices   (CPU/wall) 7.95622s/7.98945s
+Total setup time: 8.04258
+
+
+
+-- vmult timing comparison --
+cells  dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1     729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2    1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4    2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8    4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16    9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32   18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64   35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128   70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256  139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512  274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024  545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048 1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+ 4096 2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+ 8192 4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+16384 8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells  dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1     729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2    1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4    2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8    4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16    9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32   18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64   35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128   70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256  139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512  274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024  545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048 1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+ 4096 2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+ 8192 4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+16384 8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+
+-- vmult norm (correctness) comparison --
+cells  dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1     729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2    1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4    2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8    4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16    9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32   18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64   35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128   70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256  139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512  274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024  545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048 1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+ 4096 2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 8192 4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+16384 8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+
+
+Cycle 15
+Number of degrees of freedom: 16974593 = (32 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.052657s/0.0722137s
+Setup matrices   (CPU/wall) 15.9237s/15.978s
+Total setup time: 16.0502
+
+
+
+-- vmult timing comparison --
+cells   dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1      729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2     1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4     2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8     4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16     9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32    18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64    35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128    70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256   139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512   274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024   545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048  1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+ 4096  2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+ 8192  4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+16384  8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+32768 16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells   dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1      729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2     1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4     2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8     4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16     9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32    18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64    35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128    70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256   139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512   274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024   545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048  1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+ 4096  2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+ 8192  4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+16384  8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+32768 16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+
+-- vmult norm (correctness) comparison --
+cells   dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1      729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2     1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4     2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8     4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16     9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32    18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64    35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128    70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256   139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512   274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024   545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048  1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+ 4096  2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 8192  4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+16384  8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+32768 16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+
+
+Cycle 16
+Number of degrees of freedom: 33883137 = (40 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.123095s/0.162866s
+Setup matrices   (CPU/wall) 31.6448s/31.7359s
+Total setup time: 31.8987
+
+
+
+-- vmult timing comparison --
+cells   dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+    1      729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+    2     1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+    4     2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+    8     4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+   16     9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+   32    18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+   64    35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+  128    70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+  256   139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+  512   274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+ 1024   545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+ 2048  1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+ 4096  2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+ 8192  4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+16384  8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+32768 16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+65536 33883137 7.7436e-04           0.0009 3.5481e-03 1.1411e-03      1.0360e-03     1.1458e-03           1.0372e-03 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells   dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+    1      729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+    2     1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+    4     2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+    8     4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+   16     9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+   32    18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+   64    35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+  128    70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+  256   139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+  512   274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+ 1024   545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+ 2048  1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+ 4096  2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+ 8192  4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+16384  8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+32768 16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+65536 33883137                0.9095         4.582             3.109                  3.097                   3.425                        3.421 
+
+-- vmult norm (correctness) comparison --
+cells   dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+    1      729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+    2     1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+    4     2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+    8     4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+   16     9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+   32    18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+   64    35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+  128    70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+  256   139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+  512   274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+ 1024   545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+ 2048  1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+ 4096  2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 8192  4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+16384  8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+32768 16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+65536 33883137                        0.0000             3.466e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+
+
+Cycle 17
+Number of degrees of freedom: 67634433 = (50 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.194355s/0.254921s
+Setup matrices   (CPU/wall) 62.9583s/63.1846s
+Total setup time: 63.4395
+
+
+
+-- vmult timing comparison --
+cells    dofs     t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+     1      729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+     2     1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+     4     2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+     8     4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+    16     9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+    32    18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+    64    35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+   128    70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+   256   139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+   512   274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+  1024   545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+  2048  1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+  4096  2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+  8192  4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+ 16384  8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+ 32768 16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+ 65536 33883137 7.7436e-04           0.0009 3.5481e-03 1.1411e-03      1.0360e-03     1.1458e-03           1.0372e-03 
+131072 67634433 1.3217e-03           0.0014 6.7975e-03 2.0056e-03      1.8049e-03     2.0149e-03           1.8104e-03 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells    dofs   bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+     1      729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+     2     1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+     4     2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+     8     4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+    16     9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+    32    18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+    64    35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+   128    70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+   256   139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+   512   274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+  1024   545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+  2048  1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+  4096  2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+  8192  4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+ 16384  8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+ 32768 16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+ 65536 33883137                0.9095         4.582             3.109                  3.097                   3.425                        3.421 
+131072 67634433                0.9177         5.143             3.389                  3.374                   3.766                        3.755 
+
+-- vmult norm (correctness) comparison --
+cells    dofs   rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+     1      729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+     2     1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+     4     2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+     8     4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+    16     9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+    32    18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+    64    35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+   128    70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+   256   139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+   512   274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+  1024   545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+  2048  1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+  4096  2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+  8192  4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+ 16384  8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+ 32768 16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+ 65536 33883137                        0.0000             3.466e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+131072 67634433                        0.0000             3.467e-16              3.251e-16                    2.439e-16                   3.251e-16                         2.439e-16 
+
+
+Cycle 18
+Number of degrees of freedom: 135005697 = (64 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.331532s/0.491881s
+Setup matrices   (CPU/wall) 126.447s/126.805s
+Total setup time: 127.297
+
+
+
+-- vmult timing comparison --
+cells    dofs      t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+     1       729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+     2      1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+     4      2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+     8      4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+    16      9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+    32     18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+    64     35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+   128     70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+   256    139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+   512    274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+  1024    545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+  2048   1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+  4096   2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+  8192   4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+ 16384   8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+ 32768  16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+ 65536  33883137 7.7436e-04           0.0009 3.5481e-03 1.1411e-03      1.0360e-03     1.1458e-03           1.0372e-03 
+131072  67634433 1.3217e-03           0.0014 6.7975e-03 2.0056e-03      1.8049e-03     2.0149e-03           1.8104e-03 
+262144 135005697 2.5131e-03           0.0027 1.3756e-02 3.8240e-03      3.4294e-03     3.8484e-03           3.4401e-03 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells    dofs    bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+     1       729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+     2      1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+     4      2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+     8      4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+    16      9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+    32     18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+    64     35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+   128     70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+   256    139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+   512    274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+  1024    545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+  2048   1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+  4096   2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+  8192   4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+ 16384   8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+ 32768  16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+ 65536  33883137                0.9095         4.582             3.109                  3.097                   3.425                        3.421 
+131072  67634433                0.9177         5.143             3.389                  3.374                   3.766                        3.755 
+262144 135005697                0.9247         5.474             3.597                  3.574                   4.011                        3.999 
+
+-- vmult norm (correctness) comparison --
+cells    dofs    rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+     1       729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+     2      1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+     4      2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+     8      4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+    16      9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+    32     18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+    64     35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+   128     70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+   256    139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+   512    274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+  1024    545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+  2048   1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+  4096   2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+  8192   4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+ 16384   8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+ 32768  16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+ 65536  33883137                        0.0000             3.466e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+131072  67634433                        0.0000             3.467e-16              3.251e-16                    2.439e-16                   3.251e-16                         2.439e-16 
+262144 135005697                        0.0000             3.468e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+
+
+Cycle 19
+Number of degrees of freedom: 269748225 = (80 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)0.603957s/0.8745s
+Setup matrices   (CPU/wall) 253.285s/254.091s
+Total setup time: 254.965
+
+
+
+-- vmult timing comparison --
+cells    dofs      t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+     1       729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+     2      1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+     4      2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+     8      4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+    16      9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+    32     18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+    64     35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+   128     70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+   256    139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+   512    274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+  1024    545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+  2048   1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+  4096   2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+  8192   4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+ 16384   8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+ 32768  16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+ 65536  33883137 7.7436e-04           0.0009 3.5481e-03 1.1411e-03      1.0360e-03     1.1458e-03           1.0372e-03 
+131072  67634433 1.3217e-03           0.0014 6.7975e-03 2.0056e-03      1.8049e-03     2.0149e-03           1.8104e-03 
+262144 135005697 2.5131e-03           0.0027 1.3756e-02 3.8240e-03      3.4294e-03     3.8484e-03           3.4401e-03 
+524288 269748225 4.8747e-03           0.0053 2.7683e-02 7.4339e-03      6.6653e-03     7.4927e-03           6.6699e-03 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+cells    dofs    bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+     1       729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+     2      1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+     4      2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+     8      4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+    16      9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+    32     18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+    64     35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+   128     70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+   256    139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+   512    274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+  1024    545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+  2048   1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+  4096   2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+  8192   4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+ 16384   8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+ 32768  16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+ 65536  33883137                0.9095         4.582             3.109                  3.097                   3.425                        3.421 
+131072  67634433                0.9177         5.143             3.389                  3.374                   3.766                        3.755 
+262144 135005697                0.9247         5.474             3.597                  3.574                   4.011                        3.999 
+524288 269748225                0.9278         5.679             3.724                  3.695                   4.153                        4.150 
+
+-- vmult norm (correctness) comparison --
+cells    dofs    rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+     1       729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+     2      1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+     4      2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+     8      4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+    16      9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+    32     18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+    64     35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+   128     70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+   256    139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+   512    274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+  1024    545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+  2048   1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+  4096   2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+  8192   4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+ 16384   8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+ 32768  16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+ 65536  33883137                        0.0000             3.466e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+131072  67634433                        0.0000             3.467e-16              3.251e-16                    2.439e-16                   3.251e-16                         2.439e-16 
+262144 135005697                        0.0000             3.468e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+524288 269748225                        0.0000             3.468e-16              3.252e-16                    2.440e-16                   3.252e-16                         2.440e-16 
+
+
+Cycle 20
+Number of degrees of freedom: 538970625 = (101 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)1.15383s/1.56418s
+Setup matrices   (CPU/wall) 503.361s/505.05s
+Total setup time: 506.614
+
+
+
+-- vmult timing comparison --
+ cells    dofs      t_bk3    t_bk3_abstracted  t_dealii  t_batched  t_batched_fused t_batched_view t_batched_fused_view 
+      1       729 3.4076e-05           0.0000 1.4223e-04 4.4313e-05      4.0917e-05     4.4736e-05           4.1168e-05 
+      2      1377 8.4804e-05           0.0001 1.9474e-04 9.7154e-05      9.2291e-05     9.5084e-05           9.1441e-05 
+      4      2601 1.4927e-04           0.0002 2.5539e-04 1.5811e-04      1.5421e-04     1.6058e-04           1.5620e-04 
+      8      4913 4.4079e-05           0.0000 1.4340e-04 6.4380e-05      6.0173e-05     6.7297e-05           6.0152e-05 
+     16      9537 1.2402e-04           0.0001 2.2230e-04 1.4444e-04      1.3830e-04     1.4479e-04           1.3829e-04 
+     32     18513 2.2838e-04           0.0002 3.2483e-04 2.4891e-04      2.4207e-04     2.5044e-04           2.4341e-04 
+     64     35937 3.0146e-04           0.0003 3.9921e-04 3.2247e-04      3.1472e-04     3.2341e-04           3.1571e-04 
+    128     70785 2.5396e-04           0.0003 3.5209e-04 2.7493e-04      2.6776e-04     2.7715e-04           2.6854e-04 
+    256    139425 2.0277e-04           0.0002 3.0263e-04 2.2567e-04      2.1758e-04     2.2502e-04           2.1809e-04 
+    512    274625 2.2744e-04           0.0002 3.2984e-04 2.5188e-04      2.4306e-04     2.5085e-04           2.4245e-04 
+   1024    545025 2.2971e-04           0.0002 3.4033e-04 2.4884e-04      2.4350e-04     2.5109e-04           2.4349e-04 
+   2048   1081665 2.3455e-04           0.0002 3.7569e-04 2.5741e-04      2.4853e-04     2.5700e-04           2.4803e-04 
+   4096   2146689 2.0748e-04           0.0002 4.9571e-04 2.4623e-04      2.3467e-04     2.4678e-04           2.3477e-04 
+   8192   4276737 2.6791e-04           0.0003 7.0958e-04 3.4403e-04      3.2771e-04     3.4477e-04           3.2872e-04 
+  16384   8520321 3.3580e-04           0.0004 1.0900e-03 4.4590e-04      4.2148e-04     4.5147e-04           4.2296e-04 
+  32768  16974593 4.8772e-04           0.0005 1.8979e-03 6.9212e-04      6.3059e-04     6.9457e-04           6.3345e-04 
+  65536  33883137 7.7436e-04           0.0009 3.5481e-03 1.1411e-03      1.0360e-03     1.1458e-03           1.0372e-03 
+ 131072  67634433 1.3217e-03           0.0014 6.7975e-03 2.0056e-03      1.8049e-03     2.0149e-03           1.8104e-03 
+ 262144 135005697 2.5131e-03           0.0027 1.3756e-02 3.8240e-03      3.4294e-03     3.8484e-03           3.4401e-03 
+ 524288 269748225 4.8747e-03           0.0053 2.7683e-02 7.4339e-03      6.6653e-03     7.4927e-03           6.6699e-03 
+1048576 538970625 9.4054e-03           0.0101 5.5294e-02 1.4396e-02      1.3011e-02     1.4555e-02           1.3042e-02 
+
+-- vmult speedup comparison (vs. vmult_dealii) --
+ cells    dofs    bk3_abstracted_vs_bk3 bk3_vs_dealii batched_vs_dealii batched_view_vs_dealii batched_fused_vs_dealii batched_fused_view_vs_dealii 
+      1       729                0.9259         4.174             3.210                  3.179                   3.476                        3.455 
+      2      1377                0.9630         2.296             2.004                  2.048                   2.110                        2.130 
+      4      2601                0.9834         1.711             1.615                  1.590                   1.656                        1.635 
+      8      4913                0.8904         3.253             2.227                  2.131                   2.383                        2.384 
+     16      9537                0.9559         1.792             1.539                  1.535                   1.607                        1.608 
+     32     18513                0.9708         1.422             1.305                  1.297                   1.342                        1.334 
+     64     35937                0.9787         1.324             1.238                  1.234                   1.268                        1.264 
+    128     70785                0.9764         1.386             1.281                  1.270                   1.315                        1.311 
+    256    139425                0.9634         1.493             1.341                  1.345                   1.391                        1.388 
+    512    274625                0.9691         1.450             1.310                  1.315                   1.357                        1.360 
+   1024    545025                0.9755         1.482             1.368                  1.355                   1.398                        1.398 
+   2048   1081665                0.9797         1.602             1.459                  1.462                   1.512                        1.515 
+   4096   2146689                0.9645         2.389             2.013                  2.009                   2.112                        2.111 
+   8192   4276737                0.9337         2.649             2.063                  2.058                   2.165                        2.159 
+  16384   8520321                0.9323         3.246             2.444                  2.414                   2.586                        2.577 
+  32768  16974593                0.9137         3.891             2.742                  2.732                   3.010                        2.996 
+  65536  33883137                0.9095         4.582             3.109                  3.097                   3.425                        3.421 
+ 131072  67634433                0.9177         5.143             3.389                  3.374                   3.766                        3.755 
+ 262144 135005697                0.9247         5.474             3.597                  3.574                   4.011                        3.999 
+ 524288 269748225                0.9278         5.679             3.724                  3.695                   4.153                        4.150 
+1048576 538970625                0.9339         5.879             3.841                  3.799                   4.250                        4.240 
+
+-- vmult norm (correctness) comparison --
+ cells    dofs    rel_err_bk3_abstracted_vs_bk3 rel_err_dealii_vs_bk3 rel_err_batched_vs_bk3 rel_err_batched_fused_vs_bk3 rel_err_batched_view_vs_bk3 rel_err_batched_fused_view_vs_bk3 
+      1       729                        0.0000             3.510e-16              3.438e-16                    2.447e-16                   3.438e-16                         2.447e-16 
+      2      1377                        0.0000             3.437e-16              3.247e-16                    2.407e-16                   3.247e-16                         2.407e-16 
+      4      2601                        0.0000             3.445e-16              3.313e-16                    2.370e-16                   3.313e-16                         2.370e-16 
+      8      4913                        0.0000             3.392e-16              3.195e-16                    2.426e-16                   3.195e-16                         2.426e-16 
+     16      9537                        0.0000             3.389e-16              3.186e-16                    2.465e-16                   3.186e-16                         2.465e-16 
+     32     18513                        0.0000             3.411e-16              3.230e-16                    2.405e-16                   3.230e-16                         2.405e-16 
+     64     35937                        0.0000             3.448e-16              3.251e-16                    2.414e-16                   3.251e-16                         2.414e-16 
+    128     70785                        0.0000             3.449e-16              3.240e-16                    2.432e-16                   3.240e-16                         2.432e-16 
+    256    139425                        0.0000             3.464e-16              3.252e-16                    2.442e-16                   3.252e-16                         2.442e-16 
+    512    274625                        0.0000             3.452e-16              3.259e-16                    2.441e-16                   3.259e-16                         2.441e-16 
+   1024    545025                        0.0000             3.463e-16              3.250e-16                    2.440e-16                   3.250e-16                         2.440e-16 
+   2048   1081665                        0.0000             3.462e-16              3.255e-16                    2.442e-16                   3.255e-16                         2.442e-16 
+   4096   2146689                        0.0000             3.464e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+   8192   4276737                        0.0000             3.467e-16              3.255e-16                    2.440e-16                   3.255e-16                         2.440e-16 
+  16384   8520321                        0.0000             3.467e-16              3.254e-16                    2.440e-16                   3.254e-16                         2.440e-16 
+  32768  16974593                        0.0000             3.464e-16              3.250e-16                    2.438e-16                   3.250e-16                         2.438e-16 
+  65536  33883137                        0.0000             3.466e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 131072  67634433                        0.0000             3.467e-16              3.251e-16                    2.439e-16                   3.251e-16                         2.439e-16 
+ 262144 135005697                        0.0000             3.468e-16              3.252e-16                    2.439e-16                   3.252e-16                         2.439e-16 
+ 524288 269748225                        0.0000             3.468e-16              3.252e-16                    2.440e-16                   3.252e-16                         2.440e-16 
+1048576 538970625                        0.0000             3.469e-16              3.252e-16                    2.440e-16                   3.252e-16                         2.440e-16 
+
+
+Cycle 21
+Number of degrees of freedom: 1076890625 = (128 x 8 + 1)^3
+DoFs and constraint setup  (CPU/wall)2.32608s/3.01642s
+
+
+----------------------------------------------------
+Exception on processing: 
+Kokkos ERROR: Cuda memory space failed to allocate 17.09 GiB (label="G_tensor_color_0").
+Aborting!
+----------------------------------------------------
+malloc_consolidate(): unaligned fastbin chunk detected
+[jpbo-086-05:1421941] *** Process received signal ***
+[jpbo-086-05:1421941] Signal: Aborted (6)
+[jpbo-086-05:1421941] Signal code:  (-6)
+[jpbo-086-05:1421941] [ 0] linux-vdso.so.1(__kernel_rt_sigreturn+0x0)[0x4000049307e8]
+[jpbo-086-05:1421941] [ 1] /lib64/libc.so.6(+0x82d88)[0x400012572d88]
+[jpbo-086-05:1421941] [ 2] /lib64/libc.so.6(raise+0x1c)[0x40001252abfc]
+[jpbo-086-05:1421941] [ 3] /lib64/libc.so.6(abort+0xe8)[0x400012517274]
+[jpbo-086-05:1421941] [ 4] /lib64/libc.so.6(+0x76be8)[0x400012566be8]
+[jpbo-086-05:1421941] [ 5] /lib64/libc.so.6(+0x8d358)[0x40001257d358]
+[jpbo-086-05:1421941] [ 6] /lib64/libc.so.6(+0x8df2c)[0x40001257df2c]
+[jpbo-086-05:1421941] [ 7] /lib64/libc.so.6(+0x8fc94)[0x40001257fc94]
+[jpbo-086-05:1421941] [ 8] /lib64/libc.so.6(__libc_calloc+0xc0)[0x4000125823d0]
+[jpbo-086-05:1421941] [ 9] /e/software/default/stages/2026/software/CUDA/13/targets/sbsa-linux/lib/libcudart.so.13(+0x29810)[0x40000a9f9810]
+[jpbo-086-05:1421941] [10] /e/software/default/stages/2026/software/CUDA/13/targets/sbsa-linux/lib/libcudart.so.13(+0x3c854)[0x40000aa0c854]
+[jpbo-086-05:1421941] [11] /e/software/default/stages/2026/software/CUDA/13/targets/sbsa-linux/lib/libcudart.so.13(+0x3c95c)[0x40000aa0c95c]
+[jpbo-086-05:1421941] [12] /e/software/default/stages/2026/software/CUDA/13/targets/sbsa-linux/lib/libcudart.so.13(+0x3d558)[0x40000aa0d558]
+[jpbo-086-05:1421941] [13] /lib64/libc.so.6(__cxa_finalize+0x168)[0x40001252cac8]
+[jpbo-086-05:1421941] [14] /e/project1/dealii-x/ivan/sw/dealii/dealii-mg-transfer/lib/libdeal_II.so.9.8.0-pre(+0x1fbc45c)[0x40000cf5c45c]
+[jpbo-086-05:1421941] [15] /lib/ld-linux-aarch64.so.1(+0x59c8)[0x4000048c59c8]
+[jpbo-086-05:1421941] [16] /lib64/libc.so.6(+0x3d0ac)[0x40001252d0ac]
+[jpbo-086-05:1421941] [17] /lib64/libc.so.6(+0x3d18c)[0x40001252d18c]
+[jpbo-086-05:1421941] [18] /lib64/libc.so.6(+0x27544)[0x400012517544]
+[jpbo-086-05:1421941] [19] /lib64/libc.so.6(__libc_start_main+0x98)[0x400012517618]
+[jpbo-086-05:1421941] [20] /e/home/jusers/prusak1/jupiter/codes/dealiiX-portable-multigrid/tests/abstracted_batched_laplace/build/./program(_start+0x30)[0x507930]
+[jpbo-086-05:1421941] *** End of error message ***
+srun: error: jpbo-086-05: task 2: Aborted (core dumped)
+slurmstepd: error:  mpi/pmix_v5: _errhandler: jpbo-086-05 [0]: pmixp_client_v2.c:211: Error handler invoked: status = -61, source = [slurm.pmix.1441020.0:2]
+slurmstepd: error: *** STEP 1441020.0 ON jpbo-086-05 CANCELLED AT 2026-08-21T14:04:45 ***
+slurmstepd: error:  mpi/pmix_v5: _errhandler: jpbo-086-05 [0]: pmixp_client_v2.c:211: Error handler invoked: status = -61, source = [slurm.pmix.1441020.0:3]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: jpbo-086-05: tasks 1,3: Killed
+srun: error: jpbo-086-05: task 0: Killed
