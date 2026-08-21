@@ -17,6 +17,12 @@ namespace Portable
   class LocalLaplaceOperatorGenericView
   {
   public:
+    // Tells cell_loop_batched_launch_view() what this functor actually
+    // reads/submits at quad points (get_value()/submit_value() are never
+    // called here, only get_gradient()/submit_gradient()), so it can size
+    // shared memory accordingly -- see the launcher's doc comment.
+    static constexpr EvaluationFlags::EvaluationFlags evaluation_flags = EvaluationFlags::gradients;
+
     LocalLaplaceOperatorGenericView() = default;
 
     DEAL_II_HOST_DEVICE void
@@ -42,6 +48,12 @@ namespace Portable
   class LocalLaplaceOperatorGenericSplitView
   {
   public:
+    // Same trait as LocalLaplaceOperatorGenericView -- evaluate_values()
+    // is only an internal dof->quad intermediate here (values are never
+    // fetched/submitted by this functor), gradients are the only thing
+    // actually read/written at quad points.
+    static constexpr EvaluationFlags::EvaluationFlags evaluation_flags = EvaluationFlags::gradients;
+
     LocalLaplaceOperatorGenericSplitView() = default;
 
     DEAL_II_HOST_DEVICE void
@@ -86,10 +98,33 @@ namespace Portable
     constexpr int n_1d     = fe_degree + 1;
     constexpr int nq_total = Utilities::pow(n_q_points_1d, dim);
 
-    // 1 values slot + dim gradients-pool slots + (dim - 1) dedicated
-    // evaluate_values()/integrate_values() scratch slots -- see the class
-    // doc comment above.
-    constexpr int n_scratch_arrays = 2 * dim;
+    // Bitwise-AND on the plain ints rather than EvaluationFlags::operator&
+    // -- that overload isn't marked constexpr in every deal.II version
+    // this project builds against, but the enum's own integer conversion
+    // always is.
+    constexpr unsigned int evaluation_flags_int =
+      static_cast<unsigned int>(Functor::evaluation_flags);
+    constexpr bool needs_values =
+      evaluation_flags_int & static_cast<unsigned int>(EvaluationFlags::values);
+    constexpr bool needs_gradients =
+      evaluation_flags_int & static_cast<unsigned int>(EvaluationFlags::gradients);
+    static_assert(needs_values || needs_gradients,
+                  "Functor::evaluation_flags must request values and/or gradients.");
+
+    // The `values` buffer (1 slot) is always needed -- either as the
+    // functor's own field, or (gradients-only) as evaluate_gradients()'s
+    // dof->quad interpolation intermediate. The `gradients` buffer (dim
+    // slots) is only allocated when the functor actually asks for it.
+    // The dedicated scratch region ((dim - 1) slots) is needed as its own
+    // allocation in the general (both flags) and values-only cases, but
+    // in the gradients-only case it's aliased onto the gradients buffer's
+    // own memory instead -- safe because the scratch-touching phase and
+    // the gradients-touching phase never overlap in time within
+    // evaluate()/integrate()/evaluate_values()/integrate_values() (each
+    // separated by a team_barrier()), and dim slots >= (dim - 1) slots.
+    constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? 2 * dim :
+                                     needs_gradients                   ? dim + 1 :
+                                                                         dim;
 
     if (cell_range_ids.size() > 0)
       AssertDimension(cell_range_ids.size(), static_cast<unsigned int>(nelmt));
@@ -137,9 +172,25 @@ namespace Portable
         Number *s_shape_values       = scratch;
         Number *s_co_shape_gradients = s_shape_values + n_1d * n_q_points_1d;
 
-        Number *s_values    = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
-        Number *s_gradients = s_values + n_elements_per_batch * nq_total;
-        Number *s_scratch   = s_gradients + dim * n_elements_per_batch * nq_total;
+        Number *s_values = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
+
+        // Layout depends on Functor::evaluation_flags -- see the
+        // n_scratch_arrays derivation above for the reasoning.
+        Number *s_gradients;
+        Number *s_scratch;
+        if constexpr (needs_gradients)
+          {
+            s_gradients = s_values + n_elements_per_batch * nq_total;
+            if constexpr (needs_values)
+              s_scratch = s_gradients + dim * n_elements_per_batch * nq_total; // general: separate
+            else
+              s_scratch = s_gradients; // gradients-only: alias onto gradients
+          }
+        else
+          {
+            s_gradients = s_values; // values-only: unused dummy, never dereferenced
+            s_scratch   = s_values + n_elements_per_batch * nq_total; // values-only: separate
+          }
 
         const int n_q_points_per_batch = n_elements_per_batch * nq_total;
 
@@ -160,7 +211,7 @@ namespace Portable
         ScratchViewType   v_shape_values(s_shape_values, n_1d * n_q_points_1d);
         ScratchViewType   v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
         ScratchViewType   v_values(s_values, n_q_points_per_batch);
-        GradientsViewType v_gradients(s_gradients, n_q_points_per_batch, dim);
+        GradientsViewType v_gradients(s_gradients, needs_gradients ? n_q_points_per_batch : 0, dim);
         ScratchViewType   v_scratch(s_scratch, (dim - 1) * n_q_points_per_batch);
 
         const Custom::Parallel::ShapeDataView<Number> shape_data{

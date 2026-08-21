@@ -497,8 +497,7 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src, dst_dealii, dst_bk3,
-      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view,
-      dst_batched_fused_view;
+      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view, dst_batched_fused_view;
     system_matrix->initialize_dof_vector(src);
     system_matrix->initialize_dof_vector(dst_dealii);
     system_matrix->initialize_dof_vector(dst_bk3);
@@ -559,7 +558,7 @@ namespace multigrid
       };
 
     const double rel_err_dealii             = rel_err_vs_bk3(dst_dealii);
-    const double rel_err_bk3_abstracted = rel_err_vs_bk3(dst_bk3_abstracted);
+    const double rel_err_bk3_abstracted     = rel_err_vs_bk3(dst_bk3_abstracted);
     const double rel_err_batched            = rel_err_vs_bk3(dst_batched);
     const double rel_err_batched_fused      = rel_err_vs_bk3(dst_batched_fused);
     const double rel_err_batched_view       = rel_err_vs_bk3(dst_batched_view);
@@ -741,8 +740,8 @@ namespace multigrid
             vmult_timing_table.set_precision("t_dealii", 4);
             vmult_timing_table.set_scientific("t_bk3", true);
             vmult_timing_table.set_precision("t_bk3", 4);
-            vmult_timing_table.set_scientific("t_bk3_not_abstracted", true);
-            vmult_timing_table.set_precision("t_bk3_not_abstracted", 4);
+            vmult_timing_table.set_scientific("t_bk3_abstracted", true);
+            vmult_timing_table.set_precision("t_bk3_abstracted", 4);
             vmult_timing_table.set_scientific("t_batched", true);
             vmult_timing_table.set_precision("t_batched", 4);
             vmult_timing_table.set_scientific("t_batched_fused", true);
@@ -753,7 +752,7 @@ namespace multigrid
             vmult_timing_table.set_precision("t_batched_fused_view", 4);
 
             vmult_speedup_table.set_precision("bk3_vs_dealii", 3);
-            vmult_speedup_table.set_precision("bk3_not_abstracted_vs_bk3", 3);
+            vmult_speedup_table.set_precision("bk3_abstracted_vs_bk3", 3);
             vmult_speedup_table.set_precision("batched_vs_dealii", 3);
             vmult_speedup_table.set_precision("batched_view_vs_dealii", 3);
             vmult_speedup_table.set_precision("batched_fused_vs_dealii", 3);
@@ -761,8 +760,8 @@ namespace multigrid
 
             vmult_norm_table.set_scientific("rel_err_dealii_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_dealii_vs_bk3", 3);
-            vmult_norm_table.set_scientific("rel_err_bk3_not_abstracted_vs_bk3", true);
-            vmult_norm_table.set_precision("rel_err_bk3_not_abstracted_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_bk3_abstracted_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_bk3_abstracted_vs_bk3", 3);
             vmult_norm_table.set_scientific("rel_err_batched_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_batched_vs_bk3", 3);
             vmult_norm_table.set_scientific("rel_err_batched_fused_vs_bk3", true);

@@ -98,18 +98,39 @@ namespace Custom
       evaluate(const EvaluationFlags::EvaluationFlags evaluation_flag) const
       {
         FEEvalImpl::evaluate(data, evaluation_flag);
+        if constexpr (running_in_debug_mode())
+          {
+            values_quad_initialized = static_cast<bool>(evaluation_flag & EvaluationFlags::values);
+            gradients_quad_initialized =
+              static_cast<bool>(evaluation_flag & EvaluationFlags::gradients);
+          }
       }
 
       DEAL_II_HOST_DEVICE void
       integrate(const EvaluationFlags::EvaluationFlags integration_flag) const
       {
+        if constexpr (running_in_debug_mode())
+          {
+            if (integration_flag & EvaluationFlags::values)
+              Assert(values_quad_submitted,
+                     ExcMessage("integrate() was asked for values, but submit_value() "
+                                "was never called."));
+            if (integration_flag & EvaluationFlags::gradients)
+              Assert(gradients_quad_submitted,
+                     ExcMessage("integrate() was asked for gradients, but submit_gradient() "
+                                "was never called."));
+          }
         FEEvalImpl::integrate(data, integration_flag);
+        if constexpr (running_in_debug_mode())
+          values_quad_submitted = gradients_quad_submitted = false;
       }
 
       DEAL_II_HOST_DEVICE void
       evaluate_values() const
       {
         FEEvalImpl::evaluate_values(data, data->shape_data.values, data->shape_data.values);
+        if constexpr (running_in_debug_mode())
+          values_quad_initialized = true;
       }
 
       template <bool add = false>
@@ -119,26 +140,44 @@ namespace Custom
         FEEvalImpl::template evaluate_gradients<add>(data,
                                                      data->shape_data.values,
                                                      data->shape_data.gradients);
+        if constexpr (running_in_debug_mode())
+          gradients_quad_initialized = true;
       }
 
       DEAL_II_HOST_DEVICE void
       integrate_values() const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(values_quad_submitted,
+                 ExcMessage("integrate_values() was called, but submit_value() was "
+                            "never called."));
         FEEvalImpl::integrate_values(data, data->shape_data.values, data->shape_data.values);
+        if constexpr (running_in_debug_mode())
+          values_quad_submitted = false;
       }
 
       template <bool add = false>
       DEAL_II_HOST_DEVICE void
       integrate_gradients() const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(gradients_quad_submitted,
+                 ExcMessage("integrate_gradients() was called, but submit_gradient() "
+                            "was never called."));
         FEEvalImpl::template integrate_gradients<add>(data,
                                                       data->shape_data.gradients,
                                                       data->shape_data.values);
+        if constexpr (running_in_debug_mode())
+          gradients_quad_submitted = false;
       }
 
       DEAL_II_HOST_DEVICE Number
       get_value(const int point) const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(values_quad_initialized,
+                 ExcMessage("get_value() was called without a prior evaluate()/"
+                            "evaluate_values() that requested values."));
         return data->shape_data.values(point);
       }
 
@@ -150,11 +189,18 @@ namespace Custom
 
         data->shape_data.values(point) =
           value * data->precomputed_data.data.JxW(point_local, global_cell);
+        if constexpr (running_in_debug_mode())
+          values_quad_submitted = true;
       }
 
       DEAL_II_HOST_DEVICE gradient_type
       get_gradient(const int point) const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(gradients_quad_initialized,
+                 ExcMessage("get_gradient() was called without a prior evaluate()/"
+                            "evaluate_gradients() that requested gradients."));
+
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
@@ -186,10 +232,23 @@ namespace Custom
                      gradient[d_2];
             data->shape_data.gradients(point, d_1) = tmp * jxw;
           }
+        if constexpr (running_in_debug_mode())
+          gradients_quad_submitted = true;
       }
 
     private:
       const data_type *data;
+
+      // Debug-only usage tracking, matching real deal.II's FEEvaluationBase
+      // pattern -- compiled out entirely in Release. Catches: reading a
+      // field evaluate() wasn't asked to produce (the actual hazard behind
+      // the gradients-only scratch_pad/gradients buffer aliasing done by
+      // cell_loop_batched_launch_view()), and calling integrate() without
+      // having submitted the corresponding field first.
+      mutable bool values_quad_initialized    = false;
+      mutable bool gradients_quad_initialized = false;
+      mutable bool values_quad_submitted      = false;
+      mutable bool gradients_quad_submitted   = false;
     };
   } // namespace Parallel
 } // namespace Custom
