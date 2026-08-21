@@ -55,8 +55,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE unsigned int
       get_global_cell_index(const int point) const
       {
-        const int    nq_total          = data->n_q_points_per_batch / data->n_elements_per_batch;
-        const int    e                 = point / nq_total;
+        const int    e                 = point / data->n_q_points;
         unsigned int global_cell_index = data->batch_index * data->n_elements_per_batch + e;
         if (data->precomputed_data.cell_range_ids.size() > 0)
           global_cell_index = data->precomputed_data.cell_range_ids(global_cell_index);
@@ -146,8 +145,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_value(const Number &value, const int point) const
       {
-        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
-        const int          point_local = point % nq_total;
+        const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
         data->shape_data.values(point) =
@@ -157,8 +155,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE gradient_type
       get_gradient(const int point) const
       {
-        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
-        const int          point_local = point % nq_total;
+        const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
         gradient_type grad;
@@ -176,8 +173,7 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       submit_gradient(const gradient_type &gradient, const int point) const
       {
-        const int          nq_total    = data->n_q_points_per_batch / data->n_elements_per_batch;
-        const int          point_local = point % nq_total;
+        const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
         const Number jxw = data->precomputed_data.data.JxW(point_local, global_cell);

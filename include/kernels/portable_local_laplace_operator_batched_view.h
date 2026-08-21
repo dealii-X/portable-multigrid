@@ -189,7 +189,8 @@ namespace Portable
                                                                     n_elements_in_current_batch,
                                                                     thread_id,
                                                                     block_size,
-                                                                    n_q_points_per_batch};
+                                                                    n_q_points_per_batch,
+                                                                    nq_total};
 
             Custom::Parallel::DeviceView<Number> nonconst_dst = dst_device;
             func(&data, src_device, nonconst_dst);

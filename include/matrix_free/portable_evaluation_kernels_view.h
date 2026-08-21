@@ -59,12 +59,17 @@ namespace Custom
 
       const int n_q_points_per_batch;
 
+      // Per-cell quadrature point count, same field (name and role) as
+      // real deal.II's own Data::n_q_points -- stored once instead of
+      // recomputed via n_q_points_per_batch / n_elements_per_batch on
+      // every call.
+      const int n_q_points;
+
       template <typename Functor>
       DEAL_II_HOST_DEVICE void
       for_each_quad_point(const Functor &func) const
       {
-        const int nq_total = n_q_points_per_batch / n_elements_per_batch;
-        const int n_points = n_elements_in_current_batch * nq_total;
+        const int n_points = n_elements_in_current_batch * n_q_points;
 
         for (int tid = thread_id; tid < n_points; tid += block_size)
           func(tid);
@@ -75,8 +80,6 @@ namespace Custom
       DEAL_II_HOST_DEVICE unsigned int
       local_q_point_id(const unsigned int cell, const unsigned int q_point) const
       {
-        const int n_q_points = n_q_points_per_batch / n_elements_per_batch;
-
         AssertIndexRange(cell, precomputed_data.data.n_cells);
         AssertIndexRange(q_point, static_cast<unsigned int>(n_q_points));
 
@@ -89,8 +92,6 @@ namespace Custom
       typename Portable::MatrixFree<dim, Number>::point_type &
       get_quadrature_point(const unsigned int cell, const unsigned int q_point) const
       {
-        const int n_q_points = n_q_points_per_batch / n_elements_per_batch;
-
         AssertIndexRange(cell, precomputed_data.data.n_cells);
         AssertIndexRange(q_point, static_cast<unsigned int>(n_q_points));
 
