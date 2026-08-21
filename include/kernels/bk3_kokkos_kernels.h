@@ -36,6 +36,7 @@ namespace BK3
                            const unsigned int       n_cells,
                            const unsigned int       n_blocks       = numbers::invalid_unsigned_int,
                            const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
+                           const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
                            const CellRangeIdView cell_range_ids    = CellRangeIdView())
     {
       if (n_cells == 0)
@@ -47,7 +48,7 @@ namespace BK3
       // finding the batch size
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      constexpr int n_scratch_arrays = 4;
+      constexpr int n_scratch_arrays = 1 + dim;
 
       if (cell_range_ids.size() > 0)
         AssertDimension(cell_range_ids.size(), n_cells);
@@ -56,8 +57,11 @@ namespace BK3
 
       const int nelmtPerBatch =
         std::max(1,
-                 static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
-                                  sizeof(Number)));
+                 ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                    static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
+                                     sizeof(Number)) :
+                    static_cast<int>(n_cells_per_batch)));
+
 
       const int numBlocks = std::max(1,
                                      ((n_blocks == numbers::invalid_unsigned_int) ?
@@ -200,6 +204,7 @@ namespace BK3
                  const unsigned int       n_cells,
                  const unsigned int       n_blocks          = numbers::invalid_unsigned_int,
                  const unsigned int       threads_per_block = numbers::invalid_unsigned_int,
+                 const unsigned int       n_cells_per_batch = numbers::invalid_unsigned_int,
                  const CellRangeIdView    cell_range_ids    = CellRangeIdView())
     {
       if (n_cells == 0)
@@ -211,16 +216,19 @@ namespace BK3
       // finding the batch size
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      constexpr int n_scratch_arrays = 4;
+      constexpr int n_scratch_arrays = 1 + dim;
 
       if (cell_range_ids.size() > 0)
         AssertDimension(cell_range_ids.size(), n_cells);
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
-        std::max(1,
-                 static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)));
+      const int nelmtPerBatch = std::max(
+        1,
+        ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+           static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)) :
+           static_cast<int>(n_cells_per_batch)));
+
 
       const int numBlocks = std::max(1,
                                      ((n_blocks == numbers::invalid_unsigned_int) ?
@@ -259,8 +267,14 @@ namespace BK3
             Number *s_wsp1 = s_wsp0 + nelmtPerBatch * nq_total;
 
             Number *s_rqr = s_wsp1 + nelmtPerBatch * nq_total;
-            Number *s_rqs = s_rqr + nelmtPerBatch * nq_total;
-            Number *s_rqt = s_wsp0;
+            Number *s_rqs;
+            if (dim == 2)
+              s_rqs = s_wsp1;
+            else
+              s_rqs = s_rqr + nelmtPerBatch * nq_total;
+            Number *s_rqt;
+            if (dim == 3)
+              s_rqt = s_wsp0;
 
             const int threadIdx = team_member.team_rank();
             const int blockSize = team_member.team_size();

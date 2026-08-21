@@ -89,6 +89,7 @@ namespace Portable
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
     const unsigned int                       n_blocks          = numbers::invalid_unsigned_int,
     const unsigned int                       threads_per_block = numbers::invalid_unsigned_int,
+    const unsigned int                       n_cells_per_batch = numbers::invalid_unsigned_int,
     const Custom::Parallel::CellRangeIdView &cell_range_ids = Custom::Parallel::CellRangeIdView())
   {
     const int nelmt = precomputed_data.n_cells;
@@ -135,7 +136,10 @@ namespace Portable
     constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
     const int n_elements_per_batch =
-      std::max(1, static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)));
+      std::max(1,
+               ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                  static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)) :
+                  static_cast<int>(n_cells_per_batch)));
 
     const int numBlocks =
       std::max(1,

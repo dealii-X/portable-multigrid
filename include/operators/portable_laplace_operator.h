@@ -233,6 +233,9 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1u;
+
     if (is_serial)
       {
         numBlocks       = 1u;
@@ -257,7 +260,8 @@ namespace Portable
               dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              n_cells_per_batch);
           }
       };
 
@@ -327,6 +331,9 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1u;
+
     if (is_serial)
       {
         numBlocks       = 1u;
@@ -351,7 +358,8 @@ namespace Portable
               dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              n_cells_per_batch);
           }
       };
 
@@ -582,6 +590,9 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1u;
+
     if (is_serial)
       {
         numBlocks       = 1u;
@@ -602,7 +613,8 @@ namespace Portable
             src,
             dst,
             numBlocks,
-            threadsPerBlock);
+            threadsPerBlock,
+            n_cells_per_batch);
       };
 
     if (matrix_free.use_overlap_communication_computation())
@@ -664,6 +676,8 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1u;
     if (is_serial)
       {
         numBlocks       = 1u;
@@ -683,7 +697,8 @@ namespace Portable
             src,
             dst,
             numBlocks,
-            threadsPerBlock);
+            threadsPerBlock,
+            n_cells_per_batch);
       };
 
     if (matrix_free.use_overlap_communication_computation())
