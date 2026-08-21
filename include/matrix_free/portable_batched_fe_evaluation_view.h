@@ -76,6 +76,8 @@ namespace Custom
           data->n_elements_in_current_batch,
           data->thread_id,
           data->block_size);
+        if constexpr (running_in_debug_mode())
+          dof_values_initialized = true;
       }
 
       DEAL_II_HOST_DEVICE void
@@ -97,6 +99,9 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       evaluate(const EvaluationFlags::EvaluationFlags evaluation_flag) const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(dof_values_initialized,
+                 ExcMessage("evaluate() was called without a prior read_dof_values()."));
         FEEvalImpl::evaluate(data, evaluation_flag);
         if constexpr (running_in_debug_mode())
           {
@@ -128,6 +133,9 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       evaluate_values() const
       {
+        if constexpr (running_in_debug_mode())
+          Assert(dof_values_initialized,
+                 ExcMessage("evaluate_values() was called without a prior read_dof_values()."));
         FEEvalImpl::evaluate_values(data, data->shape_data.values, data->shape_data.values);
         if constexpr (running_in_debug_mode())
           values_quad_initialized = true;
@@ -168,7 +176,15 @@ namespace Custom
                                                       data->shape_data.gradients,
                                                       data->shape_data.values);
         if constexpr (running_in_debug_mode())
-          gradients_quad_submitted = false;
+          {
+            gradients_quad_submitted = false;
+            // integrate_gradients() writes its (quad->dof) result into
+            // `values` -- in the gradients-only split call sequence this is
+            // the only producer values ever gets, so the subsequent
+            // integrate_values() call is legitimate even though
+            // submit_value() itself was never called.
+            values_quad_submitted = true;
+          }
       }
 
       DEAL_II_HOST_DEVICE Number
@@ -243,8 +259,10 @@ namespace Custom
       // pattern -- compiled out entirely in Release. Catches: reading a
       // field evaluate() wasn't asked to produce (the actual hazard behind
       // the gradients-only scratch_pad/gradients buffer aliasing done by
-      // cell_loop_batched_launch_view()), and calling integrate() without
-      // having submitted the corresponding field first.
+      // cell_loop_batched_launch_view()), calling integrate() without
+      // having submitted the corresponding field first, and calling
+      // evaluate()/evaluate_values() before read_dof_values().
+      mutable bool dof_values_initialized     = false;
       mutable bool values_quad_initialized    = false;
       mutable bool gradients_quad_initialized = false;
       mutable bool values_quad_submitted      = false;
