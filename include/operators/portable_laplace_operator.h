@@ -233,8 +233,7 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1u;
+    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
       {
@@ -331,8 +330,7 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1u;
+    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
       {
@@ -590,8 +588,7 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1u;
+    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
       {
@@ -676,8 +673,7 @@ namespace Portable
 
     unsigned int numBlocks       = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1u;
+    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
     if (is_serial)
       {
         numBlocks       = 1u;
