@@ -47,7 +47,7 @@ namespace multigrid
   // range will not do any work.
   const unsigned int dimension      = 3;
   const unsigned int minimal_degree = 1;
-  const unsigned int maximal_degree = 4;
+  const unsigned int maximal_degree = 9;
   const double       wave_number    = 3.;
   const bool         deform_grid    = false;
 

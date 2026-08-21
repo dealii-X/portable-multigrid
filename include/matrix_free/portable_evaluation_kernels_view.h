@@ -59,10 +59,6 @@ namespace Custom
 
       const int n_q_points_per_batch;
 
-      // Per-cell quadrature point count, same field (name and role) as
-      // real deal.II's own Data::n_q_points -- stored once instead of
-      // recomputed via n_q_points_per_batch / n_elements_per_batch on
-      // every call.
       const int n_q_points;
 
       template <typename Functor>
