@@ -36,7 +36,7 @@ namespace Portable
       fe_eval.evaluate(EvaluationFlags::gradients);
 
       data->for_each_quad_point([&](const int point)
-                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+                                { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate(EvaluationFlags::gradients);
 
@@ -68,7 +68,7 @@ namespace Portable
       fe_eval.evaluate_gradients();
 
       data->for_each_quad_point([&](const int point)
-                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+                                { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate_gradients();
       fe_eval.integrate_values();
@@ -209,14 +209,23 @@ namespace Portable
 
         team_member.team_barrier();
 
-        using ScratchViewType   = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
-        using GradientsViewType = typename Custom::Parallel::ShapeDataView<Number>::GradientsView;
+        using ScratchViewType = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
+        using SharedViewValuesType =
+          typename Custom::Parallel::ShapeDataView<Number>::SharedViewValues;
+        using SharedViewGradientsType =
+          typename Custom::Parallel::ShapeDataView<Number>::SharedViewGradients;
 
-        ScratchViewType   v_shape_values(s_shape_values, n_1d * n_q_points_1d);
-        ScratchViewType   v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
-        ScratchViewType   v_values(s_values, n_q_points_per_batch);
-        GradientsViewType v_gradients(s_gradients, needs_gradients ? n_q_points_per_batch : 0, dim);
-        ScratchViewType   v_scratch(s_scratch, (dim - 1) * n_q_points_per_batch);
+        ScratchViewType v_shape_values(s_shape_values, n_1d * n_q_points_1d);
+        ScratchViewType v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
+        // Trailing extent 1 is the (not-yet-implemented) n_components axis,
+        // matching real deal.II's SharedData<dim, Number> shape exactly --
+        // see ShapeDataView's doc comment.
+        SharedViewValuesType    v_values(s_values, n_q_points_per_batch, 1);
+        SharedViewGradientsType v_gradients(s_gradients,
+                                            needs_gradients ? n_q_points_per_batch : 0,
+                                            dim,
+                                            1);
+        ScratchViewType         v_scratch(s_scratch, (dim - 1) * n_q_points_per_batch);
 
         const Custom::Parallel::ShapeDataView<Number> shape_data{
           v_shape_values, v_co_shape_gradients, v_values, v_gradients, v_scratch};

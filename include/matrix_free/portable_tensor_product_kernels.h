@@ -765,6 +765,126 @@ namespace Custom
           }
       }
 
+      /**
+       * Evaluate (transpose = false) or integrate (transpose = true) the
+       * full gradient (all `dim` components at once) of a
+       * collocation-space finite element function, fusing what would
+       * otherwise be `dim` separate direction-by-direction co_gradients()
+       * calls into a single pass with one register-cached read of `in`
+       * per output quadrature point. transpose = false broadcasts one
+       * scalar field into `dim` gradient components (the forward,
+       * evaluate_gradients() case); transpose = true is the adjoint -- it
+       * reduces `dim` gradient components back into one scalar field (the
+       * integrate_gradients() case).
+       */
+      template <bool transpose, bool add = false, typename ViewTypeIn, typename ViewTypeOut>
+      DEAL_II_HOST_DEVICE void
+      co_gradients(const ViewTypeIn in, ViewTypeOut out) const
+      {
+        static_assert(dim >= 1, "dim must be at least 1");
+        static_assert(ViewTypeIn::rank == (transpose ? 2 : 1),
+                      "in must be the values (1D) for evaluate_gradients (transpose = "
+                      "false), or the gradients (2D) for integrate_gradients (transpose "
+                      "= true).");
+        static_assert(ViewTypeOut::rank == (transpose ? 1 : 2),
+                      "out must be the gradients (2D) for evaluate_gradients (transpose "
+                      "= false), or the values (1D) for integrate_gradients (transpose "
+                      "= true).");
+
+        constexpr int n_q_points        = Utilities::pow(n_columns, dim);
+        constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
+
+        for (int tid = thread_id; tid < n_elements_in_current_batch * co_dimension_size;
+             tid += block_size)
+          {
+            const int elmnt_idx = tid / co_dimension_size;
+            const int reminder  = tid % co_dimension_size;
+
+            // Sized [dim], not [dim - 1], purely to keep the array valid at
+            // dim == 1 (where the d-loops below never execute) without a
+            // separate dim == 1 code path -- the extra slot is never touched.
+            int    idx_d[dim], stride_d[dim];
+            Number reg[dim][n_columns];
+
+            for (int d = 0; d < dim - 1; ++d)
+              {
+                stride_d[d] = Utilities::pow(n_columns, d);
+                idx_d[d]    = (reminder / stride_d[d]) % n_columns;
+                for (int n = 0; n < n_columns; ++n)
+                  {
+                    if constexpr (!transpose)
+                      reg[d][n] = co_shape_gradients(n * n_columns + idx_d[d]);
+                    else
+                      reg[d][n] = co_shape_gradients(idx_d[d] * n_columns + n);
+                  }
+              }
+
+            for (int n = 0; n < n_columns; ++n)
+              {
+                if constexpr (!transpose)
+                  reg[dim - 1][n] = in(elmnt_idx * n_q_points + reminder + n * co_dimension_size);
+                else
+                  reg[dim - 1][n] =
+                    in(elmnt_idx * n_q_points + reminder + n * co_dimension_size, dim - 1);
+              }
+
+            for (int last = 0; last < n_columns; ++last)
+              {
+                const int q_point = reminder + last * co_dimension_size;
+
+                if constexpr (!transpose)
+                  {
+                    Number result[dim];
+                    for (int d = 0; d < dim - 1; ++d)
+                      {
+                        const int q_point_base = q_point - idx_d[d] * stride_d[d];
+                        const int in_base      = elmnt_idx * n_q_points + q_point_base;
+
+                        Number res_d = 0;
+                        for (int n = 0; n < n_columns; ++n)
+                          res_d += reg[d][n] * in(in_base + n * stride_d[d]);
+                        result[d] = res_d;
+                      }
+                    {
+                      Number res_d = 0;
+                      for (int n = 0; n < n_columns; ++n)
+                        res_d += co_shape_gradients(n * n_columns + last) * reg[dim - 1][n];
+                      result[dim - 1] = res_d;
+                    }
+
+                    for (int d = 0; d < dim; ++d)
+                      {
+                        if constexpr (add)
+                          out(elmnt_idx * n_q_points + q_point, d) += result[d];
+                        else
+                          out(elmnt_idx * n_q_points + q_point, d) = result[d];
+                      }
+                  }
+                else
+                  {
+                    Number result = 0;
+                    for (int d = 0; d < dim - 1; ++d)
+                      {
+                        const int point_base = q_point - idx_d[d] * stride_d[d];
+                        const int grad_row   = elmnt_idx * n_q_points + point_base;
+
+                        for (int n = 0; n < n_columns; ++n)
+                          result += in(grad_row + n * stride_d[d], d) * reg[d][n];
+                      }
+                    for (int n = 0; n < n_columns; ++n)
+                      result += reg[dim - 1][n] * co_shape_gradients(last * n_columns + n);
+
+                    if constexpr (add)
+                      out(elmnt_idx * n_q_points + q_point) += result;
+                    else
+                      out(elmnt_idx * n_q_points + q_point) = result;
+                  }
+              }
+          }
+
+        team_member.team_barrier();
+      }
+
     private:
       const TeamHandle &team_member;
       ShapeDataType     shape_values;

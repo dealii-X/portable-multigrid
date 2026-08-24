@@ -33,7 +33,9 @@ namespace Custom
       static_assert(n_components_ == 1,
                     "Custom::Parallel::FEEvaluationView only supports scalar "
                     "(n_components == 1) problems for now -- ShapeDataView's "
-                    "values/gradients have no component axis yet.");
+                    "values/gradients do have a component axis (matching real "
+                    "deal.II's SharedData), but every access here hardcodes "
+                    "component 0.");
 
     public:
       using value_type    = Number;
@@ -70,7 +72,7 @@ namespace Custom
           data->precomputed_data.dof_indices,
           data->precomputed_data.cell_range_ids,
           src,
-          data->shape_data.values,
+          Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0),
           data->batch_index,
           data->n_elements_per_batch,
           data->n_elements_in_current_batch,
@@ -87,7 +89,7 @@ namespace Custom
           data->team_member,
           data->precomputed_data.dof_indices,
           data->precomputed_data.cell_range_ids,
-          data->shape_data.values,
+          Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0),
           dst,
           data->batch_index,
           data->n_elements_per_batch,
@@ -102,7 +104,7 @@ namespace Custom
         if constexpr (running_in_debug_mode())
           Assert(dof_values_initialized,
                  ExcMessage("evaluate() was called without a prior read_dof_values()."));
-        FEEvalImpl::evaluate(data, evaluation_flag);
+        FEEvalImpl::evaluate(n_components_, evaluation_flag, data);
         if constexpr (running_in_debug_mode())
           {
             values_quad_initialized = static_cast<bool>(evaluation_flag & EvaluationFlags::values);
@@ -125,7 +127,7 @@ namespace Custom
                      ExcMessage("integrate() was asked for gradients, but submit_gradient() "
                                 "was never called."));
           }
-        FEEvalImpl::integrate(data, integration_flag);
+        FEEvalImpl::integrate(n_components_, integration_flag, data);
         if constexpr (running_in_debug_mode())
           values_quad_submitted = gradients_quad_submitted = false;
       }
@@ -136,7 +138,8 @@ namespace Custom
         if constexpr (running_in_debug_mode())
           Assert(dof_values_initialized,
                  ExcMessage("evaluate_values() was called without a prior read_dof_values()."));
-        FEEvalImpl::evaluate_values(data, data->shape_data.values, data->shape_data.values);
+        const auto u = Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0);
+        FEEvalImpl::evaluate_values(data, u, u);
         if constexpr (running_in_debug_mode())
           values_quad_initialized = true;
       }
@@ -145,9 +148,10 @@ namespace Custom
       DEAL_II_HOST_DEVICE void
       evaluate_gradients() const
       {
-        FEEvalImpl::template evaluate_gradients<add>(data,
-                                                     data->shape_data.values,
-                                                     data->shape_data.gradients);
+        FEEvalImpl::template evaluate_gradients<add>(
+          data,
+          Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0),
+          Kokkos::subview(data->shape_data.gradients, Kokkos::ALL, Kokkos::ALL, 0));
         if constexpr (running_in_debug_mode())
           gradients_quad_initialized = true;
       }
@@ -159,7 +163,8 @@ namespace Custom
           Assert(values_quad_submitted,
                  ExcMessage("integrate_values() was called, but submit_value() was "
                             "never called."));
-        FEEvalImpl::integrate_values(data, data->shape_data.values, data->shape_data.values);
+        const auto u = Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0);
+        FEEvalImpl::integrate_values(data, u, u);
         if constexpr (running_in_debug_mode())
           values_quad_submitted = false;
       }
@@ -172,9 +177,10 @@ namespace Custom
           Assert(gradients_quad_submitted,
                  ExcMessage("integrate_gradients() was called, but submit_gradient() "
                             "was never called."));
-        FEEvalImpl::template integrate_gradients<add>(data,
-                                                      data->shape_data.gradients,
-                                                      data->shape_data.values);
+        FEEvalImpl::template integrate_gradients<add>(
+          data,
+          Kokkos::subview(data->shape_data.gradients, Kokkos::ALL, Kokkos::ALL, 0),
+          Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0));
         if constexpr (running_in_debug_mode())
           {
             gradients_quad_submitted = false;
@@ -194,7 +200,7 @@ namespace Custom
           Assert(values_quad_initialized,
                  ExcMessage("get_value() was called without a prior evaluate()/"
                             "evaluate_values() that requested values."));
-        return data->shape_data.values(point);
+        return data->shape_data.values(point, 0);
       }
 
       DEAL_II_HOST_DEVICE void
@@ -203,7 +209,7 @@ namespace Custom
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
-        data->shape_data.values(point) =
+        data->shape_data.values(point, 0) =
           value * data->precomputed_data.data.JxW(point_local, global_cell);
         if constexpr (running_in_debug_mode())
           values_quad_submitted = true;
@@ -226,7 +232,7 @@ namespace Custom
             Number tmp = 0.;
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
               tmp += data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_2, d_1) *
-                     data->shape_data.gradients(point, d_2);
+                     data->shape_data.gradients(point, d_2, 0);
             grad[d_1] = tmp;
           }
         return grad;
@@ -246,7 +252,7 @@ namespace Custom
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
               tmp += data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
                      gradient[d_2];
-            data->shape_data.gradients(point, d_1) = tmp * jxw;
+            data->shape_data.gradients(point, d_1, 0) = tmp * jxw;
           }
         if constexpr (running_in_debug_mode())
           gradients_quad_submitted = true;
