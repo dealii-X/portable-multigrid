@@ -305,13 +305,13 @@ namespace Custom
               typename ViewTypeOut,
               typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
     DEAL_II_HOST_DEVICE inline void
-    apply(const TeamHandle    &team_member,
-          const ViewTypeMatrix matrix,
-          const ViewTypeIn     in,
-          ViewTypeOut          out,
-          const int            n_elements_in_current_batch,
-          const int            thread_id,
-          const int            block_size)
+    apply(const TeamHandle          &team_member,
+          const ViewTypeMatrix       matrix,
+          const ViewTypeIn           in,
+          ViewTypeOut                out,
+          const int                  n_elements_in_current_batch,
+          [[maybe_unused]] const int thread_id,
+          [[maybe_unused]] const int block_size)
     {
       static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
 
@@ -324,8 +324,9 @@ namespace Custom
       constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
       constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
 
-      for (int tid = thread_id; tid < n_elements_in_current_batch * n_blocks1 * n_blocks2;
-           tid += block_size)
+      Kokkos::parallel_for(
+        Kokkos::TeamThreadRange(team_member, n_elements_in_current_batch * n_blocks1 * n_blocks2),
+        [&](const int tid)
         {
           const int e   = tid / (n_blocks1 * n_blocks2);
           const int rem = tid % (n_blocks1 * n_blocks2);
@@ -344,7 +345,7 @@ namespace Custom
             matrix,
             Kokkos::subview(in, Kokkos::make_pair(in_offset, static_cast<int>(in.extent(0)))),
             Kokkos::subview(out, Kokkos::make_pair(out_offset, static_cast<int>(out.extent(0)))));
-        }
+        });
 
       team_member.team_barrier();
     }
@@ -381,20 +382,21 @@ namespace Custom
               typename ViewTypeIn,
               typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
     DEAL_II_HOST_DEVICE inline void
-    populate_view(const TeamHandle &team_member,
-                  ViewTypeOut       dst,
-                  const ViewTypeIn  src,
-                  const int         N,
-                  const int         thread_id,
-                  const int         block_size)
+    populate_view(const TeamHandle          &team_member,
+                  ViewTypeOut                dst,
+                  const ViewTypeIn           src,
+                  const int                  N,
+                  [[maybe_unused]] const int thread_id,
+                  [[maybe_unused]] const int block_size)
     {
-      for (int tid = thread_id; tid < N; tid += block_size)
-        {
-          if constexpr (add)
-            dst(tid) += src(tid);
-          else
-            dst(tid) = src(tid);
-        }
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, N),
+                           [&](const int tid)
+                           {
+                             if constexpr (add)
+                               dst(tid) += src(tid);
+                             else
+                               dst(tid) = src(tid);
+                           });
 
       team_member.team_barrier();
     }
@@ -794,8 +796,9 @@ namespace Custom
         constexpr int n_q_points        = Utilities::pow(n_columns, dim);
         constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
 
-        for (int tid = thread_id; tid < n_elements_in_current_batch * co_dimension_size;
-             tid += block_size)
+        Kokkos::parallel_for(
+          Kokkos::TeamThreadRange(team_member, n_elements_in_current_batch * co_dimension_size),
+          [&](const int tid)
           {
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
@@ -880,7 +883,7 @@ namespace Custom
                       out(elmnt_idx * n_q_points + q_point) = result;
                   }
               }
-          }
+          });
 
         team_member.team_barrier();
       }
