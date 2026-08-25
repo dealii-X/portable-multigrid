@@ -251,8 +251,6 @@ namespace Portable
                                                                     batch_index,
                                                                     n_elements_per_batch,
                                                                     n_elements_in_current_batch,
-                                                                    thread_id,
-                                                                    block_size,
                                                                     n_q_points_per_batch,
                                                                     nq_total};
 

@@ -75,9 +75,7 @@ namespace Custom
           Kokkos::subview(data->shape_data.values, Kokkos::ALL, 0),
           data->batch_index,
           data->n_elements_per_batch,
-          data->n_elements_in_current_batch,
-          data->thread_id,
-          data->block_size);
+          data->n_elements_in_current_batch);
         if constexpr (running_in_debug_mode())
           dof_values_initialized = true;
       }
@@ -93,9 +91,7 @@ namespace Custom
           dst,
           data->batch_index,
           data->n_elements_per_batch,
-          data->n_elements_in_current_batch,
-          data->thread_id,
-          data->block_size);
+          data->n_elements_in_current_batch);
       }
 
       DEAL_II_HOST_DEVICE void

@@ -305,13 +305,11 @@ namespace Custom
               typename ViewTypeOut,
               typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
     DEAL_II_HOST_DEVICE inline void
-    apply(const TeamHandle          &team_member,
-          const ViewTypeMatrix       matrix,
-          const ViewTypeIn           in,
-          ViewTypeOut                out,
-          const int                  n_elements_in_current_batch,
-          [[maybe_unused]] const int thread_id,
-          [[maybe_unused]] const int block_size)
+    apply(const TeamHandle    &team_member,
+          const ViewTypeMatrix matrix,
+          const ViewTypeIn     in,
+          ViewTypeOut          out,
+          const int            n_elements_in_current_batch)
     {
       static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
 
@@ -325,27 +323,27 @@ namespace Custom
       constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
 
       Kokkos::parallel_for(
-        Kokkos::TeamThreadRange(team_member, n_elements_in_current_batch * n_blocks1 * n_blocks2),
+        Kokkos::TeamVectorRange(team_member, n_elements_in_current_batch * n_blocks1 * n_blocks2),
         [&](const int tid)
-        {
-          const int e   = tid / (n_blocks1 * n_blocks2);
-          const int rem = tid % (n_blocks1 * n_blocks2);
-          const int i2  = rem / n_blocks1;
-          const int i1  = rem % n_blocks1;
+          {
+            const int e   = tid / (n_blocks1 * n_blocks2);
+            const int rem = tid % (n_blocks1 * n_blocks2);
+            const int i2  = rem / n_blocks1;
+            const int i1  = rem % n_blocks1;
 
-          const int in_offset  = e * n_in_per_elmt + i2 * n_blocks1 * mm + i1;
-          const int out_offset = e * n_out_per_elmt + i2 * n_blocks1 * nn + i1;
+            const int in_offset  = e * n_in_per_elmt + i2 * n_blocks1 * mm + i1;
+            const int out_offset = e * n_out_per_elmt + i2 * n_blocks1 * nn + i1;
 
-          apply_matrix_vector_product<n_rows,
-                                      n_columns,
-                                      contract_over_rows,
-                                      add,
-                                      n_blocks1,
-                                      n_blocks1>(
-            matrix,
-            Kokkos::subview(in, Kokkos::make_pair(in_offset, static_cast<int>(in.extent(0)))),
-            Kokkos::subview(out, Kokkos::make_pair(out_offset, static_cast<int>(out.extent(0)))));
-        });
+            apply_matrix_vector_product<n_rows,
+                                        n_columns,
+                                        contract_over_rows,
+                                        add,
+                                        n_blocks1,
+                                        n_blocks1>(
+              matrix,
+              Kokkos::subview(in, Kokkos::make_pair(in_offset, static_cast<int>(in.extent(0)))),
+              Kokkos::subview(out, Kokkos::make_pair(out_offset, static_cast<int>(out.extent(0)))));
+          });
 
       team_member.team_barrier();
     }
@@ -382,21 +380,16 @@ namespace Custom
               typename ViewTypeIn,
               typename = std::enable_if_t<Kokkos::is_view<ViewTypeOut>::value>>
     DEAL_II_HOST_DEVICE inline void
-    populate_view(const TeamHandle          &team_member,
-                  ViewTypeOut                dst,
-                  const ViewTypeIn           src,
-                  const int                  N,
-                  [[maybe_unused]] const int thread_id,
-                  [[maybe_unused]] const int block_size)
+    populate_view(const TeamHandle &team_member, ViewTypeOut dst, const ViewTypeIn src, const int N)
     {
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, N),
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team_member, N),
                            [&](const int tid)
-                           {
-                             if constexpr (add)
-                               dst(tid) += src(tid);
-                             else
-                               dst(tid) = src(tid);
-                           });
+                             {
+                               if constexpr (add)
+                                 dst(tid) += src(tid);
+                               else
+                                 dst(tid) = src(tid);
+                             });
 
       team_member.team_barrier();
     }
@@ -613,17 +606,13 @@ namespace Custom
                                  ShapeDataType     shape_gradients,
                                  ShapeDataType     co_shape_gradients,
                                  SharedView        temp,
-                                 const int         n_elements_in_current_batch,
-                                 const int         thread_id,
-                                 const int         block_size)
+                                 const int         n_elements_in_current_batch)
         : team_member(team_member)
         , shape_values(shape_values)
         , shape_gradients(shape_gradients)
         , co_shape_gradients(co_shape_gradients)
         , temp(temp)
         , n_elements_in_current_batch(n_elements_in_current_batch)
-        , thread_id(thread_id)
-        , block_size(block_size)
       {}
 
       /**
@@ -642,13 +631,7 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member,
-              shape_values,
-              in,
-              temp,
-              n_elements_in_current_batch,
-              thread_id,
-              block_size);
+              team_member, shape_values, in, temp, n_elements_in_current_batch);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -657,19 +640,12 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
-                               thread_id,
-                               block_size);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
-                                                                       shape_values,
-                                                                       in,
-                                                                       out,
-                                                                       n_elements_in_current_batch,
-                                                                       thread_id,
-                                                                       block_size);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
+              team_member, shape_values, in, out, n_elements_in_current_batch);
           }
       }
 
@@ -689,13 +665,7 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_rows, n_columns, dof_to_quad, false>(
-              team_member,
-              shape_gradients,
-              in,
-              temp,
-              n_elements_in_current_batch,
-              thread_id,
-              block_size);
+              team_member, shape_gradients, in, temp, n_elements_in_current_batch);
 
             constexpr int nn        = dof_to_quad ? n_columns : n_rows;
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
@@ -704,19 +674,12 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2,
-                               thread_id,
-                               block_size);
+                               n_elements_in_current_batch * n_blocks1 * nn * n_blocks2);
           }
         else
           {
-            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(team_member,
-                                                                       shape_gradients,
-                                                                       in,
-                                                                       out,
-                                                                       n_elements_in_current_batch,
-                                                                       thread_id,
-                                                                       block_size);
+            apply<dim, direction, n_rows, n_columns, dof_to_quad, add>(
+              team_member, shape_gradients, in, out, n_elements_in_current_batch);
           }
       }
 
@@ -736,13 +699,7 @@ namespace Custom
         if constexpr (in_place)
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, false>(
-              team_member,
-              co_shape_gradients,
-              in,
-              temp,
-              n_elements_in_current_batch,
-              thread_id,
-              block_size);
+              team_member, co_shape_gradients, in, temp, n_elements_in_current_batch);
 
             constexpr int n_blocks1 = Utilities::pow(n_columns, direction);
             constexpr int n_blocks2 = Utilities::pow(n_columns, dim - direction - 1);
@@ -750,20 +707,12 @@ namespace Custom
             populate_view<add>(team_member,
                                out,
                                temp,
-                               n_elements_in_current_batch * n_blocks1 * n_columns * n_blocks2,
-                               thread_id,
-                               block_size);
+                               n_elements_in_current_batch * n_blocks1 * n_columns * n_blocks2);
           }
         else
           {
             apply<dim, direction, n_columns, n_columns, dof_to_quad, add>(
-              team_member,
-              co_shape_gradients,
-              in,
-              out,
-              n_elements_in_current_batch,
-              thread_id,
-              block_size);
+              team_member, co_shape_gradients, in, out, n_elements_in_current_batch);
           }
       }
 
@@ -797,93 +746,90 @@ namespace Custom
         constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
 
         Kokkos::parallel_for(
-          Kokkos::TeamThreadRange(team_member, n_elements_in_current_batch * co_dimension_size),
+          Kokkos::TeamVectorRange(team_member, n_elements_in_current_batch * co_dimension_size),
           [&](const int tid)
-          {
-            const int elmnt_idx = tid / co_dimension_size;
-            const int reminder  = tid % co_dimension_size;
+            {
+              const int elmnt_idx = tid / co_dimension_size;
+              const int reminder  = tid % co_dimension_size;
 
-            // Sized [dim], not [dim - 1], purely to keep the array valid at
-            // dim == 1 (where the d-loops below never execute) without a
-            // separate dim == 1 code path -- the extra slot is never touched.
-            int    idx_d[dim], stride_d[dim];
-            Number reg[dim][n_columns];
+              Kokkos::Array<int, dim - 1> idx_d, stride_d;
+              Number                      reg[dim][n_columns];
 
-            for (int d = 0; d < dim - 1; ++d)
-              {
-                stride_d[d] = Utilities::pow(n_columns, d);
-                idx_d[d]    = (reminder / stride_d[d]) % n_columns;
-                for (int n = 0; n < n_columns; ++n)
-                  {
-                    if constexpr (!transpose)
-                      reg[d][n] = co_shape_gradients(n * n_columns + idx_d[d]);
-                    else
-                      reg[d][n] = co_shape_gradients(idx_d[d] * n_columns + n);
-                  }
-              }
+              for (int d = 0; d < dim - 1; ++d)
+                {
+                  stride_d[d] = Utilities::pow(n_columns, d);
+                  idx_d[d]    = (reminder / stride_d[d]) % n_columns;
+                  for (int n = 0; n < n_columns; ++n)
+                    {
+                      if constexpr (!transpose)
+                        reg[d][n] = co_shape_gradients(n * n_columns + idx_d[d]);
+                      else
+                        reg[d][n] = co_shape_gradients(idx_d[d] * n_columns + n);
+                    }
+                }
 
-            for (int n = 0; n < n_columns; ++n)
-              {
-                if constexpr (!transpose)
-                  reg[dim - 1][n] = in(elmnt_idx * n_q_points + reminder + n * co_dimension_size);
-                else
-                  reg[dim - 1][n] =
-                    in(elmnt_idx * n_q_points + reminder + n * co_dimension_size, dim - 1);
-              }
+              for (int n = 0; n < n_columns; ++n)
+                {
+                  if constexpr (!transpose)
+                    reg[dim - 1][n] = in(elmnt_idx * n_q_points + reminder + n * co_dimension_size);
+                  else
+                    reg[dim - 1][n] =
+                      in(elmnt_idx * n_q_points + reminder + n * co_dimension_size, dim - 1);
+                }
 
-            for (int last = 0; last < n_columns; ++last)
-              {
-                const int q_point = reminder + last * co_dimension_size;
+              for (int last = 0; last < n_columns; ++last)
+                {
+                  const int q_point = reminder + last * co_dimension_size;
 
-                if constexpr (!transpose)
-                  {
-                    Number result[dim];
-                    for (int d = 0; d < dim - 1; ++d)
+                  if constexpr (!transpose)
+                    {
+                      Number result[dim];
+                      for (int d = 0; d < dim - 1; ++d)
+                        {
+                          const int q_point_base = q_point - idx_d[d] * stride_d[d];
+                          const int in_base      = elmnt_idx * n_q_points + q_point_base;
+
+                          Number res_d = 0;
+                          for (int n = 0; n < n_columns; ++n)
+                            res_d += reg[d][n] * in(in_base + n * stride_d[d]);
+                          result[d] = res_d;
+                        }
                       {
-                        const int q_point_base = q_point - idx_d[d] * stride_d[d];
-                        const int in_base      = elmnt_idx * n_q_points + q_point_base;
-
                         Number res_d = 0;
                         for (int n = 0; n < n_columns; ++n)
-                          res_d += reg[d][n] * in(in_base + n * stride_d[d]);
-                        result[d] = res_d;
+                          res_d += co_shape_gradients(n * n_columns + last) * reg[dim - 1][n];
+                        result[dim - 1] = res_d;
                       }
-                    {
-                      Number res_d = 0;
-                      for (int n = 0; n < n_columns; ++n)
-                        res_d += co_shape_gradients(n * n_columns + last) * reg[dim - 1][n];
-                      result[dim - 1] = res_d;
+
+                      for (int d = 0; d < dim; ++d)
+                        {
+                          if constexpr (add)
+                            out(elmnt_idx * n_q_points + q_point, d) += result[d];
+                          else
+                            out(elmnt_idx * n_q_points + q_point, d) = result[d];
+                        }
                     }
+                  else
+                    {
+                      Number result = 0;
+                      for (int d = 0; d < dim - 1; ++d)
+                        {
+                          const int point_base = q_point - idx_d[d] * stride_d[d];
+                          const int grad_row   = elmnt_idx * n_q_points + point_base;
 
-                    for (int d = 0; d < dim; ++d)
-                      {
-                        if constexpr (add)
-                          out(elmnt_idx * n_q_points + q_point, d) += result[d];
-                        else
-                          out(elmnt_idx * n_q_points + q_point, d) = result[d];
-                      }
-                  }
-                else
-                  {
-                    Number result = 0;
-                    for (int d = 0; d < dim - 1; ++d)
-                      {
-                        const int point_base = q_point - idx_d[d] * stride_d[d];
-                        const int grad_row   = elmnt_idx * n_q_points + point_base;
+                          for (int n = 0; n < n_columns; ++n)
+                            result += in(grad_row + n * stride_d[d], d) * reg[d][n];
+                        }
+                      for (int n = 0; n < n_columns; ++n)
+                        result += reg[dim - 1][n] * co_shape_gradients(last * n_columns + n);
 
-                        for (int n = 0; n < n_columns; ++n)
-                          result += in(grad_row + n * stride_d[d], d) * reg[d][n];
-                      }
-                    for (int n = 0; n < n_columns; ++n)
-                      result += reg[dim - 1][n] * co_shape_gradients(last * n_columns + n);
-
-                    if constexpr (add)
-                      out(elmnt_idx * n_q_points + q_point) += result;
-                    else
-                      out(elmnt_idx * n_q_points + q_point) = result;
-                  }
-              }
-          });
+                      if constexpr (add)
+                        out(elmnt_idx * n_q_points + q_point) += result;
+                      else
+                        out(elmnt_idx * n_q_points + q_point) = result;
+                    }
+                }
+            });
 
         team_member.team_barrier();
       }
@@ -895,8 +841,6 @@ namespace Custom
       ShapeDataType     co_shape_gradients;
       SharedView        temp;
       const int         n_elements_in_current_batch;
-      const int         thread_id;
-      const int         block_size;
     };
   } // namespace Parallel
 } // namespace Custom

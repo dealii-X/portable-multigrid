@@ -356,11 +356,8 @@ namespace Custom
             const int elmnt_idx = tid / co_dimension_size;
             const int reminder  = tid % co_dimension_size;
 
-            // Sized [dim], not [dim - 1], purely to keep the array valid at
-            // dim == 1 (where the d-loops below never execute) without a
-            // separate dim == 1 code path -- the extra slot is never touched.
-            int    idx_d[dim], stride_d[dim];
-            Number reg[dim][n_q_points_1d];
+            Kokkos::Array<int, dim - 1> idx_d, stride_d;
+            Number                      reg[dim][n_q_points_1d];
 
             for (int d = 0; d < dim - 1; ++d)
               {
@@ -436,9 +433,8 @@ namespace Custom
 
             const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * n_q_points;
 
-            // Sized [dim], see evaluate_gradients() above.
-            int    idx_d[dim], stride_d[dim];
-            Number reg[dim][n_q_points_1d];
+            Kokkos::Array<int, dim - 1> idx_d, stride_d;
+            Number                      reg[dim][n_q_points_1d];
 
             for (int d = 0; d < dim - 1; ++d)
               {
