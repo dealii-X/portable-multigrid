@@ -73,8 +73,6 @@ namespace Custom
       const int n_elements_per_batch;
       const int n_elements_in_current_batch;
 
-      const int n_q_points_per_batch;
-
       const int n_q_points;
 
       template <typename Functor>
@@ -133,8 +131,7 @@ namespace Custom
 
         const auto &shared_data = data->shared_data;
 
-        // No in-place operation happens in this function -- the evaluator's
-        // own temp member is unused, matches deal.II's own empty subview.
+        // No in-place operation happens in this function
         const auto scratch_for_eval =
           Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, 0));
 
@@ -357,7 +354,6 @@ namespace Custom
     };
 
 
-
     // Collocation-space evaluator, real deal.II's own
     // Portable::internal::FEEvaluationImplCollocation -- specialized for
     // Gauss-Lobatto elements where nodal points coincide with quad points,
@@ -382,10 +378,6 @@ namespace Custom
 
         const auto &shared_data = data->shared_data;
 
-        constexpr int n_points = Utilities::pow(fe_degree + 1, dim);
-        const auto    scratch_for_eval =
-          Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, n_points));
-
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
                                          fe_degree + 1,
@@ -395,7 +387,10 @@ namespace Custom
                typename SharedDataView<Number>::ScratchView(), // no shape_values needed (identity)
                typename SharedDataView<Number>::ScratchView(), // no direct shape_gradients needed
                shared_data.co_shape_gradients,
-               scratch_for_eval,
+               typename SharedDataView<Number>::ScratchView(), // no temp needed -- only the
+                                                               // fused co_gradients<transpose,
+                                                               // add>() below is ever called,
+                                                               // and it never touches temp
                data->n_elements_in_current_batch);
 
         for (unsigned int c = 0; c < n_components; ++c)
@@ -404,13 +399,11 @@ namespace Custom
             const auto grad_u = Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
 
             // Broadcast: one scalar u feeds all dim independent gradient
-            // components -- exactly what the fused, all-directions-at-once
-            // co_gradients<>() computes in one call.
+            // components
             eval.template co_gradients<false, false>(u, grad_u);
           }
       }
 
-      // See evaluate() above for the signature-order rationale.
       DEAL_II_HOST_DEVICE static void
       integrate(const unsigned int                     n_components,
                 const EvaluationFlags::EvaluationFlags integration_flag,
@@ -423,10 +416,6 @@ namespace Custom
 
         const auto &shared_data = data->shared_data;
 
-        constexpr int n_points = Utilities::pow(fe_degree + 1, dim);
-        const auto    scratch_for_eval =
-          Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, n_points));
-
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
                                          fe_degree + 1,
@@ -436,7 +425,7 @@ namespace Custom
                typename SharedDataView<Number>::ScratchView(), // no shape_values needed (identity)
                typename SharedDataView<Number>::ScratchView(), // no direct shape_gradients needed
                shared_data.co_shape_gradients,
-               scratch_for_eval,
+               typename SharedDataView<Number>::ScratchView(), // no temp needed
                data->n_elements_in_current_batch);
 
         for (unsigned int c = 0; c < n_components; ++c)
@@ -444,10 +433,6 @@ namespace Custom
             const auto u      = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
             const auto grad_u = Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
 
-            // Reduce: all dim gradient components accumulate into the one
-            // scalar u -- the fused call's own `add` template parameter is
-            // exactly "should this reduction add onto u's existing content",
-            // matching the values-flag-gated add here.
             if (integration_flag & EvaluationFlags::values)
               eval.template co_gradients<true, true>(grad_u, u);
             else
@@ -461,11 +446,6 @@ namespace Custom
     template <int dim, int fe_degree, int n_q_points_1d, typename Number>
     struct FEEvaluationImplTransformToCollocationView
     {
-      // Signature order matches real deal.II's FEEvaluationImplTransformTo
-      // Collocation::evaluate()/integrate() (portable_evaluation_kernels.h)
-      // -- n_components, then the flag, then the data pointer last -- minus
-      // the dof_handler_index leading parameter, which has no analog here
-      // (this project doesn't support multiple DoFHandlers per MatrixFree).
       DEAL_II_HOST_DEVICE static void
       evaluate(const unsigned int                     n_components,
                const EvaluationFlags::EvaluationFlags evaluation_flag,
@@ -475,9 +455,11 @@ namespace Custom
 
         const auto &shared_data = data->shared_data;
 
+        const int batch_capacity = data->n_elements_per_batch * data->n_q_points;
+
+        // No in-place operation happens in this function
         const auto scratch_for_eval =
-          Kokkos::subview(shared_data.scratch_pad,
-                          Kokkos::make_pair(0, data->n_q_points_per_batch));
+          Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, 0));
 
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
@@ -491,78 +473,51 @@ namespace Custom
                scratch_for_eval,
                data->n_elements_in_current_batch);
 
-        // Runtime loop, matching real deal.II exactly -- same eval instance
-        // reused across components, one subview pair per component.
         for (unsigned int c = 0; c < n_components; ++c)
           {
             const auto u      = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
             const auto grad_u = Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
 
-            // dof -> quad (collocation) transform, using only the one
-            // scratch slot eval's own temp member already occupies (no
-            // extra allocation vs. the fully in_place design). Directions
-            // before the last ping-pong u<->scratch with plain (non-
-            // in_place) calls -- safe, since in and out are always
-            // genuinely different buffers at those steps, at 1 dispatch
-            // each instead of in_place's 2 (apply() + populate_view()
-            // copy-back). Only the *last* direction is forced to alias u
-            // with itself: with exactly one extra buffer, a dim-direction
-            // walk that starts and ends at u can avoid self-aliasing at
-            // every step only when dim is even (u and scratch form a
-            // bipartite pair -- an odd-length closed walk on 2 nodes with
-            // no self-loops doesn't exist), so dim == 3 has exactly one
-            // unavoidable in_place step, dim == 2 has none, dim == 1 (a
-            // single direction, no other buffer to route through at all)
-            // always does -- *unless* gradients are also requested, see
-            // below.
             if constexpr (dim == 1)
               {
-                eval.template values<0, true, false, true>(u, u);
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
+
+                eval.template values<0, true, false>(u, temp);
+
+                populate_view<false>(data->team_member,
+                                     u,
+                                     temp,
+                                     data->n_elements_in_current_batch * data->n_q_points);
               }
             else if constexpr (dim == 2)
               {
-                const auto scratch =
-                  Kokkos::subview(shared_data.scratch_pad,
-                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
-                eval.template values<0, true, false>(u, scratch);
-                eval.template values<1, true, false>(scratch, u); // even dim: never aliased
-              }
-            else if (evaluation_flag & EvaluationFlags::gradients)
-              {
-                // dim == 3, gradients requested: shared_data.gradients (dim
-                // slots) is still untouched here -- co_gradients() below
-                // is what writes it -- so 2 of its slots are free to
-                // borrow as genuinely distinct scratch buffers, breaking
-                // the 2-node bipartite constraint above (u, s0, s1 are now
-                // 3 distinct nodes) and routing all 3 directions without
-                // any aliasing/populate_view() at all, at no extra memory
-                // cost.
-                using ScratchView = typename SharedDataView<Number>::ScratchView;
-                const ScratchView s0(shared_data.gradients.data(), data->n_q_points_per_batch);
-                const ScratchView s1(shared_data.gradients.data() + data->n_q_points_per_batch,
-                                     data->n_q_points_per_batch);
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
 
-                eval.template values<0, true, false>(u, s0);
-                eval.template values<1, true, false>(s0, s1);
-                eval.template values<2, true, false>(s1, u);
+                eval.template values<0, true, false>(u, temp);
+                eval.template values<1, true, false>(temp, u);
               }
-            else // dim == 3, values only: no free buffer to borrow
+            else // dim == 3
               {
-                const auto scratch =
-                  Kokkos::subview(shared_data.scratch_pad,
-                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
-                eval.template values<0, true, false>(u, scratch);
-                eval.template values<1, true, false>(scratch, u);
-                eval.template values<2, true, false, true>(u, u); // last step aliased
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
+
+                eval.template values<0, true, false>(u, temp);
+                eval.template values<1, true, false>(temp, u);
+                eval.template values<2, true, false>(u, temp);
+
+                populate_view<false>(data->team_member,
+                                     u,
+                                     temp,
+                                     data->n_elements_in_current_batch * data->n_q_points);
               }
 
-            // Broadcast, see FEEvaluationImplCollocationView::evaluate().
             if (evaluation_flag & EvaluationFlags::gradients)
               eval.template co_gradients<false, false>(u, grad_u);
           }
       }
 
-      // See evaluate() above for the signature-order rationale.
       DEAL_II_HOST_DEVICE static void
       integrate(const unsigned int                     n_components,
                 const EvaluationFlags::EvaluationFlags integration_flag,
@@ -572,9 +527,12 @@ namespace Custom
 
         const auto &shared_data = data->shared_data;
 
+        const int batch_capacity = data->n_elements_per_batch * data->n_q_points;
+
+        // No in-place operation happens in this function
         const auto scratch_for_eval =
-          Kokkos::subview(shared_data.scratch_pad,
-                          Kokkos::make_pair(0, data->n_q_points_per_batch));
+          Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, 0));
+
 
         const EvaluatorTensorProductView<EvaluatorVariant::evaluate_general,
                                          dim,
@@ -593,7 +551,6 @@ namespace Custom
             const auto u      = Kokkos::subview(shared_data.values, Kokkos::ALL, c);
             const auto grad_u = Kokkos::subview(shared_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
 
-            // Reduce, see FEEvaluationImplCollocationView::integrate().
             if (integration_flag & EvaluationFlags::gradients)
               {
                 if (integration_flag & EvaluationFlags::values)
@@ -602,45 +559,39 @@ namespace Custom
                   eval.template co_gradients<true, false>(grad_u, u);
               }
 
-            // quad (collocation) -> dof transform, direction order reversed
-            // relative to evaluate() (this is its adjoint). Same explicit-
-            // scratch-routing rationale as evaluate() above -- see there.
             if constexpr (dim == 1)
               {
-                eval.template values<0, false, false, true>(u, u);
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
+
+                eval.template values<0, false, false>(u, temp);
+
+                populate_view<false>(data->team_member,
+                                     u,
+                                     temp,
+                                     data->n_elements_in_current_batch * (fe_degree + 1));
               }
             else if constexpr (dim == 2)
               {
-                const auto scratch =
-                  Kokkos::subview(shared_data.scratch_pad,
-                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
-                eval.template values<1, false, false>(u, scratch);
-                eval.template values<0, false, false>(scratch, u);
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
+                eval.template values<1, false, false>(u, temp);
+                eval.template values<0, false, false>(temp, u);
               }
-            else if (integration_flag & EvaluationFlags::gradients)
+            else // dim == 3
               {
-                // dim == 3, gradients requested: co_gradients<>() above
-                // already consumed grad_u (a real read, ending in its own
-                // team_barrier()), so shared_data.gradients is free again
-                // here -- same zero-alias borrowing as evaluate(), see
-                // there.
-                using ScratchView = typename SharedDataView<Number>::ScratchView;
-                const ScratchView s0(shared_data.gradients.data(), data->n_q_points_per_batch);
-                const ScratchView s1(shared_data.gradients.data() + data->n_q_points_per_batch,
-                                     data->n_q_points_per_batch);
+                const auto temp =
+                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, batch_capacity));
 
-                eval.template values<2, false, false>(u, s0);
-                eval.template values<1, false, false>(s0, s1);
-                eval.template values<0, false, false>(s1, u);
-              }
-            else // dim == 3, values only: no free buffer to borrow
-              {
-                const auto scratch =
-                  Kokkos::subview(shared_data.scratch_pad,
-                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
-                eval.template values<2, false, false>(u, scratch);
-                eval.template values<1, false, false>(scratch, u);
-                eval.template values<0, false, false, true>(u, u); // last step aliased
+                eval.template values<2, false, false>(u, temp);
+                eval.template values<1, false, false>(temp, u);
+                eval.template values<0, false, false>(u, temp);
+
+                populate_view<false>(data->team_member,
+                                     u,
+                                     temp,
+                                     data->n_elements_in_current_batch *
+                                       Utilities::pow(fe_degree + 1, dim));
               }
           }
       }
@@ -676,9 +627,8 @@ namespace Custom
 
               const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * n_q_points;
 
-              // Sized [dim], see evaluate_gradients() above.
-              int    idx_d[dim], stride_d[dim];
-              Number reg[dim][n_q_points_1d];
+              Kokkos::Array<int, dim - 1> idx_d[dim], stride_d[dim];
+              Number                      reg[dim][n_q_points_1d];
 
               for (int d = 0; d < dim - 1; ++d)
                 {

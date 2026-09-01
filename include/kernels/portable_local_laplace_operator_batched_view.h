@@ -47,23 +47,6 @@ namespace Portable
 
   namespace internal
   {
-    // Batched analog of internal::ApplyKernel: a
-    // proper functor class instead of a KOKKOS_LAMBDA, so Kokkos can query
-    // team_shmem_size() to size the scratch pool automatically instead of
-    // cell_loop_batched_launch_view() computing shmem_size by hand and
-    // calling policy.set_scratch_size() itself.
-    //
-    // Currently UNUSED by cell_loop_batched_launch_view() below -- kept
-    // defined for a bisection in progress: a JUPITER regression (~3.6-
-    // 4.8% at large scale) was found comparing this functor-class design
-    // against the pre-existing KOKKOS_LAMBDA one, and the scratch-
-    // allocation mechanism (raw pointer vs sequential team_shmem()-View
-    // construction) and the team_size_max()/AUTO safeguard have both
-    // already been ruled out/only-partially-implicated as the cause --
-    // the functor-class-vs-lambda conversion itself is the remaining
-    // candidate, being isolated by reverting the launcher to a plain
-    // KOKKOS_LAMBDA (with the same View-based scratch allocation kept)
-    // while leaving this class here to swap back to once that's settled.
     template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
     struct ApplyBatchedKernelView
     {
@@ -88,7 +71,9 @@ namespace Portable
 
       // See cell_loop_batched_launch_view()'s n_scratch_arrays comment for
       // the full derivation.
-      static constexpr int n_scratch_arrays = needs_gradients ? dim + 1 : 2;
+      static constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
+                                              needs_gradients                   ? dim + 1 :
+                                                                                  2;
 
       ApplyBatchedKernelView(
         Functor                                                                 func,
@@ -144,10 +129,12 @@ namespace Portable
 
         if constexpr (needs_gradients)
           {
-            // v_scratch reuses v_gradients's own memory in operator() --
-            // no separate team_shmem() draw, whether or not values is
-            // also requested.
             result += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
+            if constexpr (needs_values)
+              result += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
+            // else: gradients-only -- v_scratch reuses v_gradients's own
+            // memory in operator(), no separate team_shmem() draw, so no
+            // separate term here either.
           }
         else
           {
@@ -181,9 +168,12 @@ namespace Portable
           {
             v_gradients =
               SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
-            v_scratch = ScratchViewType(v_gradients.data(),
-                                        n_q_points_per_batch); // alias, whether or not
-                                                               // values is also requested
+            if constexpr (needs_values)
+              v_scratch =
+                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
+            else
+              v_scratch = ScratchViewType(v_gradients.data(),
+                                          n_q_points_per_batch); // gradients-only: alias
           }
         else
           {
@@ -237,7 +227,6 @@ namespace Portable
                                                                     batch_index,
                                                                     n_elements_per_batch,
                                                                     n_elements_in_current_batch,
-                                                                    n_q_points_per_batch,
                                                                     nq_total};
 
             Custom::Parallel::DeviceView<Number> nonconst_dst = dst;
@@ -249,21 +238,6 @@ namespace Portable
     };
   } // namespace internal
 
-  // Bisection step: back to a plain KOKKOS_LAMBDA (not
-  // internal::ApplyBatchedKernelView) -- isolating whether the functor-
-  // class-vs-lambda conversion itself is responsible for the remaining
-  // ~3.6-4.8%-at-large-scale JUPITER regression found relative to the
-  // pre-refactor version, now that the scratch-allocation mechanism and
-  // the team_size_max()/AUTO safeguard have each been tested and ruled
-  // out / only-partially-implicated in turn. Scratch is still allocated
-  // "view-like" (sequential team_shmem()-View construction inside the
-  // lambda, not manual byte-offset pointer arithmetic) -- only the
-  // functor-vs-lambda variable changes here. Since a plain lambda has no
-  // team_shmem_size() hook Kokkos can query, shmem_size is computed by
-  // hand up front (mirroring each View's own shmem_size(), same
-  // alignment-aware accounting as ApplyBatchedKernelView::team_shmem_
-  // size()) and passed via policy.set_scratch_size(), matching the
-  // pre-ApplyBatchedKernelView design.
   template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
   void
   cell_loop_batched_launch_view(
@@ -284,10 +258,6 @@ namespace Portable
     constexpr int n_1d     = fe_degree + 1;
     constexpr int nq_total = Utilities::pow(n_q_points_1d, dim);
 
-    // Bitwise-AND on the plain ints rather than EvaluationFlags::operator&
-    // -- that overload isn't marked constexpr in every deal.II version
-    // this project builds against, but the enum's own integer conversion
-    // always is.
     constexpr unsigned int evaluation_flags_int =
       static_cast<unsigned int>(Functor::evaluation_flags);
     constexpr bool needs_values =
@@ -299,19 +269,25 @@ namespace Portable
 
     // The `values` buffer (1 slot) is always needed. The `gradients`
     // buffer (dim slots) is only allocated when the functor asks for it.
-    // The dedicated scratch region is just 1 slot, needed only when
-    // gradients isn't requested at all: whenever it is, evaluate()/
-    // integrate() (FEEvaluationImplTransformToCollocationView) borrow
-    // straight from the gradients buffer's own memory instead -- safe,
-    // since the scratch-touching phase and the gradients-touching phase
-    // never overlap in time (separated by a team_barrier()), and dim
-    // slots is always enough (dim == 1 needs 1 borrowed slot for its
-    // forced in_place step, dim == 2 needs 1 for its ping-pong, dim == 3
-    // needs 2 to route all 3 directions with zero aliasing at all -- see
-    // the evaluate()/integrate() comments for the routing itself). So a
-    // dedicated scratch slot is only ever allocated in the values-only
-    // case.
-    constexpr int n_scratch_arrays = needs_gradients ? dim + 1 : 2;
+    // The dedicated scratch region is just 1 slot: evaluate()/integrate()
+    // (FEEvaluationImplTransformToCollocationView) route their dof<->quad
+    // values<>() chain through this one shared scratch buffer for dim >
+    // 1, ping-ponging between it and u for every direction except the
+    // last, which is the only one still done in_place -- with exactly
+    // one extra buffer, a dim-direction walk that starts and ends at u
+    // can dodge self-aliasing at every step only when dim is even (u and
+    // scratch form a bipartite pair; an odd-length closed walk on 2 nodes
+    // with no self-loop can't exist), so dim == 3 needs exactly one
+    // in_place step and dim == 2 needs none -- neither needs a second
+    // scratch slot. In the general (both flags) and values-only cases
+    // that slot is its own separate allocation; in the gradients-only
+    // case it's aliased onto the gradients buffer's own memory instead
+    // (safe: the scratch-touching phase and the gradients-touching phase
+    // never overlap in time, separated by a team_barrier(), and dim
+    // slots >= 1 slot).
+    constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
+                                     needs_gradients                   ? dim + 1 :
+                                                                         2;
 
     if (cell_range_ids.size() > 0)
       AssertDimension(cell_range_ids.size(), static_cast<unsigned int>(nelmt));
@@ -361,9 +337,11 @@ namespace Portable
                              SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
     if (needs_gradients)
       {
-        // scratch reuses gradients' own memory below, whether or not
-        // values is also requested -- no separate draw, no separate term.
         shmem_size += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
+        if (needs_values)
+          shmem_size += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
+        // else: gradients-only -- scratch reuses gradients' own memory,
+        // no separate draw, no separate term.
       }
     else
       {
@@ -389,9 +367,12 @@ namespace Portable
           {
             v_gradients =
               SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
-            v_scratch = ScratchViewType(v_gradients.data(),
-                                        n_q_points_per_batch); // alias, whether or not
-                                                               // values is also requested
+            if (needs_values)
+              v_scratch =
+                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
+            else
+              v_scratch = ScratchViewType(v_gradients.data(),
+                                          n_q_points_per_batch); // gradients-only: alias
           }
         else
           {
@@ -445,7 +426,6 @@ namespace Portable
                                                                     batch_index,
                                                                     n_elements_per_batch,
                                                                     n_elements_in_current_batch,
-                                                                    n_q_points_per_batch,
                                                                     nq_total};
 
             Custom::Parallel::DeviceView<Number> nonconst_dst = dst_device;
