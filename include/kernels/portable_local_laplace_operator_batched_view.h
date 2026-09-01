@@ -36,7 +36,7 @@ namespace Portable
       fe_eval.evaluate(EvaluationFlags::gradients);
 
       data->for_each_quad_point([&](const int point)
-                                { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate(EvaluationFlags::gradients);
 
@@ -52,6 +52,18 @@ namespace Portable
     // team_shmem_size() to size the scratch pool automatically instead of
     // cell_loop_batched_launch_view() computing shmem_size by hand and
     // calling policy.set_scratch_size() itself.
+    //
+    // Currently UNUSED by cell_loop_batched_launch_view() below -- kept
+    // defined for a bisection in progress: a JUPITER regression (~3.6-
+    // 4.8% at large scale) was found comparing this functor-class design
+    // against the pre-existing KOKKOS_LAMBDA one, and the scratch-
+    // allocation mechanism (raw pointer vs sequential team_shmem()-View
+    // construction) and the team_size_max()/AUTO safeguard have both
+    // already been ruled out/only-partially-implicated as the cause --
+    // the functor-class-vs-lambda conversion itself is the remaining
+    // candidate, being isolated by reverting the launcher to a plain
+    // KOKKOS_LAMBDA (with the same View-based scratch allocation kept)
+    // while leaving this class here to swap back to once that's settled.
     template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
     struct ApplyBatchedKernelView
     {
@@ -162,7 +174,7 @@ namespace Portable
         // team_shmem_size() above.
         ScratchViewType      v_shape_values(team_member.team_shmem(), n_1d * n_q_points_1d);
         ScratchViewType      v_co_shape_gradients(team_member.team_shmem(),
-                                             n_q_points_1d * n_q_points_1d);
+                                                  n_q_points_1d * n_q_points_1d);
         SharedViewValuesType v_values(team_member.team_shmem(), n_q_points_per_batch, 1);
 
         // Layout depends on Functor::evaluation_flags -- see the
@@ -244,6 +256,21 @@ namespace Portable
     };
   } // namespace internal
 
+  // Bisection step: back to a plain KOKKOS_LAMBDA (not
+  // internal::ApplyBatchedKernelView) -- isolating whether the functor-
+  // class-vs-lambda conversion itself is responsible for the remaining
+  // ~3.6-4.8%-at-large-scale JUPITER regression found relative to the
+  // pre-refactor version, now that the scratch-allocation mechanism and
+  // the team_size_max()/AUTO safeguard have each been tested and ruled
+  // out / only-partially-implicated in turn. Scratch is still allocated
+  // "view-like" (sequential team_shmem()-View construction inside the
+  // lambda, not manual byte-offset pointer arithmetic) -- only the
+  // functor-vs-lambda variable changes here. Since a plain lambda has no
+  // team_shmem_size() hook Kokkos can query, shmem_size is computed by
+  // hand up front (mirroring each View's own shmem_size(), same
+  // alignment-aware accounting as ApplyBatchedKernelView::team_shmem_
+  // size()) and passed via policy.set_scratch_size(), matching the
+  // pre-ApplyBatchedKernelView design.
   template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
   void
   cell_loop_batched_launch_view(
@@ -261,10 +288,27 @@ namespace Portable
     if (nelmt == 0)
       return;
 
+    constexpr int n_1d     = fe_degree + 1;
     constexpr int nq_total = Utilities::pow(n_q_points_1d, dim);
 
-    using KernelType =
-      internal::ApplyBatchedKernelView<dim, fe_degree, n_q_points_1d, Number, Functor>;
+    // Bitwise-AND on the plain ints rather than EvaluationFlags::operator&
+    // -- that overload isn't marked constexpr in every deal.II version
+    // this project builds against, but the enum's own integer conversion
+    // always is.
+    constexpr unsigned int evaluation_flags_int =
+      static_cast<unsigned int>(Functor::evaluation_flags);
+    constexpr bool needs_values =
+      evaluation_flags_int & static_cast<unsigned int>(EvaluationFlags::values);
+    constexpr bool needs_gradients =
+      evaluation_flags_int & static_cast<unsigned int>(EvaluationFlags::gradients);
+    static_assert(needs_values || needs_gradients,
+                  "Functor::evaluation_flags must request values and/or gradients.");
+
+    // See internal::ApplyBatchedKernelView::n_scratch_arrays for the
+    // full derivation -- identical here, just not a class member.
+    constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
+                                     needs_gradients                   ? dim + 1 :
+                                                                         2;
 
     if (cell_range_ids.size() > 0)
       AssertDimension(cell_range_ids.size(), static_cast<unsigned int>(nelmt));
@@ -276,8 +320,7 @@ namespace Portable
     const int n_elements_per_batch =
       std::max(1,
                ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
-                  static_cast<int>(shmemPerBlock / (KernelType::n_scratch_arrays * nq_total) /
-                                   sizeof(Number)) :
+                  static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)) :
                   static_cast<int>(n_cells_per_batch)));
 
     const int numBlocks =
@@ -286,28 +329,132 @@ namespace Portable
                   ((nelmt + n_elements_per_batch - 1) / n_elements_per_batch / 2) :
                   static_cast<int>(n_blocks)));
 
-    // Tuned heuristic, matching the pre-ApplyBatchedKernelView design --
-    // no team_size_max()/AUTO safeguard around it. This project's own
-    // is_serial fallback (in LaplaceOperator::cell_loop_batched_view())
-    // is responsible for keeping this safe on the Serial backend, by
-    // passing threads_per_block=1 explicitly there rather than relying
-    // on a runtime check here. Bisection step: isolating whether the
-    // team_size_max()/AUTO safeguard logic itself (as opposed to the
-    // functor-class conversion) was responsible for the JUPITER
-    // regression found comparing this refactor against the old
-    // KOKKOS_LAMBDA version.
     const int threadsPerBlock =
       std::max(1,
                ((threads_per_block == numbers::invalid_unsigned_int) ?
                   (Utilities::pow(n_q_points_1d, dim - 1) * n_elements_per_batch) :
                   static_cast<int>(threads_per_block)));
 
-    KernelType apply_kernel(
-      func, precomputed_data, dof_indices, src, dst, n_elements_per_batch, cell_range_ids);
+    const Custom::Parallel::DeviceView<Number> src_device(src.get_values(),
+                                                          src.locally_owned_size());
+    const Custom::Parallel::DeviceView<Number> dst_device(dst.get_values(),
+                                                          dst.locally_owned_size());
 
-    const Kokkos::TeamPolicy<> policy(numBlocks, threadsPerBlock);
+    const int n_q_points_per_batch = n_elements_per_batch * nq_total;
 
-    Kokkos::parallel_for(policy, apply_kernel);
+    using ScratchViewType      = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
+    using SharedViewValuesType = typename Custom::Parallel::ShapeDataView<Number>::SharedViewValues;
+    using SharedViewGradientsType =
+      typename Custom::Parallel::ShapeDataView<Number>::SharedViewGradients;
+
+    // Matches the sequence of team_shmem() draws the lambda below makes,
+    // one shmem_size() call per draw (alignment-padding-aware), not a
+    // flat extent*sizeof(Number) sum -- see
+    // ApplyBatchedKernelView::team_shmem_size()'s comment for why that
+    // distinction matters.
+    std::size_t shmem_size = ScratchViewType::shmem_size(n_1d * n_q_points_1d) +
+                             ScratchViewType::shmem_size(n_q_points_1d * n_q_points_1d) +
+                             SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
+    if constexpr (needs_gradients)
+      {
+        shmem_size += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
+        if constexpr (needs_values)
+          shmem_size += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
+        // else: gradients-only -- scratch reuses gradients' own memory,
+        // no separate draw, no separate term.
+      }
+    else
+      {
+        shmem_size += ScratchViewType::shmem_size(n_q_points_per_batch); // values-only
+      }
+
+    typedef Kokkos::TeamPolicy<>::member_type member_type;
+    Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+    policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+    Kokkos::parallel_for(
+      policy, KOKKOS_LAMBDA(member_type team_member) {
+        ScratchViewType      v_shape_values(team_member.team_shmem(), n_1d * n_q_points_1d);
+        ScratchViewType      v_co_shape_gradients(team_member.team_shmem(),
+                                                  n_q_points_1d * n_q_points_1d);
+        SharedViewValuesType v_values(team_member.team_shmem(), n_q_points_per_batch, 1);
+
+        // Layout depends on Functor::evaluation_flags -- see
+        // n_scratch_arrays above for the reasoning.
+        SharedViewGradientsType v_gradients;
+        ScratchViewType         v_scratch;
+        if constexpr (needs_gradients)
+          {
+            v_gradients =
+              SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
+            if constexpr (needs_values)
+              v_scratch =
+                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
+            else
+              v_scratch = ScratchViewType(v_gradients.data(),
+                                          n_q_points_per_batch); // gradients-only: alias
+          }
+        else
+          {
+            v_gradients = SharedViewGradientsType(); // values-only: unused dummy, never
+                                                     // dereferenced, no shmem drawn
+            v_scratch =
+              ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // values-only
+          }
+
+        const int thread_id  = team_member.team_rank();
+        const int block_size = team_member.team_size();
+
+        for (int tid = thread_id; tid < n_1d * n_q_points_1d; tid += block_size)
+          v_shape_values(tid) = precomputed_data.shape_values[tid];
+
+        for (int tid = thread_id; tid < n_q_points_1d * n_q_points_1d; tid += block_size)
+          v_co_shape_gradients(tid) = precomputed_data.co_shape_gradients[tid];
+
+        team_member.team_barrier();
+
+        const Custom::Parallel::ShapeDataView<Number> shape_data{
+          v_shape_values,
+          ScratchViewType(), // shape_gradients -- not staged here, this launcher's
+                             // functors only go through the collocation/transform-
+                             // to-collocation path (co_shape_gradients only)
+          v_co_shape_gradients,
+          v_values,
+          v_gradients,
+          v_scratch};
+
+        const Custom::Parallel::PrecomputedData<dim, Number> our_precomputed{precomputed_data,
+                                                                             dof_indices,
+                                                                             cell_range_ids};
+
+        const int n_batches = (nelmt + n_elements_per_batch - 1) / n_elements_per_batch;
+
+        int batch_index = team_member.league_rank();
+
+        while (batch_index < n_batches)
+          {
+            // current n_elements_per_batch (edge case, last batch size can be
+            // less)
+            const int n_elements_in_current_batch =
+              (batch_index * n_elements_per_batch + n_elements_per_batch > nelmt) ?
+                (nelmt - batch_index * n_elements_per_batch) :
+                n_elements_per_batch;
+
+            const Custom::Parallel::BatchDataView<dim, Number> data{team_member,
+                                                                    our_precomputed,
+                                                                    shape_data,
+                                                                    batch_index,
+                                                                    n_elements_per_batch,
+                                                                    n_elements_in_current_batch,
+                                                                    n_q_points_per_batch,
+                                                                    nq_total};
+
+            Custom::Parallel::DeviceView<Number> nonconst_dst = dst_device;
+            func(&data, src_device, nonconst_dst);
+
+            batch_index += team_member.league_size();
+          }
+      });
 
     Kokkos::fence();
   }
