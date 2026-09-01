@@ -122,6 +122,7 @@ namespace Portable
       // regression found comparing this refactor against the old
       // KOKKOS_LAMBDA version. Still exactly matches n_scratch_arrays'
       // own accounting -- see its derivation above.
+      DEAL_II_HOST_DEVICE
       std::size_t
       team_shmem_size(int /*team_size*/) const
       {
