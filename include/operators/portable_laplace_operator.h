@@ -61,11 +61,6 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    vmult_dealii_batched_fused_view(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
-
-    void
     vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
                 const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
                 const bool ghost_exchange_on,
@@ -231,8 +226,8 @@ namespace Portable
     constexpr bool is_serial =
       std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    unsigned int numBlocks         = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
     unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
@@ -328,8 +323,8 @@ namespace Portable
     constexpr bool is_serial =
       std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    unsigned int numBlocks         = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
     unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
@@ -456,23 +451,6 @@ namespace Portable
   }
 
 
-  // View-based counterpart of vmult_dealii_batched_fused() above.
-  template <int dim, int fe_degree, typename number>
-  void
-  LaplaceOperator<dim, fe_degree, number>::vmult_dealii_batched_fused_view(
-    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
-  {
-    dst = 0.;
-
-    LocalLaplaceOperatorGenericSplitView<dim, fe_degree, fe_degree + 1, number> cell_operator;
-
-    this->cell_loop_batched_view(cell_operator, src, dst);
-
-    matrix_free.copy_constrained_values(src, dst);
-  }
-
-
   template <int dim, int fe_degree, typename number>
   void
   LaplaceOperator<dim, fe_degree, number>::cell_loop(
@@ -586,8 +564,8 @@ namespace Portable
     constexpr bool is_serial =
       std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    unsigned int numBlocks         = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
     unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
 
     if (is_serial)
@@ -668,17 +646,17 @@ namespace Portable
     const auto        &colored_graph = matrix_free.get_colored_graph();
     const unsigned int n_colors      = colored_graph.size();
 
-    constexpr bool is_serial =
-      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+    // constexpr bool is_serial =
+    //   std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks       = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    unsigned int numBlocks         = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
     unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    if (is_serial)
-      {
-        numBlocks       = 1u;
-        threadsPerBlock = 1u;
-      }
+    // if (is_serial)
+    //   {
+    //     numBlocks       = 1u;
+    //     threadsPerBlock = 1u;
+    //   }
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
