@@ -36,7 +36,7 @@ namespace Portable
       fe_eval.evaluate(EvaluationFlags::gradients);
 
       data->for_each_quad_point([&](const int point)
-                                  { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
+                                { fe_eval.submit_gradient(fe_eval.get_gradient(point), point); });
 
       fe_eval.integrate(EvaluationFlags::gradients);
 
@@ -113,77 +113,91 @@ namespace Portable
       const int nelmt;
       const int n_q_points_per_batch;
 
-      // Provide the shared memory capacity. Bisection step: reverted to a
-      // flat byte total (matching the single raw get_shmem() draw
-      // operator() below makes), not a per-View shmem_size() sum -- to
-      // isolate whether the raw-pointer-vs-View-construction allocation
-      // style (as opposed to the functor-class conversion itself, or the
-      // team_size_max()/AUTO safeguard) is responsible for the JUPITER
-      // regression found comparing this refactor against the old
-      // KOKKOS_LAMBDA version. Still exactly matches n_scratch_arrays'
-      // own accounting -- see its derivation above.
+      // Provide the shared memory capacity. Mirrors operator()'s actual
+      // sequence of team_shmem() draws one-to-one, via each View type's
+      // own shmem_size() rather than a flat extent*sizeof(Number) sum --
+      // shmem_size() adds an alignment padding term per draw
+      // (required_span_size()*sizeof(T) + scratch_value_alignment,
+      // confirmed in Kokkos_View.hpp), so a hand-computed flat total
+      // would under-report what the View constructors in operator()
+      // actually consume once there's more than one separate
+      // team_shmem() draw -- exactly our case. DEAL_II_HOST_DEVICE since
+      // nothing here calls it device-side, but harmless/consistent to
+      // keep annotated the same as operator().
       DEAL_II_HOST_DEVICE
       std::size_t
       team_shmem_size(int /*team_size*/) const
       {
-        const std::size_t ssize = n_1d * n_q_points_1d +          // shape values
-                                  n_q_points_1d * n_q_points_1d + // co-shape gradients
-                                  static_cast<std::size_t>(n_scratch_arrays) *
-                                    n_q_points_per_batch; // values + gradients pool + scratch
-        return ssize * sizeof(Number);
+        std::size_t result = ScratchViewType::shmem_size(n_1d * n_q_points_1d) +
+                             ScratchViewType::shmem_size(n_q_points_1d * n_q_points_1d) +
+                             SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
+
+        if constexpr (needs_gradients)
+          {
+            result += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
+            if constexpr (needs_values)
+              result += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
+            // else: gradients-only -- v_scratch reuses v_gradients's own
+            // memory in operator(), no separate team_shmem() draw, so no
+            // separate term here either.
+          }
+        else
+          {
+            // values-only: v_gradients is never drawn from team_shmem()
+            // at all (empty dummy), only v_scratch is.
+            result += ScratchViewType::shmem_size(n_q_points_per_batch);
+          }
+
+        return result;
       }
 
       DEAL_II_HOST_DEVICE void
       operator()(const TeamHandle &team_member) const
       {
-        // Bisection step: back to one raw get_shmem() draw + manual
-        // pointer arithmetic (matching the pre-ApplyBatchedKernelView
-        // KOKKOS_LAMBDA exactly), instead of the sequential per-View
-        // team_shmem() construction -- see team_shmem_size()'s comment.
-        const std::size_t shmem_size = team_shmem_size(team_member.team_size());
-        Number           *scratch    = (Number *)team_member.team_shmem().get_shmem(shmem_size);
-
-        Number *s_shape_values       = scratch;
-        Number *s_co_shape_gradients = s_shape_values + n_1d * n_q_points_1d;
-        Number *s_values             = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
+        // Each View constructor below draws its own chunk from
+        // team_member.team_shmem() (a stateful bump allocator -- Kokkos
+        // advances its internal offset, alignment included, on every
+        // call), so no manual byte-offset arithmetic is needed for the
+        // buffers that don't alias. Total bytes drawn here always equals
+        // team_shmem_size() above.
+        ScratchViewType      v_shape_values(team_member.team_shmem(), n_1d * n_q_points_1d);
+        ScratchViewType      v_co_shape_gradients(team_member.team_shmem(),
+                                             n_q_points_1d * n_q_points_1d);
+        SharedViewValuesType v_values(team_member.team_shmem(), n_q_points_per_batch, 1);
 
         // Layout depends on Functor::evaluation_flags -- see the
         // n_scratch_arrays derivation above for the reasoning.
-        Number *s_gradients;
-        Number *s_scratch;
+        SharedViewGradientsType v_gradients;
+        ScratchViewType         v_scratch;
         if constexpr (needs_gradients)
           {
-            s_gradients = s_values + n_q_points_per_batch;
+            v_gradients =
+              SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
             if constexpr (needs_values)
-              s_scratch = s_gradients + dim * n_q_points_per_batch; // general: separate
+              v_scratch =
+                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
             else
-              s_scratch = s_gradients; // gradients-only: alias onto gradients
+              v_scratch = ScratchViewType(v_gradients.data(),
+                                          n_q_points_per_batch); // gradients-only: alias
           }
         else
           {
-            s_gradients = s_values;                        // values-only: unused dummy
-            s_scratch   = s_values + n_q_points_per_batch; // values-only: separate
+            v_gradients = SharedViewGradientsType(); // values-only: unused dummy, never
+                                                     // dereferenced, no shmem drawn
+            v_scratch =
+              ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // values-only
           }
 
         const int thread_id  = team_member.team_rank();
         const int block_size = team_member.team_size();
 
         for (int tid = thread_id; tid < n_1d * n_q_points_1d; tid += block_size)
-          s_shape_values[tid] = precomputed_data.shape_values[tid];
+          v_shape_values(tid) = precomputed_data.shape_values[tid];
 
         for (int tid = thread_id; tid < n_q_points_1d * n_q_points_1d; tid += block_size)
-          s_co_shape_gradients[tid] = precomputed_data.co_shape_gradients[tid];
+          v_co_shape_gradients(tid) = precomputed_data.co_shape_gradients[tid];
 
         team_member.team_barrier();
-
-        ScratchViewType v_shape_values(s_shape_values, n_1d * n_q_points_1d);
-        ScratchViewType v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
-        SharedViewValuesType    v_values(s_values, n_q_points_per_batch, 1);
-        SharedViewGradientsType v_gradients(s_gradients,
-                                            needs_gradients ? n_q_points_per_batch : 0,
-                                            dim,
-                                            1);
-        ScratchViewType         v_scratch(s_scratch, n_q_points_per_batch);
 
         const Custom::Parallel::ShapeDataView<Number> shape_data{
           v_shape_values,
@@ -272,7 +286,17 @@ namespace Portable
                   ((nelmt + n_elements_per_batch - 1) / n_elements_per_batch / 2) :
                   static_cast<int>(n_blocks)));
 
-    const int heuristic_threads_per_block =
+    // Tuned heuristic, matching the pre-ApplyBatchedKernelView design --
+    // no team_size_max()/AUTO safeguard around it. This project's own
+    // is_serial fallback (in LaplaceOperator::cell_loop_batched_view())
+    // is responsible for keeping this safe on the Serial backend, by
+    // passing threads_per_block=1 explicitly there rather than relying
+    // on a runtime check here. Bisection step: isolating whether the
+    // team_size_max()/AUTO safeguard logic itself (as opposed to the
+    // functor-class conversion) was responsible for the JUPITER
+    // regression found comparing this refactor against the old
+    // KOKKOS_LAMBDA version.
+    const int threadsPerBlock =
       std::max(1,
                ((threads_per_block == numbers::invalid_unsigned_int) ?
                   (Utilities::pow(n_q_points_1d, dim - 1) * n_elements_per_batch) :
@@ -281,14 +305,7 @@ namespace Portable
     KernelType apply_kernel(
       func, precomputed_data, dof_indices, src, dst, n_elements_per_batch, cell_range_ids);
 
-    const Kokkos::TeamPolicy<> probe_policy(numBlocks, Kokkos::AUTO);
-    const bool                 heuristic_is_launchable =
-      heuristic_threads_per_block <=
-      probe_policy.team_size_max(apply_kernel, Kokkos::ParallelForTag());
-
-    const Kokkos::TeamPolicy<> policy =
-      heuristic_is_launchable ? Kokkos::TeamPolicy<>(numBlocks, heuristic_threads_per_block) :
-                                Kokkos::TeamPolicy<>(numBlocks, Kokkos::AUTO);
+    const Kokkos::TeamPolicy<> policy(numBlocks, threadsPerBlock);
 
     Kokkos::parallel_for(policy, apply_kernel);
 

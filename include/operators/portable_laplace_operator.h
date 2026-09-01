@@ -238,26 +238,26 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-      {
-        const unsigned int n_cells = colored_graph[color].size();
+    {
+      const unsigned int n_cells = colored_graph[color].size();
 
-        if (n_cells > 0)
-          {
-            const auto &precomputed_data = matrix_free.get_data(color);
+      if (n_cells > 0)
+        {
+          const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
-              precomputed_data.shape_values,
-              precomputed_data.co_shape_gradients,
-              G_tensors[color],
-              src_device,
-              dst_device,
-              dof_indices_per_color[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock,
-              n_cells_per_batch);
-          }
-      };
+          BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+            precomputed_data.shape_values,
+            precomputed_data.co_shape_gradients,
+            G_tensors[color],
+            src_device,
+            dst_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock,
+            n_cells_per_batch);
+        }
+    };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -335,26 +335,26 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-      {
-        const unsigned int n_cells = colored_graph[color].size();
+    {
+      const unsigned int n_cells = colored_graph[color].size();
 
-        if (n_cells > 0)
-          {
-            const auto &precomputed_data = matrix_free.get_data(color);
+      if (n_cells > 0)
+        {
+          const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
-              precomputed_data.shape_values,
-              precomputed_data.co_shape_gradients,
-              G_tensors[color],
-              src_device,
-              dst_device,
-              dof_indices_per_color[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock,
-              n_cells_per_batch);
-          }
-      };
+          BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
+            precomputed_data.shape_values,
+            precomputed_data.co_shape_gradients,
+            G_tensors[color],
+            src_device,
+            dst_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock,
+            n_cells_per_batch);
+        }
+    };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -470,23 +470,23 @@ namespace Portable
       {
         // helper to process one color
         auto do_color = [&](const unsigned int color)
-          {
-            using TeamPolicy =
-              Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+        {
+          using TeamPolicy =
+            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
 
 
-            const auto &gpu_data = matrix_free.get_data(color, 0);
+          const auto &gpu_data = matrix_free.get_data(color, 0);
 
-            auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
 
-            Portable::internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
-              cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
+          Portable::internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+            cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
 
-            Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
-                                   std::to_string(color),
-                                 team_policy,
-                                 apply_kernel);
-          };
+          Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
+                                 std::to_string(color),
+                               team_policy,
+                               apply_kernel);
+        };
 
         src.update_ghost_values_start(0);
 
@@ -576,21 +576,21 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-      {
-        const auto &gpu_data = matrix_free.get_data(color, 0);
+    {
+      const auto &gpu_data = matrix_free.get_data(color, 0);
 
-        if (gpu_data.n_cells > 0)
-          cell_loop_batched_launch<dim, fe_degree, fe_degree + 1, number>(
-            cell_operator,
-            gpu_data,
-            this->dof_indices_per_color[color],
-            this->G_tensors[color],
-            src,
-            dst,
-            numBlocks,
-            threadsPerBlock,
-            n_cells_per_batch);
-      };
+      if (gpu_data.n_cells > 0)
+        cell_loop_batched_launch<dim, fe_degree, fe_degree + 1, number>(
+          cell_operator,
+          gpu_data,
+          this->dof_indices_per_color[color],
+          this->G_tensors[color],
+          src,
+          dst,
+          numBlocks,
+          threadsPerBlock,
+          n_cells_per_batch);
+    };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -646,34 +646,34 @@ namespace Portable
     const auto        &colored_graph = matrix_free.get_colored_graph();
     const unsigned int n_colors      = colored_graph.size();
 
-    // constexpr bool is_serial =
-    //   std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
     unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    // if (is_serial)
-    //   {
-    //     numBlocks       = 1u;
-    //     threadsPerBlock = 1u;
-    //   }
+    if (is_serial)
+      {
+        // numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-      {
-        const auto &gpu_data = matrix_free.get_data(color, 0);
+    {
+      const auto &gpu_data = matrix_free.get_data(color, 0);
 
-        if (gpu_data.n_cells > 0)
-          cell_loop_batched_launch_view<dim, fe_degree, fe_degree + 1, number>(
-            cell_operator,
-            gpu_data,
-            this->dof_indices_per_color[color],
-            src,
-            dst,
-            numBlocks,
-            threadsPerBlock,
-            n_cells_per_batch);
-      };
+      if (gpu_data.n_cells > 0)
+        cell_loop_batched_launch_view<dim, fe_degree, fe_degree + 1, number>(
+          cell_operator,
+          gpu_data,
+          this->dof_indices_per_color[color],
+          src,
+          dst,
+          numBlocks,
+          threadsPerBlock,
+          n_cells_per_batch);
+    };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -757,23 +757,23 @@ namespace Portable
       {
         // helper to process one color
         auto do_color = [&](const unsigned int color)
-          {
-            using TeamPolicy =
-              Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+        {
+          using TeamPolicy =
+            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
 
 
-            const auto &gpu_data = matrix_free.get_data(color, 0);
+          const auto &gpu_data = matrix_free.get_data(color, 0);
 
-            auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
 
-            internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
-              cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
+          internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+            cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
 
-            Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
-                                   std::to_string(color),
-                                 team_policy,
-                                 apply_kernel);
-          };
+          Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
+                                 std::to_string(color),
+                               team_policy,
+                               apply_kernel);
+        };
 
         if (ghost_exchange_on)
           src.update_ghost_values_start(0);
