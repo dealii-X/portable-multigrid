@@ -497,11 +497,43 @@ namespace Custom
             const auto u      = Kokkos::subview(shape_data.values, Kokkos::ALL, c);
             const auto grad_u = Kokkos::subview(shape_data.gradients, Kokkos::ALL, Kokkos::ALL, c);
 
-            eval.template values<0, true, false, true>(u, u);
-            if constexpr (dim > 1)
-              eval.template values<1, true, false, true>(u, u);
-            if constexpr (dim > 2)
-              eval.template values<2, true, false, true>(u, u);
+            // dof -> quad (collocation) transform, using only the one
+            // scratch slot eval's own temp member already occupies (no
+            // extra allocation vs. the fully in_place design). Directions
+            // before the last ping-pong u<->scratch with plain (non-
+            // in_place) calls -- safe, since in and out are always
+            // genuinely different buffers at those steps, at 1 dispatch
+            // each instead of in_place's 2 (apply() + populate_view()
+            // copy-back). Only the *last* direction is forced to alias u
+            // with itself: with exactly one extra buffer, a dim-direction
+            // walk that starts and ends at u can avoid self-aliasing at
+            // every step only when dim is even (u and scratch form a
+            // bipartite pair -- an odd-length closed walk on 2 nodes with
+            // no self-loops doesn't exist), so dim == 3 has exactly one
+            // unavoidable in_place step, dim == 2 has none, dim == 1 (a
+            // single direction, no other buffer to route through at all)
+            // always does.
+            if constexpr (dim == 1)
+              {
+                eval.template values<0, true, false, true>(u, u);
+              }
+            else if constexpr (dim == 2)
+              {
+                const auto scratch =
+                  Kokkos::subview(shape_data.scratch_pad,
+                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
+                eval.template values<0, true, false>(u, scratch);
+                eval.template values<1, true, false>(scratch, u); // even dim: never aliased
+              }
+            else // dim == 3
+              {
+                const auto scratch =
+                  Kokkos::subview(shape_data.scratch_pad,
+                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
+                eval.template values<0, true, false>(u, scratch);
+                eval.template values<1, true, false>(scratch, u);
+                eval.template values<2, true, false, true>(u, u); // odd dim: last step aliased
+              }
 
             // Broadcast, see FEEvaluationImplCollocationView::evaluate().
             if (evaluation_flag & EvaluationFlags::gradients)
@@ -548,11 +580,30 @@ namespace Custom
                   eval.template co_gradients<true, false>(grad_u, u);
               }
 
-            if constexpr (dim > 2)
-              eval.template values<2, false, false, true>(u, u);
-            if constexpr (dim > 1)
-              eval.template values<1, false, false, true>(u, u);
-            eval.template values<0, false, false, true>(u, u);
+            // quad (collocation) -> dof transform, direction order reversed
+            // relative to evaluate() (this is its adjoint). Same explicit-
+            // scratch-routing rationale as evaluate() above -- see there.
+            if constexpr (dim == 1)
+              {
+                eval.template values<0, false, false, true>(u, u);
+              }
+            else if constexpr (dim == 2)
+              {
+                const auto scratch =
+                  Kokkos::subview(shape_data.scratch_pad,
+                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
+                eval.template values<1, false, false>(u, scratch);
+                eval.template values<0, false, false>(scratch, u);
+              }
+            else // dim == 3
+              {
+                const auto scratch =
+                  Kokkos::subview(shape_data.scratch_pad,
+                                  Kokkos::make_pair(0, data->n_q_points_per_batch));
+                eval.template values<2, false, false>(u, scratch);
+                eval.template values<1, false, false>(scratch, u);
+                eval.template values<0, false, false, true>(u, u); // odd dim: last step aliased
+              }
           }
       }
 
@@ -576,81 +627,81 @@ namespace Custom
           Kokkos::TeamVectorRange(data->team_member,
                                   data->n_elements_in_current_batch * co_dimension_size),
           [&](const int tid)
-          {
-            const int elmnt_idx = tid / co_dimension_size;
-            const int reminder  = tid % co_dimension_size;
+            {
+              const int elmnt_idx = tid / co_dimension_size;
+              const int reminder  = tid % co_dimension_size;
 
-            unsigned int global_cell_index =
-              data->batch_index * data->n_elements_per_batch + elmnt_idx;
-            if (cell_range_ids.size() > 0)
-              global_cell_index = cell_range_ids(global_cell_index);
+              unsigned int global_cell_index =
+                data->batch_index * data->n_elements_per_batch + elmnt_idx;
+              if (cell_range_ids.size() > 0)
+                global_cell_index = cell_range_ids(global_cell_index);
 
-            const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * n_q_points;
+              const int cell_g_offset = global_cell_index * symmetric_tensor_dimension * n_q_points;
 
-            // Sized [dim], see evaluate_gradients() above.
-            int    idx_d[dim], stride_d[dim];
-            Number reg[dim][n_q_points_1d];
+              // Sized [dim], see evaluate_gradients() above.
+              int    idx_d[dim], stride_d[dim];
+              Number reg[dim][n_q_points_1d];
 
-            for (int d = 0; d < dim - 1; ++d)
-              {
-                stride_d[d] = Utilities::pow(n_q_points_1d, d);
-                idx_d[d]    = (reminder / stride_d[d]) % n_q_points_1d;
-              }
-
-            for (int n = 0; n < n_q_points_1d; ++n)
-              {
-                for (int d = 0; d < dim - 1; ++d)
-                  reg[d][n] = co_shape_gradients(n * n_q_points_1d + idx_d[d]);
-                reg[dim - 1][n] = in(elmnt_idx * n_q_points + reminder + n * co_dimension_size);
-              }
-
-            for (int last = 0; last < n_q_points_1d; ++last)
-              {
-                const int q_point = reminder + last * co_dimension_size;
-
-                Number res[dim];
-                for (int d = 0; d < dim - 1; ++d)
-                  {
-                    const int q_point_base = q_point - idx_d[d] * stride_d[d];
-                    const int in_base      = elmnt_idx * n_q_points + q_point_base;
-
-                    Number res_d = 0;
-                    for (int n = 0; n < n_q_points_1d; ++n)
-                      res_d += reg[d][n] * in(in_base + n * stride_d[d]);
-                    res[d] = res_d;
-                  }
+              for (int d = 0; d < dim - 1; ++d)
                 {
-                  Number res_d = 0;
-                  for (int n = 0; n < n_q_points_1d; ++n)
-                    res_d += co_shape_gradients(n * n_q_points_1d + last) * reg[dim - 1][n];
-                  res[dim - 1] = res_d;
+                  stride_d[d] = Utilities::pow(n_q_points_1d, d);
+                  idx_d[d]    = (reminder / stride_d[d]) % n_q_points_1d;
                 }
 
-                Number G[dim][dim];
-                int    component_index = 0;
-                for (int d1 = 0; d1 < dim; ++d1)
-                  for (int d2 = d1; d2 < dim; ++d2)
+              for (int n = 0; n < n_q_points_1d; ++n)
+                {
+                  for (int d = 0; d < dim - 1; ++d)
+                    reg[d][n] = co_shape_gradients(n * n_q_points_1d + idx_d[d]);
+                  reg[dim - 1][n] = in(elmnt_idx * n_q_points + reminder + n * co_dimension_size);
+                }
+
+              for (int last = 0; last < n_q_points_1d; ++last)
+                {
+                  const int q_point = reminder + last * co_dimension_size;
+
+                  Number res[dim];
+                  for (int d = 0; d < dim - 1; ++d)
                     {
-                      const Number value =
-                        d_G[cell_g_offset + component_index * n_q_points + q_point];
-                      G[d1][d2] = value;
-                      G[d2][d1] = value;
-                      ++component_index;
+                      const int q_point_base = q_point - idx_d[d] * stride_d[d];
+                      const int in_base      = elmnt_idx * n_q_points + q_point_base;
+
+                      Number res_d = 0;
+                      for (int n = 0; n < n_q_points_1d; ++n)
+                        res_d += reg[d][n] * in(in_base + n * stride_d[d]);
+                      res[d] = res_d;
                     }
-
-                for (int d1 = 0; d1 < dim; ++d1)
                   {
-                    Number value_out = 0;
-                    for (int d2 = 0; d2 < dim; ++d2)
-                      value_out += G[d1][d2] * res[d2];
-
-                    if constexpr (add)
-                      out(elmnt_idx * n_q_points + q_point, d1) += value_out;
-                    else
-                      out(elmnt_idx * n_q_points + q_point, d1) = value_out;
+                    Number res_d = 0;
+                    for (int n = 0; n < n_q_points_1d; ++n)
+                      res_d += co_shape_gradients(n * n_q_points_1d + last) * reg[dim - 1][n];
+                    res[dim - 1] = res_d;
                   }
-              }
-          });
+
+                  Number G[dim][dim];
+                  int    component_index = 0;
+                  for (int d1 = 0; d1 < dim; ++d1)
+                    for (int d2 = d1; d2 < dim; ++d2)
+                      {
+                        const Number value =
+                          d_G[cell_g_offset + component_index * n_q_points + q_point];
+                        G[d1][d2] = value;
+                        G[d2][d1] = value;
+                        ++component_index;
+                      }
+
+                  for (int d1 = 0; d1 < dim; ++d1)
+                    {
+                      Number value_out = 0;
+                      for (int d2 = 0; d2 < dim; ++d2)
+                        value_out += G[d1][d2] * res[d2];
+
+                      if constexpr (add)
+                        out(elmnt_idx * n_q_points + q_point, d1) += value_out;
+                      else
+                        out(elmnt_idx * n_q_points + q_point, d1) = value_out;
+                    }
+                }
+            });
 
         data->team_member.team_barrier();
       }
@@ -683,28 +734,29 @@ namespace Custom
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      Kokkos::parallel_for(
-        Kokkos::TeamVectorRange(team_member, n_elements_in_current_batch * n_dofs_total),
-        [&](const int tid)
-        {
-          const int elmnt_idx = tid / n_dofs_total;
-          const int local_idx = tid % n_dofs_total;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team_member,
+                                                   n_elements_in_current_batch * n_dofs_total),
+                           [&](const int tid)
+                             {
+                               const int elmnt_idx = tid / n_dofs_total;
+                               const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
-          if (cell_range_ids.size() > 0)
-            global_cell_index = cell_range_ids(global_cell_index);
+                               unsigned int global_cell_index =
+                                 batch_index * n_elements_per_batch + elmnt_idx;
+                               if (cell_range_ids.size() > 0)
+                                 global_cell_index = cell_range_ids(global_cell_index);
 
-          for (int c = 0; c < n_components; ++c)
-            {
-              const unsigned int dof_index =
-                dof_indices(local_idx + n_dofs_total * c, global_cell_index);
+                               for (int c = 0; c < n_components; ++c)
+                                 {
+                                   const unsigned int dof_index =
+                                     dof_indices(local_idx + n_dofs_total * c, global_cell_index);
 
-              if (dof_index == numbers::invalid_unsigned_int)
-                values(tid, c) = 0;
-              else
-                values(tid, c) = d_in[dof_index];
-            }
-        });
+                                   if (dof_index == numbers::invalid_unsigned_int)
+                                     values(tid, c) = 0;
+                                   else
+                                     values(tid, c) = d_in[dof_index];
+                                 }
+                             });
 
       team_member.team_barrier();
     }
@@ -731,26 +783,27 @@ namespace Custom
 
       constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
 
-      Kokkos::parallel_for(
-        Kokkos::TeamVectorRange(team_member, n_elements_in_current_batch * n_dofs_total),
-        [&](const int tid)
-        {
-          const int elmnt_idx = tid / n_dofs_total;
-          const int local_idx = tid % n_dofs_total;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team_member,
+                                                   n_elements_in_current_batch * n_dofs_total),
+                           [&](const int tid)
+                             {
+                               const int elmnt_idx = tid / n_dofs_total;
+                               const int local_idx = tid % n_dofs_total;
 
-          unsigned int global_cell_index = batch_index * n_elements_per_batch + elmnt_idx;
-          if (cell_range_ids.size() > 0)
-            global_cell_index = cell_range_ids(global_cell_index);
+                               unsigned int global_cell_index =
+                                 batch_index * n_elements_per_batch + elmnt_idx;
+                               if (cell_range_ids.size() > 0)
+                                 global_cell_index = cell_range_ids(global_cell_index);
 
-          for (int c = 0; c < n_components; ++c)
-            {
-              const unsigned int dof_index =
-                dof_indices(local_idx + n_dofs_total * c, global_cell_index);
+                               for (int c = 0; c < n_components; ++c)
+                                 {
+                                   const unsigned int dof_index =
+                                     dof_indices(local_idx + n_dofs_total * c, global_cell_index);
 
-              if (dof_index != numbers::invalid_unsigned_int)
-                Kokkos::atomic_add(&d_out[dof_index], values(tid, c));
-            }
-        });
+                                   if (dof_index != numbers::invalid_unsigned_int)
+                                     Kokkos::atomic_add(&d_out[dof_index], values(tid, c));
+                                 }
+                             });
 
       team_member.team_barrier();
     }

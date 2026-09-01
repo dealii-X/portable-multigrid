@@ -88,6 +88,8 @@ namespace Portable
       static_assert(needs_values || needs_gradients,
                     "Functor::evaluation_flags must request values and/or gradients.");
 
+      // See cell_loop_batched_launch_view()'s n_scratch_arrays comment for
+      // the full derivation.
       static constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
                                               needs_gradients                   ? dim + 1 :
                                                                                   2;
@@ -304,8 +306,24 @@ namespace Portable
     static_assert(needs_values || needs_gradients,
                   "Functor::evaluation_flags must request values and/or gradients.");
 
-    // See internal::ApplyBatchedKernelView::n_scratch_arrays for the
-    // full derivation -- identical here, just not a class member.
+    // The `values` buffer (1 slot) is always needed. The `gradients`
+    // buffer (dim slots) is only allocated when the functor asks for it.
+    // The dedicated scratch region is just 1 slot: evaluate()/integrate()
+    // (FEEvaluationImplTransformToCollocationView) route their dof<->quad
+    // values<>() chain through this one shared scratch buffer for dim >
+    // 1, ping-ponging between it and u for every direction except the
+    // last, which is the only one still done in_place -- with exactly
+    // one extra buffer, a dim-direction walk that starts and ends at u
+    // can dodge self-aliasing at every step only when dim is even (u and
+    // scratch form a bipartite pair; an odd-length closed walk on 2 nodes
+    // with no self-loop can't exist), so dim == 3 needs exactly one
+    // in_place step and dim == 2 needs none -- neither needs a second
+    // scratch slot. In the general (both flags) and values-only cases
+    // that slot is its own separate allocation; in the gradients-only
+    // case it's aliased onto the gradients buffer's own memory instead
+    // (safe: the scratch-touching phase and the gradients-touching phase
+    // never overlap in time, separated by a team_barrier(), and dim
+    // slots >= 1 slot).
     constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
                                      needs_gradients                   ? dim + 1 :
                                                                          2;
@@ -355,10 +373,10 @@ namespace Portable
     std::size_t shmem_size = ScratchViewType::shmem_size(n_1d * n_q_points_1d) +
                              ScratchViewType::shmem_size(n_q_points_1d * n_q_points_1d) +
                              SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
-    if constexpr (needs_gradients)
+    if (needs_gradients)
       {
         shmem_size += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
-        if constexpr (needs_values)
+        if (needs_values)
           shmem_size += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
         // else: gradients-only -- scratch reuses gradients' own memory,
         // no separate draw, no separate term.
@@ -383,11 +401,11 @@ namespace Portable
         // n_scratch_arrays above for the reasoning.
         SharedViewGradientsType v_gradients;
         ScratchViewType         v_scratch;
-        if constexpr (needs_gradients)
+        if (needs_gradients)
           {
             v_gradients =
               SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
-            if constexpr (needs_values)
+            if (needs_values)
               v_scratch =
                 ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
             else
