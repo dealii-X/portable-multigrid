@@ -86,7 +86,7 @@ namespace Custom
        *
        * @note dof_handler_index is accepted for signature parity with real
        * deal.II's Portable::FEEvaluation, but isn't functional yet --
-       * BatchDataView::precomputed_data/shape_data are single references,
+       * BatchDataView::precomputed_data/shared_data are single references,
        * not arrays indexed by dof_handler_index (this project doesn't
        * support multiple DoFHandlers per MatrixFree). Must be 0 for now.
        */
@@ -143,7 +143,7 @@ namespace Custom
           data->precomputed_data.dof_indices,
           data->precomputed_data.cell_range_ids,
           src,
-          data->shape_data.values,
+          data->shared_data.values,
           data->batch_index,
           data->n_elements_per_batch,
           data->n_elements_in_current_batch);
@@ -166,7 +166,7 @@ namespace Custom
           data->team_member,
           data->precomputed_data.dof_indices,
           data->precomputed_data.cell_range_ids,
-          data->shape_data.values,
+          data->shared_data.values,
           dst,
           data->batch_index,
           data->n_elements_per_batch,
@@ -234,12 +234,12 @@ namespace Custom
                  ExcMessage("get_value() was called without a prior evaluate()/"
                             "evaluate_values() that requested values."));
         if constexpr (n_components_ == 1)
-          return data->shape_data.values(point, 0);
+          return data->shared_data.values(point, 0);
         else
           {
             value_type result;
             for (unsigned int c = 0; c < n_components_; ++c)
-              result[c] = data->shape_data.values(point, c);
+              result[c] = data->shared_data.values(point, c);
             return result;
           }
       }
@@ -259,12 +259,12 @@ namespace Custom
                  ExcMessage("get_dof_value() was called without a prior "
                             "read_dof_values()/submit_dof_value()."));
         if constexpr (n_components_ == 1)
-          return data->shape_data.values(dof_index, 0);
+          return data->shared_data.values(dof_index, 0);
         else
           {
             value_type result;
             for (unsigned int c = 0; c < n_components_; ++c)
-              result[c] = data->shape_data.values(dof_index, c);
+              result[c] = data->shared_data.values(dof_index, c);
             return result;
           }
       }
@@ -282,10 +282,10 @@ namespace Custom
         const Number       jxw         = data->precomputed_data.data.JxW(point_local, global_cell);
 
         if constexpr (n_components_ == 1)
-          data->shape_data.values(point, 0) = value * jxw;
+          data->shared_data.values(point, 0) = value * jxw;
         else
           for (unsigned int c = 0; c < n_components_; ++c)
-            data->shape_data.values(point, c) = value[c] * jxw;
+            data->shared_data.values(point, c) = value[c] * jxw;
         if constexpr (running_in_debug_mode())
           values_quad_submitted = true;
       }
@@ -299,10 +299,10 @@ namespace Custom
       submit_dof_value(const value_type &value, const int dof_index) const
       {
         if constexpr (n_components_ == 1)
-          data->shape_data.values(dof_index, 0) = value;
+          data->shared_data.values(dof_index, 0) = value;
         else
           for (unsigned int c = 0; c < n_components_; ++c)
-            data->shape_data.values(dof_index, c) = value[c];
+            data->shared_data.values(dof_index, c) = value[c];
         if constexpr (running_in_debug_mode())
           dof_values_initialized = true;
       }
@@ -332,7 +332,7 @@ namespace Custom
                 for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                   tmp +=
                     data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_2, d_1) *
-                    data->shape_data.gradients(point, d_2, 0);
+                    data->shared_data.gradients(point, d_2, 0);
                 grad[d_1] = tmp;
               }
           }
@@ -345,7 +345,7 @@ namespace Custom
                   for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                     tmp +=
                       data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_2, d_1) *
-                      data->shape_data.gradients(point, d_2, c);
+                      data->shared_data.gradients(point, d_2, c);
                   grad[c][d_1] = tmp;
                 }
           }
@@ -374,7 +374,7 @@ namespace Custom
                   tmp +=
                     data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
                     gradient[d_2];
-                data->shape_data.gradients(point, d_1, 0) = tmp * jxw;
+                data->shared_data.gradients(point, d_1, 0) = tmp * jxw;
               }
           }
         else
@@ -387,7 +387,7 @@ namespace Custom
                     tmp +=
                       data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
                       gradient[c][d_2];
-                  data->shape_data.gradients(point, d_1, c) = tmp * jxw;
+                  data->shared_data.gradients(point, d_1, c) = tmp * jxw;
                 }
           }
         if constexpr (running_in_debug_mode())
@@ -440,7 +440,7 @@ namespace Custom
                 tmp +=
                   data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
                   sym_grad[c][d_2];
-              data->shape_data.gradients(point, d_1, c) = tmp * jxw;
+              data->shared_data.gradients(point, d_1, c) = tmp * jxw;
             }
         if constexpr (running_in_debug_mode())
           gradients_quad_submitted = true;
@@ -467,7 +467,7 @@ namespace Custom
         for (unsigned int c = 0; c < dim; ++c)
           for (unsigned int d = 0; d < dim; ++d)
             divergence += data->precomputed_data.data.inv_jacobian(point_local, global_cell, d, c) *
-                          data->shape_data.gradients(point, d, c);
+                          data->shared_data.gradients(point, d, c);
         return divergence;
       }
 
@@ -501,7 +501,7 @@ namespace Custom
 
         for (unsigned int c = 0; c < dim; ++c)
           for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-            data->shape_data.gradients(point, d_1, c) =
+            data->shared_data.gradients(point, d_1, c) =
               data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, c) * div_in *
               jxw;
         if constexpr (running_in_debug_mode())

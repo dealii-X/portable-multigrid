@@ -67,14 +67,12 @@ namespace Portable
     template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Functor>
     struct ApplyBatchedKernelView
     {
-      using TeamHandle = Custom::Parallel::TeamHandle;
-      using ScratchViewShapeDataType =
-        typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
-      using ScratchViewType = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
+      using TeamHandle      = Custom::Parallel::TeamHandle;
+      using ScratchViewType = typename Custom::Parallel::SharedDataView<Number>::ScratchView;
       using SharedViewValuesType =
-        typename Custom::Parallel::ShapeDataView<Number>::SharedViewValues;
+        typename Custom::Parallel::SharedDataView<Number>::SharedViewValues;
       using SharedViewGradientsType =
-        typename Custom::Parallel::ShapeDataView<Number>::SharedViewGradients;
+        typename Custom::Parallel::SharedDataView<Number>::SharedViewGradients;
 
       static constexpr int n_1d     = fe_degree + 1;
       static constexpr int nq_total = Utilities::pow(n_q_points_1d, dim);
@@ -90,9 +88,7 @@ namespace Portable
 
       // See cell_loop_batched_launch_view()'s n_scratch_arrays comment for
       // the full derivation.
-      static constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
-                                              needs_gradients                   ? dim + 1 :
-                                                                                  2;
+      static constexpr int n_scratch_arrays = needs_gradients ? dim + 1 : 2;
 
       ApplyBatchedKernelView(
         Functor                                                                 func,
@@ -148,12 +144,10 @@ namespace Portable
 
         if constexpr (needs_gradients)
           {
+            // v_scratch reuses v_gradients's own memory in operator() --
+            // no separate team_shmem() draw, whether or not values is
+            // also requested.
             result += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
-            if constexpr (needs_values)
-              result += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
-            // else: gradients-only -- v_scratch reuses v_gradients's own
-            // memory in operator(), no separate team_shmem() draw, so no
-            // separate term here either.
           }
         else
           {
@@ -187,12 +181,9 @@ namespace Portable
           {
             v_gradients =
               SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
-            if constexpr (needs_values)
-              v_scratch =
-                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
-            else
-              v_scratch = ScratchViewType(v_gradients.data(),
-                                          n_q_points_per_batch); // gradients-only: alias
+            v_scratch = ScratchViewType(v_gradients.data(),
+                                        n_q_points_per_batch); // alias, whether or not
+                                                               // values is also requested
           }
         else
           {
@@ -213,7 +204,7 @@ namespace Portable
 
         team_member.team_barrier();
 
-        const Custom::Parallel::ShapeDataView<Number> shape_data{
+        const Custom::Parallel::SharedDataView<Number> shared_data{
           v_shape_values,
           ScratchViewType(), // shape_gradients -- not staged here, this launcher's
                              // functors only go through the collocation/transform-
@@ -242,7 +233,7 @@ namespace Portable
 
             const Custom::Parallel::BatchDataView<dim, Number> data{team_member,
                                                                     our_precomputed,
-                                                                    shape_data,
+                                                                    shared_data,
                                                                     batch_index,
                                                                     n_elements_per_batch,
                                                                     n_elements_in_current_batch,
@@ -308,25 +299,19 @@ namespace Portable
 
     // The `values` buffer (1 slot) is always needed. The `gradients`
     // buffer (dim slots) is only allocated when the functor asks for it.
-    // The dedicated scratch region is just 1 slot: evaluate()/integrate()
-    // (FEEvaluationImplTransformToCollocationView) route their dof<->quad
-    // values<>() chain through this one shared scratch buffer for dim >
-    // 1, ping-ponging between it and u for every direction except the
-    // last, which is the only one still done in_place -- with exactly
-    // one extra buffer, a dim-direction walk that starts and ends at u
-    // can dodge self-aliasing at every step only when dim is even (u and
-    // scratch form a bipartite pair; an odd-length closed walk on 2 nodes
-    // with no self-loop can't exist), so dim == 3 needs exactly one
-    // in_place step and dim == 2 needs none -- neither needs a second
-    // scratch slot. In the general (both flags) and values-only cases
-    // that slot is its own separate allocation; in the gradients-only
-    // case it's aliased onto the gradients buffer's own memory instead
-    // (safe: the scratch-touching phase and the gradients-touching phase
-    // never overlap in time, separated by a team_barrier(), and dim
-    // slots >= 1 slot).
-    constexpr int n_scratch_arrays = (needs_values && needs_gradients) ? dim + 2 :
-                                     needs_gradients                   ? dim + 1 :
-                                                                         2;
+    // The dedicated scratch region is just 1 slot, needed only when
+    // gradients isn't requested at all: whenever it is, evaluate()/
+    // integrate() (FEEvaluationImplTransformToCollocationView) borrow
+    // straight from the gradients buffer's own memory instead -- safe,
+    // since the scratch-touching phase and the gradients-touching phase
+    // never overlap in time (separated by a team_barrier()), and dim
+    // slots is always enough (dim == 1 needs 1 borrowed slot for its
+    // forced in_place step, dim == 2 needs 1 for its ping-pong, dim == 3
+    // needs 2 to route all 3 directions with zero aliasing at all -- see
+    // the evaluate()/integrate() comments for the routing itself). So a
+    // dedicated scratch slot is only ever allocated in the values-only
+    // case.
+    constexpr int n_scratch_arrays = needs_gradients ? dim + 1 : 2;
 
     if (cell_range_ids.size() > 0)
       AssertDimension(cell_range_ids.size(), static_cast<unsigned int>(nelmt));
@@ -360,10 +345,11 @@ namespace Portable
 
     const int n_q_points_per_batch = n_elements_per_batch * nq_total;
 
-    using ScratchViewType      = typename Custom::Parallel::ShapeDataView<Number>::ScratchView;
-    using SharedViewValuesType = typename Custom::Parallel::ShapeDataView<Number>::SharedViewValues;
+    using ScratchViewType = typename Custom::Parallel::SharedDataView<Number>::ScratchView;
+    using SharedViewValuesType =
+      typename Custom::Parallel::SharedDataView<Number>::SharedViewValues;
     using SharedViewGradientsType =
-      typename Custom::Parallel::ShapeDataView<Number>::SharedViewGradients;
+      typename Custom::Parallel::SharedDataView<Number>::SharedViewGradients;
 
     // Matches the sequence of team_shmem() draws the lambda below makes,
     // one shmem_size() call per draw (alignment-padding-aware), not a
@@ -375,11 +361,9 @@ namespace Portable
                              SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
     if (needs_gradients)
       {
+        // scratch reuses gradients' own memory below, whether or not
+        // values is also requested -- no separate draw, no separate term.
         shmem_size += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
-        if (needs_values)
-          shmem_size += ScratchViewType::shmem_size(n_q_points_per_batch); // general: separate
-        // else: gradients-only -- scratch reuses gradients' own memory,
-        // no separate draw, no separate term.
       }
     else
       {
@@ -405,12 +389,9 @@ namespace Portable
           {
             v_gradients =
               SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
-            if (needs_values)
-              v_scratch =
-                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
-            else
-              v_scratch = ScratchViewType(v_gradients.data(),
-                                          n_q_points_per_batch); // gradients-only: alias
+            v_scratch = ScratchViewType(v_gradients.data(),
+                                        n_q_points_per_batch); // alias, whether or not
+                                                               // values is also requested
           }
         else
           {
@@ -431,7 +412,7 @@ namespace Portable
 
         team_member.team_barrier();
 
-        const Custom::Parallel::ShapeDataView<Number> shape_data{
+        const Custom::Parallel::SharedDataView<Number> shared_data{
           v_shape_values,
           ScratchViewType(), // shape_gradients -- not staged here, this launcher's
                              // functors only go through the collocation/transform-
@@ -460,7 +441,7 @@ namespace Portable
 
             const Custom::Parallel::BatchDataView<dim, Number> data{team_member,
                                                                     our_precomputed,
-                                                                    shape_data,
+                                                                    shared_data,
                                                                     batch_index,
                                                                     n_elements_per_batch,
                                                                     n_elements_in_current_batch,
