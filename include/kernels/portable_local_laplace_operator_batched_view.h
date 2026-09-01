@@ -113,74 +113,76 @@ namespace Portable
       const int nelmt;
       const int n_q_points_per_batch;
 
-      // Provide the shared memory capacity.
+      // Provide the shared memory capacity. Bisection step: reverted to a
+      // flat byte total (matching the single raw get_shmem() draw
+      // operator() below makes), not a per-View shmem_size() sum -- to
+      // isolate whether the raw-pointer-vs-View-construction allocation
+      // style (as opposed to the functor-class conversion itself, or the
+      // team_size_max()/AUTO safeguard) is responsible for the JUPITER
+      // regression found comparing this refactor against the old
+      // KOKKOS_LAMBDA version. Still exactly matches n_scratch_arrays'
+      // own accounting -- see its derivation above.
       std::size_t
       team_shmem_size(int /*team_size*/) const
       {
-        std::size_t result =
-          ScratchViewShapeDataType::shmem_size(precomputed_data.shape_values.size()) +
-          ScratchViewShapeDataType::shmem_size(precomputed_data.co_shape_gradients.size()) +
-          SharedViewValuesType::shmem_size(n_q_points_per_batch, 1);
-
-        if constexpr (needs_gradients)
-          {
-            result += SharedViewGradientsType::shmem_size(n_q_points_per_batch, dim, 1);
-            // if we don't need to keep values, we can reuse the gradients' memory for the scratch
-            // array and no extra memory is needed; in general case we need to allocate scratch pad
-            // separately
-            if constexpr (needs_values)
-              result += ScratchViewType::shmem_size(n_q_points_per_batch);
-          }
-        else
-          {
-            // values-only: no gradients and one scratch pad
-            result += ScratchViewType::shmem_size(n_q_points_per_batch);
-          }
-
-        return result;
+        const std::size_t ssize = n_1d * n_q_points_1d +          // shape values
+                                  n_q_points_1d * n_q_points_1d + // co-shape gradients
+                                  static_cast<std::size_t>(n_scratch_arrays) *
+                                    n_q_points_per_batch; // values + gradients pool + scratch
+        return ssize * sizeof(Number);
       }
 
       DEAL_II_HOST_DEVICE void
       operator()(const TeamHandle &team_member) const
       {
-        const int n_q_points_per_batch = n_elements_per_batch * nq_total;
+        // Bisection step: back to one raw get_shmem() draw + manual
+        // pointer arithmetic (matching the pre-ApplyBatchedKernelView
+        // KOKKOS_LAMBDA exactly), instead of the sequential per-View
+        // team_shmem() construction -- see team_shmem_size()'s comment.
+        const std::size_t shmem_size = team_shmem_size(team_member.team_size());
+        Number           *scratch    = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
-        ScratchViewType      v_shape_values(team_member.team_shmem(), n_1d * n_q_points_1d);
-        ScratchViewType      v_co_shape_gradients(team_member.team_shmem(),
-                                                  n_q_points_1d * n_q_points_1d);
-        SharedViewValuesType v_values(team_member.team_shmem(), n_q_points_per_batch, 1);
+        Number *s_shape_values       = scratch;
+        Number *s_co_shape_gradients = s_shape_values + n_1d * n_q_points_1d;
+        Number *s_values             = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
 
-        SharedViewGradientsType v_gradients;
-        ScratchViewType         v_scratch;
+        // Layout depends on Functor::evaluation_flags -- see the
+        // n_scratch_arrays derivation above for the reasoning.
+        Number *s_gradients;
+        Number *s_scratch;
         if constexpr (needs_gradients)
           {
-            v_gradients =
-              SharedViewGradientsType(team_member.team_shmem(), n_q_points_per_batch, dim, 1);
+            s_gradients = s_values + n_q_points_per_batch;
             if constexpr (needs_values)
-              v_scratch =
-                ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // general
+              s_scratch = s_gradients + dim * n_q_points_per_batch; // general: separate
             else
-              v_scratch = ScratchViewType(v_gradients.data(),
-                                          n_q_points_per_batch); // gradients-only: alias
+              s_scratch = s_gradients; // gradients-only: alias onto gradients
           }
         else
           {
-            v_gradients = SharedViewGradientsType(); // values-only: unused dummy, never
-                                                     // dereferenced, no shmem drawn
-            v_scratch =
-              ScratchViewType(team_member.team_shmem(), n_q_points_per_batch); // values-only
+            s_gradients = s_values;                        // values-only: unused dummy
+            s_scratch   = s_values + n_q_points_per_batch; // values-only: separate
           }
 
         const int thread_id  = team_member.team_rank();
         const int block_size = team_member.team_size();
 
         for (int tid = thread_id; tid < n_1d * n_q_points_1d; tid += block_size)
-          v_shape_values(tid) = precomputed_data.shape_values[tid];
+          s_shape_values[tid] = precomputed_data.shape_values[tid];
 
         for (int tid = thread_id; tid < n_q_points_1d * n_q_points_1d; tid += block_size)
-          v_co_shape_gradients(tid) = precomputed_data.co_shape_gradients[tid];
+          s_co_shape_gradients[tid] = precomputed_data.co_shape_gradients[tid];
 
         team_member.team_barrier();
+
+        ScratchViewType v_shape_values(s_shape_values, n_1d * n_q_points_1d);
+        ScratchViewType v_co_shape_gradients(s_co_shape_gradients, n_q_points_1d * n_q_points_1d);
+        SharedViewValuesType    v_values(s_values, n_q_points_per_batch, 1);
+        SharedViewGradientsType v_gradients(s_gradients,
+                                            needs_gradients ? n_q_points_per_batch : 0,
+                                            dim,
+                                            1);
+        ScratchViewType         v_scratch(s_scratch, n_q_points_per_batch);
 
         const Custom::Parallel::ShapeDataView<Number> shape_data{
           v_shape_values,
