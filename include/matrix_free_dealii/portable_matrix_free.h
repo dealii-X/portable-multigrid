@@ -512,6 +512,18 @@ namespace Copy
              const AdditionalData &additional_data = AdditionalData());
 
       /**
+       * Helper function. Loop over all the cells and apply the functor on each
+       * element in parallel. This function is used when MPI is used.
+       */
+      template <typename Functor>
+      void
+      distributed_cell_loop(
+        const Functor                                                          &func,
+        const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+        LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst) const;
+
+
+      /**
        * Return the Data structure associated with @p color.
        */
       PrecomputedData
@@ -727,16 +739,6 @@ namespace Copy
       void
       serial_cell_loop(const Functor &func, const VectorType &src, VectorType &dst) const;
 
-      /**
-       * Helper function. Loop over all the cells and apply the functor on each
-       * element in parallel. This function is used when MPI is used.
-       */
-      template <typename Functor>
-      void
-      distributed_cell_loop(
-        const Functor                                                          &func,
-        const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-        LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst) const;
 
       /**
        * Same as above but for BlockVector.
@@ -1045,6 +1047,7 @@ namespace Copy
                                        { shape_gradients(i) = gpu_data.shape_gradients[i]; });
               }
           }
+        team_handle.team_barrier();
       }
 
       /**

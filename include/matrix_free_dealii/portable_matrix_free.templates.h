@@ -486,8 +486,9 @@ namespace Copy
         team_policy_args(const unsigned int n_cells) const
         {
           const unsigned int n_blocks = std::max(1u, n_cells / 2);
-          const unsigned int threads_per_block = std::max(32u,Utilities::pow(Functor::n_q_points_1d, dim - 1));
-          
+          const unsigned int threads_per_block =
+            std::max(32u, Utilities::pow(Functor::n_q_points_1d, dim - 1));
+
           return std::make_pair(n_blocks, threads_per_block);
         }
 
@@ -1624,29 +1625,91 @@ namespace Copy
                   // dim-1); const unsigned int n_block = std::max(1u, n_threads /
                   // n_threads_per_block);
 
-                  using TeamPolicy =
-                    Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
-                  // auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                  //                      TeamPolicy(exec, n_block, n_threads_per_block) :
-                  //                      TeamPolicy(exec, n_block, this->team_size);
+                  // using TeamPolicy =
+                  //   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+                  // // auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
+                  // //                      TeamPolicy(exec, n_block, n_threads_per_block) :
+                  // //                      TeamPolicy(exec, n_block, this->team_size);
 
-                  for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
-                    colored_data[di] = get_data(color, di);
+                  // for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
+                  //   colored_data[di] = get_data(color, di);
+
+                  // internal::ApplyKernel<dim, Number, Functor, false> apply_kernel(
+                  //   func, dof_handler_data.size(), colored_data, src, dst);
+
+                  // const auto team_policy_args = apply_kernel.team_policy_args(n_cells[color]);
+                  // auto       team_policy =
+                  //   (this->team_size == numbers::invalid_unsigned_int) ?
+                  //     TeamPolicy(exec, team_policy_args.first, team_policy_args.second) :
+                  //     TeamPolicy(exec, team_policy_args.first, this->team_size);
+
+
+                  // Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
+                  //                        std::to_string(color),
+                  //                      team_policy,
+                  //                      apply_kernel);
+
+
+                  const DeviceVector<Number> src_device(src.get_values(), src.locally_owned_size());
+                  const DeviceVector<Number> dst_device(dst.get_values(), dst.locally_owned_size());
+
+                  constexpr int          n_1d      = Functor::fe_degree + 1;
+                  constexpr int          n_q_1d    = Functor::n_q_points_1d;
+                  constexpr unsigned int n_q_total = Functor::n_q_points;
+
+                  const int n_elements_per_batch = 1;
+                  const int nelmt                = n_cells[color];
+
+                  const int numBlocks =
+                    std::max(1, ((nelmt + n_elements_per_batch - 1) / n_elements_per_batch / 2));
+
+                  const int threadsPerBlock =
+                    std::max(1, (Utilities::pow(n_q_1d, dim - 1) * n_elements_per_batch));
+
+
+                  colored_data[0] = get_data(color, 0);
 
                   internal::ApplyKernel<dim, Number, Functor, false> apply_kernel(
-                    func, dof_handler_data.size(), colored_data, src, dst);
+                    func, 1, colored_data, src, dst);
 
-                  const auto team_policy_args = apply_kernel.team_policy_args(n_cells[color]);
-                  auto       team_policy =
-                    (this->team_size == numbers::invalid_unsigned_int) ?
-                      TeamPolicy(exec, team_policy_args.first, team_policy_args.second) :
-                      TeamPolicy(exec, team_policy_args.first, this->team_size);
+                  std::size_t shmem_size = apply_kernel.team_shmem_size(0);
+
+                  using TeamPolicy =
+                    Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+
+                  TeamPolicy team_policy(exec, numBlocks, threadsPerBlock);
+                  team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
 
-                  Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
-                                         std::to_string(color),
-                                       team_policy,
-                                       apply_kernel);
+                  Kokkos::parallel_for(
+                    "dealii::MatrixFree::distributed_cell_loop color " + std::to_string(color),
+                    team_policy,
+                    KOKKOS_LAMBDA(const TeamPolicy::member_type &team_member) {
+                      Kokkos::Array<SharedData<dim, Number>, n_max_dof_handlers> shared_data;
+                      shared_data[0].reinit(team_member, n_q_total, colored_data[0]);
+                      const int n_batches =
+                        (nelmt + n_elements_per_batch - 1) / n_elements_per_batch;
+
+                      int cell_index = team_member.league_rank();
+
+                      while (cell_index < n_batches)
+                        {
+                          // current n_elements_per_batch (edge case, last batch size can be
+                          // less)
+                          // const int n_elements_in_current_batch =
+                          //   (batch_index * n_elements_per_batch + n_elements_per_batch > nelmt) ?
+                          //     (nelmt - batch_index * n_elements_per_batch) :
+                          //     n_elements_per_batch;
+
+                          typename MatrixFree<dim, Number>::Data data{
+                            team_member, n_q_total, 1, cell_index, colored_data, shared_data};
+
+                          DeviceVector<Number> dst_nonconst = dst_device;
+                          func(&data, src_device, dst_nonconst);
+
+                          cell_index += team_member.league_size();
+                        }
+                    });
                 }
 
             exec.fence();

@@ -29,13 +29,14 @@ namespace Portable
   // particular FEEvaluationImpl's evaluate()/integrate() now reading shape
   // data from SharedData's shared-memory-staged copies rather than
   // precomputed_data (global memory).
-  template <int dim, int fe_degree, int n_q_points_1d_, typename number>
+  template <int dim, int fe_degree_, int n_q_points_1d_, typename number>
   class LocalLaplaceOperatorNew
   {
   public:
-    static constexpr unsigned int n_local_dofs  = Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_local_dofs  = Utilities::pow(fe_degree_ + 1, dim);
     static constexpr unsigned int n_q_points    = Utilities::pow(n_q_points_1d_, dim);
     static constexpr unsigned int n_q_points_1d = n_q_points_1d_;
+    static constexpr unsigned int fe_degree = fe_degree_;
 
     LocalLaplaceOperatorNew() = default;
 
