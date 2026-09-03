@@ -486,7 +486,7 @@ namespace Copy
         team_policy_args(const unsigned int n_cells) const
         {
           const unsigned int n_blocks = std::max(1u, n_cells / 2);
-          const unsigned int threads_per_block = std::min(32u,Utilities::pow(Functor::n_q_points_1d, dim - 1));
+          const unsigned int threads_per_block = std::max(32u,Utilities::pow(Functor::n_q_points_1d, dim - 1));
           
           return std::make_pair(n_blocks, threads_per_block);
         }
