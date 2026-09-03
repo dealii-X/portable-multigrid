@@ -29,12 +29,13 @@ namespace Portable
   // particular FEEvaluationImpl's evaluate()/integrate() now reading shape
   // data from SharedData's shared-memory-staged copies rather than
   // precomputed_data (global memory).
-  template <int dim, int fe_degree, int n_q_points_1d, typename number>
+  template <int dim, int fe_degree, int n_q_points_1d_, typename number>
   class LocalLaplaceOperatorNew
   {
   public:
-    static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
-    static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
+    static constexpr unsigned int n_local_dofs  = Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_q_points    = Utilities::pow(n_q_points_1d_, dim);
+    static constexpr unsigned int n_q_points_1d = n_q_points_1d_;
 
     LocalLaplaceOperatorNew() = default;
 
@@ -49,8 +50,9 @@ namespace Portable
       fe_eval.read_dof_values(src);
       fe_eval.evaluate(EvaluationFlags::gradients);
 
-      data->for_each_quad_point([&](const int q_point)
-                                  { fe_eval.submit_gradient(fe_eval.get_gradient(q_point), q_point); });
+      data->for_each_quad_point(
+        [&](const int q_point)
+          { fe_eval.submit_gradient(fe_eval.get_gradient(q_point), q_point); });
 
       fe_eval.integrate(EvaluationFlags::gradients);
 
@@ -317,11 +319,12 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1;
+
 
     if (is_serial)
       {
-        numBlocks       = 1u;
         threadsPerBlock = 1u;
       }
 
@@ -414,11 +417,12 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1;
+
 
     if (is_serial)
       {
-        numBlocks       = 1u;
         threadsPerBlock = 1u;
       }
 
@@ -655,11 +659,12 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1;
+
 
     if (is_serial)
       {
-        numBlocks       = 1u;
         threadsPerBlock = 1u;
       }
 
@@ -740,10 +745,11 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+    unsigned int n_cells_per_batch = 1;
+
     if (is_serial)
       {
-        // numBlocks       = 1u;
         threadsPerBlock = 1u;
       }
 

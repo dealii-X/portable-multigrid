@@ -862,7 +862,7 @@ main(int argc, char *argv[])
       if (argc > 5)
         use_doubling_mesh = argv[5][0] == 'd';
 
-
+      dimension = 3;
       AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
@@ -876,20 +876,20 @@ main(int argc, char *argv[])
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
                   << std::endl;
 
-      if (dimension == 2)
-        {
-          LaplaceRunTime<2, minimal_degree, maximal_degree> run(degree,
-                                                                minsize,
-                                                                maxsize,
-                                                                use_doubling_mesh);
-        }
-      else if (dimension == 3)
-        {
-          LaplaceRunTime<3, minimal_degree, maximal_degree> run(degree,
-                                                                minsize,
-                                                                maxsize,
-                                                                use_doubling_mesh);
-        }
+      // if (dimension == 2)
+      //   {
+      //     LaplaceRunTime<2, minimal_degree, maximal_degree> run(degree,
+      //                                                           minsize,
+      //                                                           maxsize,
+      //                                                           use_doubling_mesh);
+      //   }
+      // else if (dimension == 3)
+      //   {
+      LaplaceRunTime<3, minimal_degree, maximal_degree> run(degree,
+                                                            minsize,
+                                                            maxsize,
+                                                            use_doubling_mesh);
+      // }
     }
   catch (std::exception &exc)
     {

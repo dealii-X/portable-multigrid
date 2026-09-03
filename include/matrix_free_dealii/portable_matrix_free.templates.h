@@ -482,6 +482,15 @@ namespace Copy
           return result;
         }
 
+        std::pair<unsigned int, unsigned int>
+        team_policy_args(const unsigned int n_cells) const
+        {
+          const unsigned int n_blocks = std::max(1u, n_cells / 2);
+          const unsigned int threads_per_block = std::min(32u,Utilities::pow(Functor::n_q_points_1d, dim - 1));
+          
+          return std::make_pair(n_blocks, threads_per_block);
+        }
+
 
         DEAL_II_HOST_DEVICE
         void
@@ -1543,21 +1552,26 @@ namespace Copy
             auto do_color = [&](const unsigned int color)
               {
                 // See serial_cell_loop()'s n_blocks comment above.
-                const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
-                const unsigned int n_threads_per_block = Functor::n_q_points;
-                const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
+                // const unsigned int n_threads           = n_cells[color] * Functor::n_q_points /
+                // 2; const unsigned int n_threads_per_block = Functor::n_q_points; const unsigned
+                // int n_block = std::max(1u, n_threads / n_threads_per_block);
 
                 using TeamPolicy =
                   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
-                auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                     TeamPolicy(exec, n_block, n_threads_per_block) :
-                                     TeamPolicy(exec, n_block, this->team_size);
 
                 for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
                   colored_data[di] = get_data(color, di);
 
+
+
                 internal::ApplyKernel<dim, Number, Functor, false> apply_kernel(
                   func, dof_handler_data.size(), colored_data, src, dst);
+
+                const auto team_policy_args = apply_kernel.team_policy_args(n_cells[color]);
+                auto       team_policy =
+                  (this->team_size == numbers::invalid_unsigned_int) ?
+                    TeamPolicy(exec, team_policy_args.first, team_policy_args.second) :
+                    TeamPolicy(exec, team_policy_args.first, this->team_size);
 
                 Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
                                        std::to_string(color),
@@ -1605,21 +1619,29 @@ namespace Copy
               if (n_cells[color] > 0)
                 {
                   // See serial_cell_loop()'s n_blocks comment above.
-                  const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
-                  const unsigned int n_threads_per_block = Functor::n_q_points;
-                  const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
+                  // const unsigned int n_threads           = n_cells[color] * Functor::n_q_points /
+                  // 2; const unsigned int n_threads_per_block = Utilities::pow(Functor::n_q_point_,
+                  // dim-1); const unsigned int n_block = std::max(1u, n_threads /
+                  // n_threads_per_block);
 
                   using TeamPolicy =
                     Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
-                  auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                       TeamPolicy(exec, n_block, n_threads_per_block) :
-                                       TeamPolicy(exec, n_block, this->team_size);
+                  // auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
+                  //                      TeamPolicy(exec, n_block, n_threads_per_block) :
+                  //                      TeamPolicy(exec, n_block, this->team_size);
 
                   for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
                     colored_data[di] = get_data(color, di);
 
                   internal::ApplyKernel<dim, Number, Functor, false> apply_kernel(
                     func, dof_handler_data.size(), colored_data, src, dst);
+
+                  const auto team_policy_args = apply_kernel.team_policy_args(n_cells[color]);
+                  auto       team_policy =
+                    (this->team_size == numbers::invalid_unsigned_int) ?
+                      TeamPolicy(exec, team_policy_args.first, team_policy_args.second) :
+                      TeamPolicy(exec, team_policy_args.first, this->team_size);
+
 
                   Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
                                          std::to_string(color),
