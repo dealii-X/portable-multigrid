@@ -1365,13 +1365,28 @@ namespace Copy
 
             // See ApplyKernel::operator()'s comment: league_size no longer
             // needs to equal n_cells[color] one-to-one -- each team now
-            // grid-strides over as many cells as it's assigned, so capping
-            // it at (a multiple of) the device's own concurrency lets
-            // reinit()'s shape-data staging be amortized over several
+            // grid-strides over as many cells as it's assigned, so
+            // reinit()'s shape-data staging can be amortized over several
             // cells per team instead of repeated once per cell.
+            //
+            // Capping n_blocks at a multiple of the device's own
+            // concurrency() (e.g. 2x) regressed badly at large cell counts
+            // -- this kernel is memory/latency-bound, and the original
+            // one-team-per-cell design's massive oversubscribed grid (as
+            // many teams as cells) is exactly what GPUs rely on to hide
+            // that latency; clamping league_size down near raw hardware
+            // concurrency undersubscribes the grid far below what it can
+            // actually schedule well. Use the same n_blocks heuristic
+            // already proven in this project's own benchmarks instead --
+            // n_threads_per_block == n_q_points, n_threads == half a
+            // thread-per-quad-point count over all cells, so n_blocks
+            // works out to n_cells[color] / 2 (2 cells/team), keeping the
+            // grid proportional to n_cells[color] like the rest of this
+            // heuristic's callers.
+            const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+            const unsigned int n_threads_per_block = Functor::n_q_points;
             const unsigned int n_blocks =
-              std::min<unsigned int>(n_cells[color],
-                                     2 * static_cast<unsigned int>(exec.concurrency()));
+              std::max(1u, n_threads / n_threads_per_block);
 
             using TeamPolicy =
               Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
@@ -1411,9 +1426,9 @@ namespace Copy
       auto do_color = [&](const unsigned int color)
         {
           // See serial_cell_loop()'s n_blocks comment above.
-          const unsigned int n_blocks =
-            std::min<unsigned int>(n_cells[color],
-                                   2 * static_cast<unsigned int>(exec.concurrency()));
+          const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+          const unsigned int n_threads_per_block = Functor::n_q_points;
+          const unsigned int n_blocks = std::max(1u, n_threads / n_threads_per_block);
 
           using TeamPolicy =
             Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
@@ -1528,10 +1543,10 @@ namespace Copy
             // helper to process one color
             auto do_color = [&](const unsigned int color)
               {
-                // See serial_cell_loop()'s n_block comment above.
-                const unsigned int n_block =
-                  std::min<unsigned int>(n_cells[color],
-                                         2 * static_cast<unsigned int>(exec.concurrency()));
+                // See serial_cell_loop()'s n_blocks comment above.
+                const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+                const unsigned int n_threads_per_block = Functor::n_q_points;
+                const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
 
                 using TeamPolicy =
                   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
@@ -1590,10 +1605,10 @@ namespace Copy
             for (unsigned int color = 0; color < n_colors; ++color)
               if (n_cells[color] > 0)
                 {
-                  // See serial_cell_loop()'s n_block comment above.
-                  const unsigned int n_block =
-                    std::min<unsigned int>(n_cells[color],
-                                           2 * static_cast<unsigned int>(exec.concurrency()));
+                  // See serial_cell_loop()'s n_blocks comment above.
+                  const unsigned int n_threads = n_cells[color] * Functor::n_q_points / 2;
+                  const unsigned int n_threads_per_block = Functor::n_q_points;
+                  const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
 
                   using TeamPolicy =
                     Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
