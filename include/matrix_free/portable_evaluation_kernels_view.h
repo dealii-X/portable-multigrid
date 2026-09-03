@@ -154,8 +154,9 @@ namespace Custom
 
             if constexpr (dim == 1)
               {
-                const auto temp =
-                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, n_q_points_1d));
+                const auto temp = Kokkos::subview(
+                  shared_data.scratch_pad,
+                  Kokkos::make_pair(0, data->n_elements_per_batch * n_q_points_1d));
 
                 if (evaluation_flag & EvaluationFlags::gradients)
                   eval.template gradients<0, true, false, false>(
@@ -163,13 +164,17 @@ namespace Custom
                 if (evaluation_flag & EvaluationFlags::values)
                   {
                     eval.template values<0, true, false, false>(u, temp);
-                    populate_view<false>(data->team_member, u, temp, n_q_points_1d);
+                    populate_view<false>(data->team_member,
+                                         u,
+                                         temp,
+                                         data->n_elements_in_current_batch * n_q_points_1d);
                   }
               }
             else if constexpr (dim == 2)
               {
-                constexpr int temp_size = (fe_degree + 1) * n_q_points_1d;
-                const auto    temp =
+                const int temp_size =
+                  data->n_elements_per_batch * (fe_degree + 1) * n_q_points_1d;
+                const auto temp =
                   Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, temp_size));
 
                 // grad x
@@ -192,8 +197,10 @@ namespace Custom
               }
             else // dim == 3
               {
-                constexpr int temp1_size = Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
-                constexpr int temp2_size = Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
+                const int temp1_size =
+                  data->n_elements_per_batch * Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
+                const int temp2_size = data->n_elements_per_batch *
+                                       Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
 
                 const auto temp1 =
                   Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, temp1_size));
@@ -267,14 +274,18 @@ namespace Custom
 
             if constexpr (dim == 1)
               {
-                const auto temp =
-                  Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, fe_degree + 1));
+                const auto temp = Kokkos::subview(
+                  shared_data.scratch_pad,
+                  Kokkos::make_pair(0, data->n_elements_per_batch * (fe_degree + 1)));
 
                 if ((integration_flag & EvaluationFlags::values) &&
                     !(integration_flag & EvaluationFlags::gradients))
                   {
                     eval.template values<0, false, false, false>(u, temp);
-                    populate_view<false>(data->team_member, u, temp, fe_degree + 1);
+                    populate_view<false>(data->team_member,
+                                         u,
+                                         temp,
+                                         data->n_elements_in_current_batch * (fe_degree + 1));
                   }
                 if (integration_flag & EvaluationFlags::gradients)
                   {
@@ -283,7 +294,10 @@ namespace Custom
                         eval.template values<0, false, false, false>(u, temp);
                         eval.template gradients<0, false, true, false>(
                           Kokkos::subview(grad_u, Kokkos::ALL, 0), temp);
-                        populate_view<false>(data->team_member, u, temp, fe_degree + 1);
+                        populate_view<false>(data->team_member,
+                                             u,
+                                             temp,
+                                             data->n_elements_in_current_batch * (fe_degree + 1));
                       }
                     else
                       eval.template gradients<0, false, false, false>(
@@ -292,8 +306,9 @@ namespace Custom
               }
             else if constexpr (dim == 2)
               {
-                constexpr int temp_size = (fe_degree + 1) * n_q_points_1d;
-                const auto    temp =
+                const int temp_size =
+                  data->n_elements_per_batch * (fe_degree + 1) * n_q_points_1d;
+                const auto temp =
                   Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, temp_size));
 
                 if ((integration_flag & EvaluationFlags::values) &&
@@ -316,8 +331,10 @@ namespace Custom
               }
             else // dim == 3
               {
-                constexpr int temp1_size = Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
-                constexpr int temp2_size = Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
+                const int temp1_size =
+                  data->n_elements_per_batch * Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
+                const int temp2_size =
+                  data->n_elements_per_batch * Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
 
                 const auto temp1 =
                   Kokkos::subview(shared_data.scratch_pad, Kokkos::make_pair(0, temp1_size));
