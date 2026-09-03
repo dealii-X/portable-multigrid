@@ -449,12 +449,12 @@ namespace Copy
           std::size_t result = 0;
           for (unsigned int d = 0; d < n_dof_handler; ++d)
             {
-              result +=
-                SharedViewValues::shmem_size(Functor::n_q_points, precomputed_data[d].n_components) +
-                SharedViewGradients::shmem_size(Functor::n_q_points,
-                                                dim,
-                                                precomputed_data[d].n_components) +
-                SharedViewScratchPad::shmem_size(precomputed_data[d].scratch_pad_size);
+              result += SharedViewValues::shmem_size(Functor::n_q_points,
+                                                     precomputed_data[d].n_components) +
+                        SharedViewGradients::shmem_size(Functor::n_q_points,
+                                                        dim,
+                                                        precomputed_data[d].n_components) +
+                        SharedViewScratchPad::shmem_size(precomputed_data[d].scratch_pad_size);
 
               if (precomputed_data[d].element_type >=
                   ::dealii::internal::MatrixFreeFunctions::ElementType::tensor_symmetric)
@@ -1383,15 +1383,14 @@ namespace Copy
             // works out to n_cells[color] / 2 (2 cells/team), keeping the
             // grid proportional to n_cells[color] like the rest of this
             // heuristic's callers.
-            const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+            const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
             const unsigned int n_threads_per_block = Functor::n_q_points;
-            const unsigned int n_blocks =
-              std::max(1u, n_threads / n_threads_per_block);
+            const unsigned int n_blocks            = std::max(1u, n_threads / n_threads_per_block);
 
             using TeamPolicy =
               Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
             auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                 TeamPolicy(exec, n_blocks, Kokkos::AUTO) :
+                                 TeamPolicy(exec, n_blocks, n_threads_per_block) :
                                  TeamPolicy(exec, n_blocks, this->team_size);
 
             for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
@@ -1426,14 +1425,14 @@ namespace Copy
       auto do_color = [&](const unsigned int color)
         {
           // See serial_cell_loop()'s n_blocks comment above.
-          const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+          const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
           const unsigned int n_threads_per_block = Functor::n_q_points;
-          const unsigned int n_blocks = std::max(1u, n_threads / n_threads_per_block);
+          const unsigned int n_blocks            = std::max(1u, n_threads / n_threads_per_block);
 
           using TeamPolicy =
             Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
           auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                               TeamPolicy(exec, n_blocks, Kokkos::AUTO) :
+                               TeamPolicy(exec, n_blocks, n_threads_per_block) :
                                TeamPolicy(exec, n_blocks, this->team_size);
 
           for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
@@ -1544,14 +1543,14 @@ namespace Copy
             auto do_color = [&](const unsigned int color)
               {
                 // See serial_cell_loop()'s n_blocks comment above.
-                const unsigned int n_threads          = n_cells[color] * Functor::n_q_points / 2;
+                const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
                 const unsigned int n_threads_per_block = Functor::n_q_points;
                 const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
 
                 using TeamPolicy =
                   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
                 auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                     TeamPolicy(exec, n_block, Kokkos::AUTO) :
+                                     TeamPolicy(exec, n_block, n_threads_per_block) :
                                      TeamPolicy(exec, n_block, this->team_size);
 
                 for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
@@ -1606,14 +1605,14 @@ namespace Copy
               if (n_cells[color] > 0)
                 {
                   // See serial_cell_loop()'s n_blocks comment above.
-                  const unsigned int n_threads = n_cells[color] * Functor::n_q_points / 2;
+                  const unsigned int n_threads           = n_cells[color] * Functor::n_q_points / 2;
                   const unsigned int n_threads_per_block = Functor::n_q_points;
                   const unsigned int n_block = std::max(1u, n_threads / n_threads_per_block);
 
                   using TeamPolicy =
                     Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
                   auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                       TeamPolicy(exec, n_block, Kokkos::AUTO) :
+                                       TeamPolicy(exec, n_block, n_threads_per_block) :
                                        TeamPolicy(exec, n_block, this->team_size);
 
                   for (unsigned int di = 0; di < dof_handler_data.size(); ++di)

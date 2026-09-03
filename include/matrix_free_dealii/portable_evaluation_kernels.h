@@ -861,10 +861,10 @@ namespace Copy
 
 
           DEAL_II_HOST_DEVICE static void
-          evaluate(const unsigned int                     dof_handler_index,
-                   const unsigned int                     n_components,
-                   const EvaluationFlags::EvaluationFlags evaluation_flag,
-                   const BatchedData<dim, Number>        *data)
+          evaluate(const unsigned int                                dof_handler_index,
+                   const unsigned int                                n_components,
+                   const EvaluationFlags::EvaluationFlags            evaluation_flag,
+                   const typename MatrixFree<dim, Number>::Data *data)
           {
             if (evaluation_flag == EvaluationFlags::nothing)
               return;
@@ -883,8 +883,7 @@ namespace Copy
                    data->shared_data[dof_handler_index].shape_values,
                    data->shared_data[dof_handler_index].shape_gradients,
                    SharedView(), // co_shape_gradients are not needed for evaluation
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -906,16 +905,12 @@ namespace Copy
                     if (evaluation_flag & EvaluationFlags::values)
                       {
                         eval.template values<0, true, false, false>(u, temp);
-                        populate_view<false>(data->team_member,
-                                             u,
-                                             temp,
-                                             data->n_cells_in_current_batch * n_q_points_1d);
+                        populate_view<false>(data->team_member, u, temp, n_q_points_1d);
                       }
                   }
                 else if constexpr (dim == 2)
                   {
-                    const int temp_size =
-                      data->n_cells_in_current_batch * (fe_degree + 1) * n_q_points_1d;
+                    const int temp_size = (fe_degree + 1) * n_q_points_1d;
                     auto temp = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                 Kokkos::make_pair(0, temp_size));
 
@@ -939,10 +934,8 @@ namespace Copy
                   }
                 else if constexpr (dim == 3)
                   {
-                    const int temp1_size = data->n_cells_in_current_batch *
-                                           Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
-                    const int temp2_size = data->n_cells_in_current_batch *
-                                           Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
+                    const int temp1_size = Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
+                    const int temp2_size = Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
 
                     auto temp1 = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                  Kokkos::make_pair(0, temp1_size));
@@ -988,10 +981,10 @@ namespace Copy
 
 
           DEAL_II_HOST_DEVICE static void
-          integrate(const unsigned int                     dof_handler_index,
-                    const unsigned int                     n_components,
-                    const EvaluationFlags::EvaluationFlags integration_flag,
-                    const BatchedData<dim, Number>        *data)
+          integrate(const unsigned int                                dof_handler_index,
+                    const unsigned int                                n_components,
+                    const EvaluationFlags::EvaluationFlags            integration_flag,
+                    const typename MatrixFree<dim, Number>::Data *data)
           {
             if (integration_flag == EvaluationFlags::nothing)
               return;
@@ -1010,8 +1003,7 @@ namespace Copy
                    data->shared_data[dof_handler_index].shape_values,
                    data->shared_data[dof_handler_index].shape_gradients,
                    SharedView(), // co_shape_gradients are not needed for evaluation
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -1024,18 +1016,14 @@ namespace Copy
 
                 if constexpr (dim == 1)
                   {
-                    auto temp = Kokkos::subview(
-                      data->shared_data[dof_handler_index].scratch_pad,
-                      Kokkos::make_pair(0, data->n_cells_in_current_batch * (fe_degree + 1)));
+                    auto temp = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
+                                                Kokkos::make_pair(0, (fe_degree + 1)));
 
                     if ((integration_flag & EvaluationFlags::values) &&
                         !(integration_flag & EvaluationFlags::gradients))
                       {
                         eval.template values<0, false, false, false>(u, temp);
-                        populate_view<false>(data->team_member,
-                                             u,
-                                             temp,
-                                             data->n_cells_in_current_batch * (fe_degree + 1));
+                        populate_view<false>(data->team_member, u, temp, (fe_degree + 1));
                       }
                     if (integration_flag & EvaluationFlags::gradients)
                       {
@@ -1044,10 +1032,7 @@ namespace Copy
                             eval.template values<0, false, false, false>(u, temp);
                             eval.template gradients<0, false, true, false>(
                               Kokkos::subview(grad_u, Kokkos::ALL, 0), temp);
-                            populate_view<false>(data->team_member,
-                                                 u,
-                                                 temp,
-                                                 data->n_cells_in_current_batch * (fe_degree + 1));
+                            populate_view<false>(data->team_member, u, temp, (fe_degree + 1));
                           }
                         else
                           eval.template gradients<0, false, false, false>(
@@ -1056,8 +1041,7 @@ namespace Copy
                   }
                 else if constexpr (dim == 2)
                   {
-                    const int temp_size =
-                      data->n_cells_in_current_batch * (fe_degree + 1) * n_q_points_1d;
+                    const int temp_size = (fe_degree + 1) * n_q_points_1d;
                     auto temp = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                 Kokkos::make_pair(0, temp_size));
 
@@ -1081,10 +1065,8 @@ namespace Copy
                   }
                 else if constexpr (dim == 3)
                   {
-                    const int temp1_size = data->n_cells_in_current_batch *
-                                           Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
-                    const int temp2_size = data->n_cells_in_current_batch *
-                                           Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
+                    const int temp1_size = Utilities::pow(n_q_points_1d, 2) * (fe_degree + 1);
+                    const int temp2_size = Utilities::pow(fe_degree + 1, 2) * n_q_points_1d;
 
                     auto temp1 = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                  Kokkos::make_pair(0, temp1_size));
@@ -1146,10 +1128,10 @@ namespace Copy
                          Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
           DEAL_II_HOST_DEVICE static void
-          evaluate(const unsigned int                     dof_handler_index,
-                   const unsigned int                     n_components,
-                   const EvaluationFlags::EvaluationFlags evaluation_flag,
-                   const BatchedData<dim, Number>        *data)
+          evaluate(const unsigned int                                dof_handler_index,
+                   const unsigned int                                n_components,
+                   const EvaluationFlags::EvaluationFlags            evaluation_flag,
+                   const typename MatrixFree<dim, Number>::Data *data)
           {
             Assert(dim >= 1 && dim <= 3, ExcMessage("dim must be 1, 2, or 3"));
 
@@ -1174,8 +1156,7 @@ namespace Copy
                    SharedView(), // shape_values are identity
                    SharedView(), // shape_gradients are not used
                    data->shared_data[dof_handler_index].co_shape_gradients,
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -1193,10 +1174,10 @@ namespace Copy
 
 
           DEAL_II_HOST_DEVICE static void
-          integrate(const unsigned int                     dof_handler_index,
-                    const unsigned int                     n_components,
-                    const EvaluationFlags::EvaluationFlags integration_flag,
-                    const BatchedData<dim, Number>        *data)
+          integrate(const unsigned int                                dof_handler_index,
+                    const unsigned int                                n_components,
+                    const EvaluationFlags::EvaluationFlags            integration_flag,
+                    const typename MatrixFree<dim, Number>::Data *data)
           {
             Assert(dim >= 1 && dim <= 3, ExcMessage("dim must be 1, 2, or 3"));
 
@@ -1221,8 +1202,7 @@ namespace Copy
                    SharedView(), // shape_values are identity
                    SharedView(), // shape_gradients are not used
                    data->shared_data[dof_handler_index].co_shape_gradients,
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -1263,10 +1243,10 @@ namespace Copy
                          Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
           DEAL_II_HOST_DEVICE static void
-          evaluate(const unsigned int                     dof_handler_index,
-                   const unsigned int                     n_components,
-                   const EvaluationFlags::EvaluationFlags evaluation_flag,
-                   const BatchedData<dim, Number>        *data)
+          evaluate(const unsigned int                                dof_handler_index,
+                   const unsigned int                                n_components,
+                   const EvaluationFlags::EvaluationFlags            evaluation_flag,
+                   const typename MatrixFree<dim, Number>::Data *data)
           {
             // the evaluator does not need temporary storage since no in-place
             // operation takes place in this function as each in-place operation
@@ -1286,8 +1266,7 @@ namespace Copy
                    data->shared_data[dof_handler_index].shape_values,
                    SharedView(), // shape_gradients are not used
                    data->shared_data[dof_handler_index].co_shape_gradients,
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -1304,10 +1283,7 @@ namespace Copy
 
                     eval.template values<0, true, false, false>(u, temp);
 
-                    populate_view<false>(data->team_member,
-                                         u,
-                                         temp,
-                                         data->n_cells_in_current_batch * data->n_q_points);
+                    populate_view<false>(data->team_member, u, temp, data->n_q_points);
                   }
                 else if constexpr (dim == 2)
                   {
@@ -1324,10 +1300,7 @@ namespace Copy
                     eval.template values<1, true, false, false>(temp, u);
                     eval.template values<2, true, false, false>(u, temp);
 
-                    populate_view<false>(data->team_member,
-                                         u,
-                                         temp,
-                                         data->n_cells_in_current_batch * data->n_q_points);
+                    populate_view<false>(data->team_member, u, temp, data->n_q_points);
                   }
 
                 // apply derivatives in collocation space fused along all dim
@@ -1339,10 +1312,10 @@ namespace Copy
 
 
           DEAL_II_HOST_DEVICE static void
-          integrate(const unsigned int                     dof_handler_index,
-                    const unsigned int                     n_components,
-                    const EvaluationFlags::EvaluationFlags integration_flag,
-                    const BatchedData<dim, Number>        *data)
+          integrate(const unsigned int                                dof_handler_index,
+                    const unsigned int                                n_components,
+                    const EvaluationFlags::EvaluationFlags            integration_flag,
+                    const typename MatrixFree<dim, Number>::Data *data)
           {
             // the evaluator does not need temporary storage since no in-place
             // operation takes place in this function as each in-place operation
@@ -1362,8 +1335,7 @@ namespace Copy
                    data->shared_data[dof_handler_index].shape_values,
                    SharedView(), // shape_gradients are not used
                    data->shared_data[dof_handler_index].co_shape_gradients,
-                   scratch_for_eval,
-                   data->n_cells_in_current_batch);
+                   scratch_for_eval);
 
             for (unsigned int c = 0; c < n_components; ++c)
               {
@@ -1390,10 +1362,7 @@ namespace Copy
 
                     eval.template values<0, false, false, false>(u, temp);
 
-                    populate_view<false>(data->team_member,
-                                         u,
-                                         temp,
-                                         data->n_cells_in_current_batch * (fe_degree + 1));
+                    populate_view<false>(data->team_member, u, temp, (fe_degree + 1));
                   }
                 else if constexpr (dim == 2)
                   {
@@ -1413,8 +1382,7 @@ namespace Copy
                     populate_view<false>(data->team_member,
                                          u,
                                          temp,
-                                         data->n_cells_in_current_batch *
-                                           Utilities::pow(fe_degree + 1, dim));
+                                         Utilities::pow(fe_degree + 1, dim));
                   }
                 else
                   Assert(false, ExcMessage("dim must not exceed 3!"));

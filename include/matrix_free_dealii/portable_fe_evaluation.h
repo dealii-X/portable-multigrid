@@ -438,23 +438,22 @@ namespace Copy
       if (fe_degree >= 0 && fe_degree + 1 == n_q_points_1d &&
           precomputed_data->element_type == ElementType::tensor_symmetric_collocation)
         {
-          internal::FEEvaluationImplCollocation<dim, fe_degree, Number>::evaluate(dof_handler_index,
-                                                                                  n_components,
-                                                                                  evaluation_flag,
-                                                                                  data);
+          internal::batched::FEEvaluationImplCollocation<dim, fe_degree, Number>::evaluate(
+            dof_handler_index, n_components, evaluation_flag, data);
         }
       // '<=' on type means tensor_symmetric or tensor_symmetric_hermite, see
       // shape_info.h for more details
       else if (fe_degree >= 0 && internal::use_collocation_evaluation(fe_degree, n_q_points_1d) &&
                precomputed_data->element_type <= ElementType::tensor_symmetric)
         {
-          internal::FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>::
-            evaluate(dof_handler_index, n_components, evaluation_flag, data);
+          internal::batched::
+            FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>::evaluate(
+              dof_handler_index, n_components, evaluation_flag, data);
         }
       else if (fe_degree >= 0 &&
                precomputed_data->element_type <= ElementType::tensor_symmetric_no_collocation)
         {
-          internal::FEEvaluationImpl<dim, fe_degree, n_q_points_1d, Number>::evaluate(
+          internal::batched::FEEvaluationImpl<dim, fe_degree, n_q_points_1d, Number>::evaluate(
             dof_handler_index, n_components, evaluation_flag, data);
         }
       else
@@ -476,7 +475,7 @@ namespace Copy
       if (fe_degree >= 0 && fe_degree + 1 == n_q_points_1d &&
           precomputed_data->element_type == ElementType::tensor_symmetric_collocation)
         {
-          internal::FEEvaluationImplCollocation<dim, fe_degree, Number>::integrate(
+          internal::batched::FEEvaluationImplCollocation<dim, fe_degree, Number>::integrate(
             dof_handler_index, n_components, integration_flag, data);
         }
       // '<=' on type means tensor_symmetric or tensor_symmetric_hermite, see
@@ -484,13 +483,14 @@ namespace Copy
       else if (fe_degree >= 0 && internal::use_collocation_evaluation(fe_degree, n_q_points_1d) &&
                precomputed_data->element_type <= ElementType::tensor_symmetric)
         {
-          internal::FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>::
-            integrate(dof_handler_index, n_components, integration_flag, data);
+          internal::batched::
+            FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>::
+              integrate(dof_handler_index, n_components, integration_flag, data);
         }
       else if (fe_degree >= 0 &&
                precomputed_data->element_type <= ElementType::tensor_symmetric_no_collocation)
         {
-          internal::FEEvaluationImpl<dim, fe_degree, n_q_points_1d, Number>::integrate(
+          internal::batched::FEEvaluationImpl<dim, fe_degree, n_q_points_1d, Number>::integrate(
             dof_handler_index, n_components, integration_flag, data);
         }
       else

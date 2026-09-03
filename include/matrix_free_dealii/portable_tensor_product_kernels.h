@@ -980,7 +980,7 @@ namespace Copy
                                  ShapeDataType     shape_gradients,
                                  ShapeDataType     co_shape_gradients,
                                  SharedView        temp,
-                                 const int         batch_size);
+                                 const int         batch_size = 1);
 
           /**
            * Evaluate/integrate the values of a finite element function at the
