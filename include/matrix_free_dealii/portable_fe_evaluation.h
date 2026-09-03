@@ -288,6 +288,20 @@ namespace Copy
 
 
 
+    // Out-of-class definition, needed because AssertIndexRange(q_point,
+    // n_q_points) in get_gradient()/submit_gradient() below ODR-uses
+    // n_q_points (its exception-message machinery takes it by reference) --
+    // nvcc's device-code compiler needs a real definition for that even
+    // though the static constexpr in-class declaration above is already
+    // implicitly inline under C++17 for host code. Without this, nvcc
+    // reports "identifier ... n_q_points is undefined in device code" for
+    // both call sites below.
+    template <int dim, int fe_degree, int n_q_points_1d, int n_components_, typename Number>
+    constexpr unsigned int
+      FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::n_q_points;
+
+
+
     template <int dim, int fe_degree, int n_q_points_1d, int n_components_, typename Number>
     DEAL_II_HOST_DEVICE
     FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::FEEvaluation(
