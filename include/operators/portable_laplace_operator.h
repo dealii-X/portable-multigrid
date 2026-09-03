@@ -43,7 +43,8 @@ namespace Portable
                const Copy::Portable::DeviceVector<number>                   &src,
                Copy::Portable::DeviceVector<number>                         &dst) const
     {
-      Copy::Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> fe_eval(data);
+      Copy::Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> fe_eval(
+        data, data->cell_index);
 
       fe_eval.read_dof_values(src);
       fe_eval.evaluate(EvaluationFlags::gradients);

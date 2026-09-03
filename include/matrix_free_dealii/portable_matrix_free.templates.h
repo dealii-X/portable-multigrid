@@ -487,29 +487,56 @@ namespace Copy
         void
         operator()(const TeamHandle &team_member) const
         {
-          // Allocate the scratch memory
+          // Allocate the scratch memory and stage shape data ONCE per team,
+          // not once per cell: with league_size now possibly smaller than
+          // n_cells (see the launch sites), a team may need to cover more
+          // than one cell, so this loops cell_index in the same grid-stride
+          // style as the batched kernels' while (batch_index < n_batches)
+          // loop -- explicitly still exactly 1 cell per iteration, no
+          // multi-cell batching of the actual computation. This amortizes
+          // reinit()'s shape-data copy (see SharedData above) over every
+          // cell the team handles instead of repeating it per cell, which
+          // is the whole point: staging shape data into shared memory
+          // raises this functor's shared-memory footprint, which only pays
+          // off if it's reused across more than one cell per team.
           Kokkos::Array<SharedData<dim, Number>, n_max_dof_handlers> shared_data;
           for (unsigned int d = 0; d < n_dof_handler; ++d)
             shared_data[d].reinit(team_member, Functor::n_q_points, precomputed_data[d]);
 
-          const int cell_index = team_member.league_rank();
+          const unsigned int n_cells = precomputed_data[0].n_cells;
 
-          typename MatrixFree<dim, Number>::Data data{team_member,
-                                                      Functor::n_q_points,
-                                                      n_dof_handler,
-                                                      cell_index,
-                                                      precomputed_data,
-                                                      shared_data};
+          for (unsigned int cell_index = team_member.league_rank(); cell_index < n_cells;
+               cell_index += team_member.league_size())
+            {
+              typename MatrixFree<dim, Number>::Data data{team_member,
+                                                          Functor::n_q_points,
+                                                          n_dof_handler,
+                                                          static_cast<int>(cell_index),
+                                                          precomputed_data,
+                                                          shared_data};
 
-          if constexpr (IsBlock)
-            {
-              DeviceBlockVector<Number> nonconstdst = dst;
-              func(&data, src, nonconstdst);
-            }
-          else
-            {
-              DeviceVector<Number> nonconstdst = dst.block(0);
-              func(&data, src.block(0), nonconstdst);
+              if constexpr (IsBlock)
+                {
+                  DeviceBlockVector<Number> nonconstdst = dst;
+                  func(&data, src, nonconstdst);
+                }
+              else
+                {
+                  DeviceVector<Number> nonconstdst = dst.block(0);
+                  func(&data, src.block(0), nonconstdst);
+                }
+
+              // distribute_local_to_global() (the last step func() takes)
+              // has no team_barrier() of its own -- fine when a team's
+              // lifetime ends right after it (the original one-cell-per-
+              // team design), but now that the same team's shared_data
+              // (values/gradients/scratch_pad/shape data) gets reused for
+              // the next cell_index, the next iteration's read_dof_values()
+              // starts overwriting shared_data->values immediately, racing
+              // against any thread still reading it inside this iteration's
+              // distribute_local_to_global(). Barrier here, not inside
+              // FEEvaluation, to keep this a cell_loop-dispatch-only change.
+              team_member.team_barrier();
             }
         }
       };
@@ -1336,11 +1363,21 @@ namespace Copy
           {
             MemorySpace::Default::kokkos_space::execution_space exec;
 
+            // See ApplyKernel::operator()'s comment: league_size no longer
+            // needs to equal n_cells[color] one-to-one -- each team now
+            // grid-strides over as many cells as it's assigned, so capping
+            // it at (a multiple of) the device's own concurrency lets
+            // reinit()'s shape-data staging be amortized over several
+            // cells per team instead of repeated once per cell.
+            const unsigned int n_blocks =
+              std::min<unsigned int>(n_cells[color],
+                                     2 * static_cast<unsigned int>(exec.concurrency()));
+
             using TeamPolicy =
               Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
             auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                 TeamPolicy(exec, n_cells[color], Kokkos::AUTO) :
-                                 TeamPolicy(exec, n_cells[color], this->team_size);
+                                 TeamPolicy(exec, n_blocks, Kokkos::AUTO) :
+                                 TeamPolicy(exec, n_blocks, this->team_size);
 
             for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
               colored_data[di] = get_data(color, di);
@@ -1373,11 +1410,16 @@ namespace Copy
       // helper to process one color
       auto do_color = [&](const unsigned int color)
         {
+          // See serial_cell_loop()'s n_blocks comment above.
+          const unsigned int n_blocks =
+            std::min<unsigned int>(n_cells[color],
+                                   2 * static_cast<unsigned int>(exec.concurrency()));
+
           using TeamPolicy =
             Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
           auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                               TeamPolicy(exec, n_cells[color], Kokkos::AUTO) :
-                               TeamPolicy(exec, n_cells[color], this->team_size);
+                               TeamPolicy(exec, n_blocks, Kokkos::AUTO) :
+                               TeamPolicy(exec, n_blocks, this->team_size);
 
           for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
             colored_data[di] = get_data(color, di);
@@ -1486,11 +1528,16 @@ namespace Copy
             // helper to process one color
             auto do_color = [&](const unsigned int color)
               {
+                // See serial_cell_loop()'s n_block comment above.
+                const unsigned int n_block =
+                  std::min<unsigned int>(n_cells[color],
+                                         2 * static_cast<unsigned int>(exec.concurrency()));
+
                 using TeamPolicy =
                   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
                 auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                     TeamPolicy(exec, n_cells[color], Kokkos::AUTO) :
-                                     TeamPolicy(exec, n_cells[color], this->team_size);
+                                     TeamPolicy(exec, n_block, Kokkos::AUTO) :
+                                     TeamPolicy(exec, n_block, this->team_size);
 
                 for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
                   colored_data[di] = get_data(color, di);
@@ -1543,11 +1590,16 @@ namespace Copy
             for (unsigned int color = 0; color < n_colors; ++color)
               if (n_cells[color] > 0)
                 {
+                  // See serial_cell_loop()'s n_block comment above.
+                  const unsigned int n_block =
+                    std::min<unsigned int>(n_cells[color],
+                                           2 * static_cast<unsigned int>(exec.concurrency()));
+
                   using TeamPolicy =
                     Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
                   auto team_policy = (this->team_size == numbers::invalid_unsigned_int) ?
-                                       TeamPolicy(exec, n_cells[color], Kokkos::AUTO) :
-                                       TeamPolicy(exec, n_cells[color], this->team_size);
+                                       TeamPolicy(exec, n_block, Kokkos::AUTO) :
+                                       TeamPolicy(exec, n_block, this->team_size);
 
                   for (unsigned int di = 0; di < dof_handler_data.size(); ++di)
                     colored_data[di] = get_data(color, di);

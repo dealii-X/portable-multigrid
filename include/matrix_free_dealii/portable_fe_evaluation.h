@@ -123,12 +123,17 @@ namespace Copy
        * Constructor. You will need to provide a pointer to the
        * Portable::MatrixFree::Data object, which is typically provided to the
        * functor inside the
-       * Portable::MatrixFree::cell_loop() and the index @p dof_handler_index
+       * Portable::MatrixFree::cell_loop(), the @p cell_id of the cell to
+       * evaluate on (passed explicitly by the caller rather than deduced
+       * from @p data, since a cell_loop dispatch may reuse one team/@p data
+       * object across more than one cell), and the index @p dof_handler_index
        * of the DoFHandler if more than one was provided when the
        * Portable::MatrixFree object was initialized.
        */
       DEAL_II_HOST_DEVICE
-      explicit FEEvaluation(const data_type *data, const unsigned int dof_handler_index = 0);
+      explicit FEEvaluation(const data_type   *data,
+                            const int          cell_id,
+                            const unsigned int dof_handler_index = 0);
 
       /**
        * Return the index of the current cell.
@@ -306,12 +311,13 @@ namespace Copy
     DEAL_II_HOST_DEVICE
     FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::FEEvaluation(
       const data_type   *data,
+      const int          cell_id,
       const unsigned int dof_handler_index)
       : dof_handler_index(dof_handler_index)
       , data(data)
       , precomputed_data(&data->precomputed_data[dof_handler_index])
       , shared_data(&data->shared_data[dof_handler_index])
-      , cell_id(data->team_member.league_rank())
+      , cell_id(cell_id)
     {
       AssertIndexRange(dof_handler_index, data->n_dof_handler);
 

@@ -1,14 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=dd-solver
+#SBATCH --job-name=dealii-kenels
 #SBATCH --account=dealii-X
-#SBATCH --nodes=64
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --gres=gpu:4
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=12
 #SBATCH --threads-per-core=1       
-#SBATCH --time=02:00:00
-#SBATCH --output=output-%j.out
+#SBATCH --time=01:00:00
+#SBATCH --output=3d-dealii-%A_%a.out
+#SBATCH --array=1-8
 
 module purge
 
@@ -37,7 +38,7 @@ srun --cpu-bind=cores \
      --gpu-bind=closest \
       --mem-bind=local \
       --gpus-per-task=1 \
-     ./program 4 1000 1000000000000 5 5 d 0
+     ./program 3 $SLURM_ARRAY_TASK_ID 1000 1000000000000 d 0
 
 rm core.jpbo*.jupiter.*
 
