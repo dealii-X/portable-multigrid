@@ -394,6 +394,10 @@ namespace Copy
           Kokkos::View<Number *,
                        MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
                        Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+        using SharedViewShapeData =
+          Kokkos::View<Number *,
+                       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
         ApplyKernel(Functor                                 func,
                     const unsigned int                      n_dof_handler,
@@ -433,17 +437,47 @@ namespace Copy
 
         // Provide the shared memory capacity. This function takes the team_size
         // as an argument, which allows team_size dependent allocations.
+        //
+        // Mirrors SharedData::reinit() draw-for-draw, guards included: the
+        // element_type branch and the size() > 0 checks here match reinit()
+        // exactly, since Kokkos allocates exactly what this function reports
+        // and reinit() draws real memory (team_handle.team_shmem()) only for
+        // what it actually stages.
         std::size_t
         team_shmem_size(int /*team_size*/) const
         {
           std::size_t result = 0;
           for (unsigned int d = 0; d < n_dof_handler; ++d)
-            result +=
-              SharedViewValues::shmem_size(Functor::n_q_points, precomputed_data[d].n_components) +
-              SharedViewGradients::shmem_size(Functor::n_q_points,
-                                              dim,
-                                              precomputed_data[d].n_components) +
-              SharedViewScratchPad::shmem_size(precomputed_data[d].scratch_pad_size);
+            {
+              result +=
+                SharedViewValues::shmem_size(Functor::n_q_points, precomputed_data[d].n_components) +
+                SharedViewGradients::shmem_size(Functor::n_q_points,
+                                                dim,
+                                                precomputed_data[d].n_components) +
+                SharedViewScratchPad::shmem_size(precomputed_data[d].scratch_pad_size);
+
+              if (precomputed_data[d].element_type >=
+                  ::dealii::internal::MatrixFreeFunctions::ElementType::tensor_symmetric)
+                {
+                  if (precomputed_data[d].shape_values.size() > 0)
+                    result +=
+                      SharedViewShapeData::shmem_size(precomputed_data[d].shape_values.size());
+                }
+
+              if (precomputed_data[d].element_type <=
+                  ::dealii::internal::MatrixFreeFunctions::ElementType::tensor_symmetric)
+                {
+                  if (precomputed_data[d].co_shape_gradients.size() > 0)
+                    result += SharedViewShapeData::shmem_size(
+                      precomputed_data[d].co_shape_gradients.size());
+                }
+              else
+                {
+                  if (precomputed_data[d].shape_gradients.size() > 0)
+                    result +=
+                      SharedViewShapeData::shmem_size(precomputed_data[d].shape_gradients.size());
+                }
+            }
 
           return result;
         }

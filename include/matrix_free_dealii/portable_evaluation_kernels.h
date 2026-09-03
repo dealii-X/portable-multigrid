@@ -83,15 +83,17 @@ namespace Copy
           // operation takes place in this function
           auto scratch_for_eval = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                   Kokkos::make_pair(0, 0));
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 n_q_points_1d,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            n_q_points_1d,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
@@ -201,15 +203,17 @@ namespace Copy
           // operation takes place in this function
           auto scratch_for_eval = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                   Kokkos::make_pair(0, 0));
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 n_q_points_1d,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            n_q_points_1d,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
@@ -343,15 +347,17 @@ namespace Copy
           auto scratch_for_eval  = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                    Kokkos::make_pair(0, n_points));
 
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 fe_degree + 1,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            fe_degree + 1,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
@@ -390,15 +396,17 @@ namespace Copy
           auto scratch_for_eval  = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                    Kokkos::make_pair(0, n_points));
 
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 fe_degree + 1,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            fe_degree + 1,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
@@ -473,15 +481,17 @@ namespace Copy
           auto scratch_for_eval = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                   Kokkos::make_pair(0, scratch_size));
 
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 n_q_points_1d,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            n_q_points_1d,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
@@ -523,15 +533,17 @@ namespace Copy
           auto scratch_for_eval = Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
                                                   Kokkos::make_pair(0, scratch_size));
 
-          EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
-                                 dim,
-                                 fe_degree + 1,
-                                 n_q_points_1d,
-                                 Number>
+          EvaluatorTensorProduct<
+            EvaluatorVariant::evaluate_general,
+            dim,
+            fe_degree + 1,
+            n_q_points_1d,
+            Number,
+            MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space>
             eval(data->team_member,
-                 data->precomputed_data[dof_handler_index].shape_values,
-                 data->precomputed_data[dof_handler_index].shape_gradients,
-                 data->precomputed_data[dof_handler_index].co_shape_gradients,
+                 data->shared_data[dof_handler_index].shape_values,
+                 data->shared_data[dof_handler_index].shape_gradients,
+                 data->shared_data[dof_handler_index].co_shape_gradients,
                  scratch_for_eval);
 
           for (unsigned int c = 0; c < n_components; ++c)
