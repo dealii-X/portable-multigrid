@@ -45,7 +45,7 @@ namespace multigrid
   // templates we need to precompile the respective programs. Here we specify
   // a minimum and maximum degree we want to support. Degrees outside this
   // range will not do any work.
-  const unsigned int dimension      = 3;
+  // const unsigned int dimension      = 3;
   const unsigned int minimal_degree = 1;
   const unsigned int maximal_degree = 9;
   const double       wave_number    = 3.;
@@ -485,8 +485,14 @@ namespace multigrid
   // evaluate_gradients()/integrate_gradients()/integrate_values()), and
   // their View-based counterparts vmult_dealii_batched_view()
   // (kernels/portable_local_laplace_
-  // operator_batched_view.h, Custom::Parallel::FEEvaluationView-based). Per
-  // Ivan's direction, this deliberately does not exercise the CG solver --
+  // operator_batched_view.h, Custom::Parallel::FEEvaluationView-based), and
+  // vmult_dealii_new() (LocalLaplaceOperatorNew in portable_laplace_
+  // operator.h -- real deal.II's own Portable::FEEvaluation call sequence,
+  // but driven by the local matrix_free_dealii/ port of MatrixFree/
+  // FEEvaluation instead, whose FEEvaluationImpl now stages shape data into
+  // shared memory via SharedData::reinit() rather than reading it from
+  // global memory every time). Per Ivan's direction, this deliberately does
+  // not exercise the CG solver --
   // see solve() above, currently uncalled from run(). Timing, speedup, and
   // norm (correctness) results go into three separate tables
   // (vmult_timing_table/vmult_speedup_table/vmult_norm_table) since they're
@@ -497,7 +503,7 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src, dst_dealii, dst_bk3,
-      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view;
+      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view, src_new, dst_dealii_new;
     system_matrix->initialize_dof_vector(src);
     system_matrix->initialize_dof_vector(dst_dealii);
     system_matrix->initialize_dof_vector(dst_bk3);
@@ -505,6 +511,16 @@ namespace multigrid
     system_matrix->initialize_dof_vector(dst_batched);
     system_matrix->initialize_dof_vector(dst_batched_fused);
     system_matrix->initialize_dof_vector(dst_batched_view);
+    // vmult_dealii_new() drives Copy::Portable::MatrixFree, a separate
+    // MatrixFree instance from the one above (matrix_free_new vs. matrix_
+    // free in LaplaceOperator) -- its distributed_cell_loop() matches
+    // dof_handler_index by comparing the dst vector's partitioner pointer
+    // against its own registered DoFHandler's partitioner by identity, so
+    // src/dst for this variant specifically must come from its own
+    // initialize_dof_vector_new(), not the shared initialize_dof_vector()
+    // above.
+    system_matrix->initialize_dof_vector_new(src_new);
+    system_matrix->initialize_dof_vector_new(dst_dealii_new);
 
     {
       std::mt19937                           gen(42);
@@ -514,6 +530,7 @@ namespace multigrid
       for (const auto idx : locally_owned_dofs)
         rw(idx) = dist(gen);
       src.import_elements(rw, VectorOperation::insert);
+      src_new.import_elements(rw, VectorOperation::insert);
     }
 
     // vmult_dealii() drives real deal.II's own Portable::FEEvaluation/
@@ -524,6 +541,7 @@ namespace multigrid
     // are invariant to this already (they never read src at constrained
     // DoFs at all).
     system_matrix->get_matrix_free().set_constrained_values(0., src);
+    system_matrix->get_matrix_free_new().set_constrained_values(0., src_new);
 
     // -- correctness: vmult_bk3() is ground truth --
     system_matrix->vmult_bk3(dst_bk3, src);
@@ -532,6 +550,7 @@ namespace multigrid
     system_matrix->vmult_dealii_batched(dst_batched, src);
     system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src);
     system_matrix->vmult_dealii_batched_view(dst_batched_view, src);
+    system_matrix->vmult_dealii_new(dst_dealii_new, src_new);
 
     // Belt-and-suspenders: each vmult already leaves the constrained entries
     // at 0 given the zeroed src above (via either copy_constrained_values()
@@ -543,6 +562,7 @@ namespace multigrid
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_fused);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_view);
+    system_matrix->get_matrix_free_new().set_constrained_values(0., dst_dealii_new);
 
     const double norm_bk3 = dst_bk3.l2_norm();
 
@@ -559,6 +579,7 @@ namespace multigrid
     const double rel_err_batched        = rel_err_vs_bk3(dst_batched);
     const double rel_err_batched_fused  = rel_err_vs_bk3(dst_batched_fused);
     const double rel_err_batched_view   = rel_err_vs_bk3(dst_batched_view);
+    const double rel_err_dealii_new     = rel_err_vs_bk3(dst_dealii_new);
 
     // -- performance: best-of-5, same methodology as the rest of this file --
     const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
@@ -593,6 +614,8 @@ namespace multigrid
       time_vmult([&]() { system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src); });
     const double best_batched_view =
       time_vmult([&]() { system_matrix->vmult_dealii_batched_view(dst_batched_view, src); });
+    const double best_dealii_new =
+      time_vmult([&]() { system_matrix->vmult_dealii_new(dst_dealii_new, src_new); });
 
     vmult_timing_table.add_value("cells", triangulation.n_global_active_cells());
     vmult_timing_table.add_value("dofs", dof_handler.n_dofs());
@@ -602,6 +625,7 @@ namespace multigrid
     vmult_timing_table.add_value("t_batched", best_batched);
     vmult_timing_table.add_value("t_batched_fused", best_batched_fused);
     vmult_timing_table.add_value("t_batched_view", best_batched_view);
+    vmult_timing_table.add_value("t_dealii_new", best_dealii_new);
 
     // Speedups are relative to vmult_dealii() (real deal.II kernels) --
     // that's the baseline this whole comparison is meant to answer "how
@@ -616,6 +640,7 @@ namespace multigrid
     vmult_speedup_table.add_value("batched_vs_dealii", best_dealii / best_batched);
     vmult_speedup_table.add_value("batched_view_vs_dealii", best_dealii / best_batched_view);
     vmult_speedup_table.add_value("batched_fused_vs_dealii", best_dealii / best_batched_fused);
+    vmult_speedup_table.add_value("dealii_new_vs_dealii", best_dealii / best_dealii_new);
 
     // Correctness (rel_err) stays relative to vmult_bk3(), the validated
     // ground truth.
@@ -626,6 +651,7 @@ namespace multigrid
     vmult_norm_table.add_value("rel_err_batched_vs_bk3", rel_err_batched);
     vmult_norm_table.add_value("rel_err_batched_fused_vs_bk3", rel_err_batched_fused);
     vmult_norm_table.add_value("rel_err_batched_view_vs_bk3", rel_err_batched_view);
+    vmult_norm_table.add_value("rel_err_dealii_new_vs_bk3", rel_err_dealii_new);
   }
 
 
@@ -738,12 +764,15 @@ namespace multigrid
             vmult_timing_table.set_precision("t_batched_fused", 4);
             vmult_timing_table.set_scientific("t_batched_view", true);
             vmult_timing_table.set_precision("t_batched_view", 4);
+            vmult_timing_table.set_scientific("t_dealii_new", true);
+            vmult_timing_table.set_precision("t_dealii_new", 4);
 
             vmult_speedup_table.set_precision("bk3_vs_dealii", 3);
             vmult_speedup_table.set_precision("bk3_abstracted_vs_bk3", 3);
             vmult_speedup_table.set_precision("batched_vs_dealii", 3);
             vmult_speedup_table.set_precision("batched_view_vs_dealii", 3);
             vmult_speedup_table.set_precision("batched_fused_vs_dealii", 3);
+            vmult_speedup_table.set_precision("dealii_new_vs_dealii", 3);
 
             vmult_norm_table.set_scientific("rel_err_dealii_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_dealii_vs_bk3", 3);
@@ -755,6 +784,8 @@ namespace multigrid
             vmult_norm_table.set_precision("rel_err_batched_fused_vs_bk3", 3);
             vmult_norm_table.set_scientific("rel_err_batched_view_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_batched_view_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_dealii_new_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_dealii_new_vs_bk3", 3);
 
             std::cout << "-- vmult timing comparison --" << std::endl;
             vmult_timing_table.write_text(std::cout);
@@ -804,6 +835,7 @@ main(int argc, char *argv[])
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
+      unsigned int dimension         = 3;
       unsigned int degree            = numbers::invalid_unsigned_int;
       std::size_t  maxsize           = static_cast<std::size_t>(-1);
       std::size_t  minsize           = 1;
@@ -813,35 +845,51 @@ main(int argc, char *argv[])
           if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
-                      << "./program degree minsize maxsize doubling" << std::endl
+                      << "./program dimension degree minsize maxsize doubling" << std::endl
                       << "The parameters degree to maxsize are integers, "
                       << "the last selects between a square mesh or a doubling mesh" << std::endl;
           return 1;
         }
 
       if (argc > 1)
-        degree = std::atoi(argv[1]);
+        dimension = std::atoi(argv[1]);
       if (argc > 2)
-        minsize = std::atoll(argv[2]);
+        degree = std::atoi(argv[2]);
       if (argc > 3)
-        maxsize = std::atoll(argv[3]);
+        minsize = std::atoll(argv[3]);
       if (argc > 4)
-        use_doubling_mesh = argv[4][0] == 'd';
+        maxsize = std::atoll(argv[4]);
+      if (argc > 5)
+        use_doubling_mesh = argv[5][0] == 'd';
+
+
+      AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         std::cout << "Settings of parameters: " << std::endl
                   << "Number of MPI ranks:            "
                   << Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << std::endl
+                  << "Dimension:                      " << dimension << std::endl
                   << "Polynomial degree:              " << degree << std::endl
                   << "Minimum size:                   " << minsize << std::endl
                   << "Maximum size:                   " << maxsize << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
                   << std::endl;
 
-      LaplaceRunTime<dimension, minimal_degree, maximal_degree> run(degree,
-                                                                    minsize,
-                                                                    maxsize,
-                                                                    use_doubling_mesh);
+      if (dimension == 2)
+        {
+          LaplaceRunTime<2, minimal_degree, maximal_degree> run(degree,
+                                                                minsize,
+                                                                maxsize,
+                                                                use_doubling_mesh);
+        }
+      else if (dimension == 3)
+        {
+          LaplaceRunTime<3, minimal_degree, maximal_degree> run(degree,
+                                                                minsize,
+                                                                maxsize,
+                                                                use_doubling_mesh);
+        }
     }
   catch (std::exception &exc)
     {

@@ -12,13 +12,53 @@
 #include "kernels/portable_local_laplace_operator.h"
 #include "kernels/portable_local_laplace_operator_batched.h"
 #include "kernels/portable_local_laplace_operator_batched_view.h"
+#include "matrix_free_dealii/portable_fe_evaluation.h"
+#include "matrix_free_dealii/portable_matrix_free.h"
+#include "matrix_free_dealii/portable_matrix_free.templates.h"
 #include "operators/portable_laplace_operator_quad.h"
+
 
 
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
+  // Same as LocalLaplaceOperatorStep64 (portable_local_laplace_operator.h),
+  // but built on Copy::Portable::MatrixFree/FEEvaluation instead of real
+  // deal.II's own -- exercises the local matrix_free_dealii port, in
+  // particular FEEvaluationImpl's evaluate()/integrate() now reading shape
+  // data from SharedData's shared-memory-staged copies rather than
+  // precomputed_data (global memory).
+  template <int dim, int fe_degree, int n_q_points_1d, typename number>
+  class LocalLaplaceOperatorNew
+  {
+  public:
+    static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
+
+    LocalLaplaceOperatorNew() = default;
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const typename Copy::Portable::MatrixFree<dim, number>::Data *data,
+               const Copy::Portable::DeviceVector<number>                   &src,
+               Copy::Portable::DeviceVector<number>                         &dst) const
+    {
+      Copy::Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+      fe_eval.evaluate(EvaluationFlags::gradients);
+
+      data->for_each_quad_point([&](const int q_point)
+                                  { fe_eval.submit_gradient(fe_eval.get_gradient(q_point), q_point); });
+
+      fe_eval.integrate(EvaluationFlags::gradients);
+
+      fe_eval.distribute_local_to_global(dst);
+    }
+  };
+
+
+
   template <int dim, int fe_degree, typename number>
   class LaplaceOperator : public LaplaceOperatorBase<dim, number>
   {
@@ -61,6 +101,11 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
+    vmult_dealii_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
     vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
                 const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
                 const bool ghost_exchange_on,
@@ -74,6 +119,18 @@ namespace Portable
     void
     initialize_dof_vector(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const override;
+
+    // vmult_dealii_new() needs both its src and dst vectors initialized
+    // against matrix_free_new specifically: Copy::Portable::MatrixFree::
+    // distributed_cell_loop() picks its dof_handler_index by comparing
+    // dst.get_partitioner().get() against each registered DoFHandler's own
+    // partitioner pointer by identity, so a vector initialized against the
+    // real (separate) matrix_free -- as initialize_dof_vector() above does
+    // -- never matches, regardless of whether the underlying dof layout is
+    // equivalent.
+    void
+    initialize_dof_vector_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const;
 
     void
     compute_diagonal() override;
@@ -99,6 +156,12 @@ namespace Portable
 
     const MatrixFree<dim, number> &
     get_matrix_free() const override;
+
+    // matrix_free_new's own accessor -- see initialize_dof_vector_new()'s
+    // comment for why vmult_dealii_new()'s vectors need matrix_free_new
+    // specifically, not the real matrix_free above.
+    const Copy::Portable::MatrixFree<dim, number> &
+    get_matrix_free_new() const;
 
     const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const override;
@@ -145,6 +208,10 @@ namespace Portable
 
     MatrixFree<dim, number> matrix_free;
 
+    // Local matrix_free_dealii port of the above, filled identically -- see
+    // vmult_dealii_new()/LocalLaplaceOperatorNew.
+    Copy::Portable::MatrixFree<dim, number> matrix_free_new;
+
     ObserverPointer<const AffineConstraints<number>> constraints;
 
     static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
@@ -177,6 +244,12 @@ namespace Portable
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
+
+    typename Copy::Portable::MatrixFree<dim, number>::AdditionalData additional_data_new;
+    additional_data_new.mapping_update_flags =
+      update_gradients | update_JxW_values | update_quadrature_points;
+    additional_data_new.overlap_communication_computation = overlap_communication_computation;
+    matrix_free_new.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data_new);
 
     setup_dof_indices_per_color();
 
@@ -211,6 +284,21 @@ namespace Portable
 
   template <int dim, int fe_degree, typename number>
   void
+  LaplaceOperator<dim, fe_degree, number>::vmult_dealii_new(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+
+    LocalLaplaceOperatorNew<dim, fe_degree, fe_degree + 1, number> cell_operator;
+
+    matrix_free_new.cell_loop(cell_operator, src, dst);
+
+    matrix_free_new.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
   LaplaceOperator<dim, fe_degree, number>::vmult_bk3(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
@@ -238,26 +326,26 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-    {
-      const unsigned int n_cells = colored_graph[color].size();
+      {
+        const unsigned int n_cells = colored_graph[color].size();
 
-      if (n_cells > 0)
-        {
-          const auto &precomputed_data = matrix_free.get_data(color);
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
 
-          BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
-            precomputed_data.shape_values,
-            precomputed_data.co_shape_gradients,
-            G_tensors[color],
-            src_device,
-            dst_device,
-            dof_indices_per_color[color],
-            n_cells,
-            numBlocks,
-            threadsPerBlock,
-            n_cells_per_batch);
-        }
-    };
+            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock,
+              n_cells_per_batch);
+          }
+      };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -335,26 +423,26 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-    {
-      const unsigned int n_cells = colored_graph[color].size();
+      {
+        const unsigned int n_cells = colored_graph[color].size();
 
-      if (n_cells > 0)
-        {
-          const auto &precomputed_data = matrix_free.get_data(color);
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
 
-          BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
-            precomputed_data.shape_values,
-            precomputed_data.co_shape_gradients,
-            G_tensors[color],
-            src_device,
-            dst_device,
-            dof_indices_per_color[color],
-            n_cells,
-            numBlocks,
-            threadsPerBlock,
-            n_cells_per_batch);
-        }
-    };
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
+              precomputed_data.shape_values,
+              precomputed_data.co_shape_gradients,
+              G_tensors[color],
+              src_device,
+              dst_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock,
+              n_cells_per_batch);
+          }
+      };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -470,23 +558,23 @@ namespace Portable
       {
         // helper to process one color
         auto do_color = [&](const unsigned int color)
-        {
-          using TeamPolicy =
-            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+          {
+            using TeamPolicy =
+              Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
 
 
-          const auto &gpu_data = matrix_free.get_data(color, 0);
+            const auto &gpu_data = matrix_free.get_data(color, 0);
 
-          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+            auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
 
-          Portable::internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
-            cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
+            Portable::internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+              cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
 
-          Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
-                                 std::to_string(color),
-                               team_policy,
-                               apply_kernel);
-        };
+            Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
+                                   std::to_string(color),
+                                 team_policy,
+                                 apply_kernel);
+          };
 
         src.update_ghost_values_start(0);
 
@@ -576,21 +664,21 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-    {
-      const auto &gpu_data = matrix_free.get_data(color, 0);
+      {
+        const auto &gpu_data = matrix_free.get_data(color, 0);
 
-      if (gpu_data.n_cells > 0)
-        cell_loop_batched_launch<dim, fe_degree, fe_degree + 1, number>(
-          cell_operator,
-          gpu_data,
-          this->dof_indices_per_color[color],
-          this->G_tensors[color],
-          src,
-          dst,
-          numBlocks,
-          threadsPerBlock,
-          n_cells_per_batch);
-    };
+        if (gpu_data.n_cells > 0)
+          cell_loop_batched_launch<dim, fe_degree, fe_degree + 1, number>(
+            cell_operator,
+            gpu_data,
+            this->dof_indices_per_color[color],
+            this->G_tensors[color],
+            src,
+            dst,
+            numBlocks,
+            threadsPerBlock,
+            n_cells_per_batch);
+      };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -660,20 +748,20 @@ namespace Portable
 
     // helper to process one color
     auto do_color = [&](const unsigned int color)
-    {
-      const auto &gpu_data = matrix_free.get_data(color, 0);
+      {
+        const auto &gpu_data = matrix_free.get_data(color, 0);
 
-      if (gpu_data.n_cells > 0)
-        cell_loop_batched_launch_view<dim, fe_degree, fe_degree + 1, number>(
-          cell_operator,
-          gpu_data,
-          this->dof_indices_per_color[color],
-          src,
-          dst,
-          numBlocks,
-          threadsPerBlock,
-          n_cells_per_batch);
-    };
+        if (gpu_data.n_cells > 0)
+          cell_loop_batched_launch_view<dim, fe_degree, fe_degree + 1, number>(
+            cell_operator,
+            gpu_data,
+            this->dof_indices_per_color[color],
+            src,
+            dst,
+            numBlocks,
+            threadsPerBlock,
+            n_cells_per_batch);
+      };
 
     if (matrix_free.use_overlap_communication_computation())
       {
@@ -757,23 +845,23 @@ namespace Portable
       {
         // helper to process one color
         auto do_color = [&](const unsigned int color)
-        {
-          using TeamPolicy =
-            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+          {
+            using TeamPolicy =
+              Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
 
 
-          const auto &gpu_data = matrix_free.get_data(color, 0);
+            const auto &gpu_data = matrix_free.get_data(color, 0);
 
-          auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
+            auto team_policy = TeamPolicy(exec, gpu_data.n_cells, Kokkos::AUTO);
 
-          internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
-            cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
+            internal::ApplyCellKernel<dim, number, Functor> apply_kernel(
+              cell_operator, gpu_data, this->dof_indices_per_color[color], src, dst);
 
-          Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
-                                 std::to_string(color),
-                               team_policy,
-                               apply_kernel);
-        };
+            Kokkos::parallel_for("dealii::MatrixFree::distributed_cell_loop color " +
+                                   std::to_string(color),
+                                 team_policy,
+                                 apply_kernel);
+          };
 
         if (ghost_exchange_on)
           src.update_ghost_values_start(0);
@@ -1019,10 +1107,25 @@ namespace Portable
   }
 
   template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::initialize_dof_vector_new(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const
+  {
+    matrix_free_new.initialize_dof_vector(vec);
+  }
+
+  template <int dim, int fe_degree, typename number>
   const MatrixFree<dim, number> &
   LaplaceOperator<dim, fe_degree, number>::get_matrix_free() const
   {
     return matrix_free;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  const Copy::Portable::MatrixFree<dim, number> &
+  LaplaceOperator<dim, fe_degree, number>::get_matrix_free_new() const
+  {
+    return matrix_free_new;
   }
 
   template <int dim, int fe_degree, typename number>
