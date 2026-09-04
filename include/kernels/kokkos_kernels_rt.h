@@ -545,7 +545,7 @@ namespace Portable
                     Number d_G[symmetric_tensor_dimension];
                     Number u[dim];
 
-                    if constexpr (dim == 2)
+                    if (dim == 2)
                       {
                         const int p = tid % n_q;
 
@@ -563,7 +563,7 @@ namespace Portable
                             s_uq_1[shm_idx] = d_G[1] * u[0] + d_G[2] * u[1];
                           }
                       }
-                    else if constexpr (dim == 3)
+                    else if (dim == 3)
                       {
                         const int p = tid % (n_q * n_q) / n_q;
                         const int q = tid % n_q;
@@ -1514,7 +1514,7 @@ namespace Portable
                         eb * nelmtPerBatch * symmetric_tensor_dimension * n_q_total +
                         e * symmetric_tensor_dimension * n_q_total;
 
-                      if constexpr (dim == 2)
+                      if (dim == 2)
                         {
                           const int q = tid % co_dimension_size;
 
@@ -1683,7 +1683,7 @@ namespace Portable
                       Number qr[dim];
                       Number qs[dim];
 
-                      if constexpr (dim == 2)
+                      if (dim == 2)
                         {
                           const int q = tid % co_dimension_size;
 
@@ -2812,7 +2812,7 @@ namespace Portable
                         eb * nelmtPerBatch * symmetric_tensor_dimension * n_q_total +
                         e * symmetric_tensor_dimension * n_q_total;
 
-                      if constexpr (dim == 2)
+                      if (dim == 2)
                         {
                           const int q = tid % co_dimension_size;
 
@@ -2867,7 +2867,7 @@ namespace Portable
                               s_duq_1[idx1] = qr[1] * d_G[0][1] + qs[1] * d_G[1][1];
                             }
                         }
-                      else if constexpr (dim == 3)
+                      else if (dim == 3)
                         {
                           const int q = (tid % co_dimension_size) / n_q;
                           const int r = tid % n_q;
@@ -2983,7 +2983,7 @@ namespace Portable
 
                       Number u[dim];
 
-                      if constexpr (dim == 2)
+                      if (dim == 2)
                         {
                           const int q = tid % co_dimension_size;
 
@@ -3030,7 +3030,7 @@ namespace Portable
                             }
                         }
 
-                      else if constexpr (dim == 3)
+                      else if (dim == 3)
                         {
                           Number qt[dim];
 
@@ -4654,18 +4654,15 @@ namespace Portable
 
       const int nelmt = n_boundary_faces;
 
-      const int nelmtPerBatch =
-        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
-          1 :
-          static_cast<int>(n_faces_per_batch);
-      const int numBlocks =
-        (n_blocks == numbers::invalid_unsigned_int) ?
-          std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
-          static_cast<int>(n_blocks);
-      const int threadsPerBlock =
-        (threads_per_block == numbers::invalid_unsigned_int) ?
-          std::min(nelmtPerBatch * n_q_face, 256) :
-          static_cast<int>(threads_per_block);
+      const int nelmtPerBatch   = (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+                                    1 :
+                                    static_cast<int>(n_faces_per_batch);
+      const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
+                                    std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
+                                    static_cast<int>(n_blocks);
+      const int threadsPerBlock = (threads_per_block == numbers::invalid_unsigned_int) ?
+                                    std::min(nelmtPerBatch * n_q_face, 256) :
+                                    static_cast<int>(threads_per_block);
 
       // per team scratch: collocation-gradient matrix (n_q*n_q)
       //                 + face values buffer            (buffer_size)
@@ -4690,9 +4687,8 @@ namespace Portable
 
           // buffer index of the (face_in_batch, component) trace, one n_q_face-sized
           // block per component, `n_face_dofs` of those per face.
-          const auto slot_index = [=](int face_in_batch, int component) {
-            return face_in_batch * n_components + component;
-          };
+          const auto slot_index = [=](int face_in_batch, int component)
+            { return face_in_batch * n_components + component; };
 
           // tangent_index-th axis that is not normal_dir; dim == 2 has a single
           // tangent axis, dim == 3 looks it up in this table.
@@ -4701,12 +4697,13 @@ namespace Portable
             {0, 2}, // normal_dir == 1
             {0, 1}  // normal_dir == 2
           };
-          const auto tangent_direction = [=](int normal_dir, int tang_index) {
-            if constexpr (dim == 2)
-              return 1 - normal_dir;
-            else
-              return lookup_tangents_3d[normal_dir][tang_index];
-          };
+          const auto tangent_direction = [=](int normal_dir, int tang_index)
+            {
+              if constexpr (dim == 2)
+                return 1 - normal_dir;
+              else
+                return lookup_tangents_3d[normal_dir][tang_index];
+            };
 
           const int threadIdx = team_member.team_rank();
           const int blockSize = team_member.team_size();
@@ -4752,13 +4749,23 @@ namespace Portable
               for (int tang_index = 0; tang_index < dim - 1; ++tang_index)
                 {
                   if (tang_index == 0)
-                    apply<dim - 1, 0, n_q, n_q, true, false, Number>(
-                      team_member, s_co_shape_gradients, s_face_values, s_temp,
-                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                    apply<dim - 1, 0, n_q, n_q, true, false, Number>(team_member,
+                                                                     s_co_shape_gradients,
+                                                                     s_face_values,
+                                                                     s_temp,
+                                                                     n_faces_this_batch *
+                                                                       n_face_dofs,
+                                                                     threadIdx,
+                                                                     blockSize);
                   else if constexpr (dim == 3)
-                    apply<dim - 1, 1, n_q, n_q, true, false, Number>(
-                      team_member, s_co_shape_gradients, s_face_values, s_temp,
-                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                    apply<dim - 1, 1, n_q, n_q, true, false, Number>(team_member,
+                                                                     s_co_shape_gradients,
+                                                                     s_face_values,
+                                                                     s_temp,
+                                                                     n_faces_this_batch *
+                                                                       n_face_dofs,
+                                                                     threadIdx,
+                                                                     blockSize);
 
                   for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
                        tid += blockSize)
@@ -4768,11 +4775,11 @@ namespace Portable
                       const int component     = dof_slot % n_components;
                       const int face_in_batch = dof_slot / n_face_dofs;
 
-                      const int face       = face_batch * nelmtPerBatch + face_in_batch;
-                      const int normal_dir = face_info(face, 2) / 2;
+                      const int face        = face_batch * nelmtPerBatch + face_in_batch;
+                      const int normal_dir  = face_info(face, 2) / 2;
                       const int tangent_dir = tangent_direction(normal_dir, tang_index);
 
-                      const int    slot = slot_index(face_in_batch, component);
+                      const int    slot      = slot_index(face_in_batch, component);
                       const Number m_tangent = jacobians_times_normal_boundary_face(
                         face * dim * n_q_face + tangent_dir * n_q_face + q_face);
                       s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face] +=
@@ -4798,9 +4805,8 @@ namespace Portable
 
                   Number m[dim];
                   for (int axis = 0; axis < dim; ++axis)
-                    m[axis] =
-                      jacobians_times_normal_boundary_face(face * dim * n_q_face +
-                                                           axis * n_q_face + q_face);
+                    m[axis] = jacobians_times_normal_boundary_face(face * dim * n_q_face +
+                                                                   axis * n_q_face + q_face);
 
                   const Number jxw            = jxw_boundary_face(face * n_q_face + q_face);
                   const Number penalty        = penalty_parameters_boundary_face[face];
@@ -4809,8 +4815,8 @@ namespace Portable
                   Number u_ref[n_components], dn_ref[n_components];
                   for (int component = 0; component < n_components; ++component)
                     {
-                      const int slot = slot_index(face_in_batch, component);
-                      u_ref[component]  = s_face_values[slot * n_q_face + q_face];
+                      const int slot   = slot_index(face_in_batch, component);
+                      u_ref[component] = s_face_values[slot * n_q_face + q_face];
                       dn_ref[component] =
                         s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face];
                     }
@@ -4868,8 +4874,8 @@ namespace Portable
                       const int component     = dof_slot % n_components;
                       const int face_in_batch = dof_slot / n_face_dofs;
 
-                      const int face       = face_batch * nelmtPerBatch + face_in_batch;
-                      const int normal_dir = face_info(face, 2) / 2;
+                      const int face        = face_batch * nelmtPerBatch + face_in_batch;
+                      const int normal_dir  = face_info(face, 2) / 2;
                       const int tangent_dir = tangent_direction(normal_dir, tang_index);
 
                       // move the tangential test-gradient slab into s_temp for apply()
@@ -4880,13 +4886,23 @@ namespace Portable
                   team_member.team_barrier();
 
                   if (tang_index == 0)
-                    apply<dim - 1, 0, n_q, n_q, false, true, Number>(
-                      team_member, s_co_shape_gradients, s_temp, s_face_values,
-                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                    apply<dim - 1, 0, n_q, n_q, false, true, Number>(team_member,
+                                                                     s_co_shape_gradients,
+                                                                     s_temp,
+                                                                     s_face_values,
+                                                                     n_faces_this_batch *
+                                                                       n_face_dofs,
+                                                                     threadIdx,
+                                                                     blockSize);
                   else if constexpr (dim == 3)
-                    apply<dim - 1, 1, n_q, n_q, false, true, Number>(
-                      team_member, s_co_shape_gradients, s_temp, s_face_values,
-                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                    apply<dim - 1, 1, n_q, n_q, false, true, Number>(team_member,
+                                                                     s_co_shape_gradients,
+                                                                     s_temp,
+                                                                     s_face_values,
+                                                                     n_faces_this_batch *
+                                                                       n_face_dofs,
+                                                                     threadIdx,
+                                                                     blockSize);
                 }
 
               for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
@@ -4958,10 +4974,10 @@ namespace Portable
                                     std::min(nelmtPerBatch * Utilities::pow(n_q, dim - 1), 512) :
                                     static_cast<int>(threads_per_block);
 
-      const unsigned int ssize = n_n * n_q + n_t * n_q // shape values
-                                 + 4 * n_q             // interpolate_quad_to_boundary
-                                 + n_components * nelmtPerBatch * n_q_total // s_values
-                                 + 2 * nelmtPerBatch * n_q_total * dim;     // ping-pong scratch
+      const unsigned int ssize      = n_n * n_q + n_t * n_q // shape values
+                                      + 4 * n_q             // interpolate_quad_to_boundary
+                                      + n_components * nelmtPerBatch * n_q_total // s_values
+                                      + 2 * nelmtPerBatch * n_q_total * dim; // ping-pong scratch
       const unsigned int shmem_size = ssize * sizeof(Number);
 
       typedef Kokkos::TeamPolicy<>::member_type MemberType;
