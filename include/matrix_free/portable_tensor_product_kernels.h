@@ -292,6 +292,241 @@ namespace Custom
     }
 
     /**
+     * Anisotropic variant of apply(): the combined extent of the
+     * not-yet-transformed axes perpendicular to `direction` (`n_blocks2`) is
+     * supplied explicitly instead of being assumed to be
+     * pow(n_rows, dim - direction - 1). This is needed for tensor-product
+     * elements whose 1D size differs between axes, e.g. Raviart-Thomas, where
+     * one axis carries the normal component (n_rows here) and the others the
+     * tangential one. `n_blocks1` stays pow(n_columns, direction), which is
+     * unaffected since every already-transformed axis has extent n_columns.
+     */
+    template <int  dim,
+              int  direction,
+              int  n_rows,
+              int  n_columns,
+              int  n_blocks2,
+              bool contract_over_rows,
+              bool add,
+              typename Number>
+    DEAL_II_HOST_DEVICE inline void
+    apply_anisotropic(const TeamHandle &team_member,
+                      const Number     *matrix,
+                      const Number     *in,
+                      Number           *out,
+                      const int         n_elements_in_current_batch,
+                      const int         thread_id,
+                      const int         block_size)
+    {
+      static_assert(direction >= 0 && direction < dim, "direction must be in [0, dim)");
+
+      constexpr int mm = contract_over_rows ? n_rows : n_columns;
+      constexpr int nn = contract_over_rows ? n_columns : n_rows;
+
+      constexpr int n_blocks1      = Utilities::pow(n_columns, direction);
+      constexpr int n_in_per_elmt  = n_blocks1 * mm * n_blocks2;
+      constexpr int n_out_per_elmt = n_blocks1 * nn * n_blocks2;
+
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_blocks1 * n_blocks2;
+           tid += block_size)
+        {
+          const int e   = tid / (n_blocks1 * n_blocks2);
+          const int rem = tid % (n_blocks1 * n_blocks2);
+          const int i2  = rem / n_blocks1;
+          const int i1  = rem % n_blocks1;
+
+          apply_matrix_vector_product<n_rows,
+                                      n_columns,
+                                      contract_over_rows,
+                                      add,
+                                      n_blocks1,
+                                      n_blocks1>(matrix,
+                                                 in + e * n_in_per_elmt + i2 * n_blocks1 * mm + i1,
+                                                 out + e * n_out_per_elmt + i2 * n_blocks1 * nn + i1);
+        }
+
+      team_member.team_barrier();
+    }
+
+
+    /**
+     * Collocation gradient of `n_components` scalar fields sampled at the
+     * n_q^dim quadrature points of a cell (batch), followed by a pointwise
+     * symmetric-tensor multiply that maps the `dim` reference-space derivatives
+     * to `dim` output directions:
+     *
+     *   gradients[c][d1][q] = sum_{d0} ( d/dxi_{d0} values[c] )(q) * G(q)[d0][d1]
+     *
+     * The 1D collocation-derivative matrix `co_shape_gradients` is n_q x n_q,
+     * row-major (`[row * n_q + col]`, contracting over the row). `G` is loaded
+     * per quadrature point from `symmetric_tensor`, which stores the
+     * (dim*(dim+1))/2 independent entries element-major as
+     * `[elem][sym_index][q]`, sym_index enumerating (d0,d1) with d1 >= d0 in
+     * row-major order. All of `symmetric_tensor`, `values[c]` (length n_q^dim
+     * per element) and `gradients[c]` (length dim*n_q^dim per element, layout
+     * [dir][q]) are indexed by the *local* batch element, so the caller passes
+     * pointers already offset to the start of the current batch.
+     */
+    template <int dim, int n_components, int n_q, typename Number>
+    DEAL_II_HOST_DEVICE inline void
+    evaluate_vector_gradients_and_multiply_symmetric_tensor(
+      const TeamHandle    &team_member,
+      const Number        *co_shape_gradients,
+      const Number        *symmetric_tensor,
+      const Number *const *values,
+      Number *const       *gradients,
+      const int            n_elements_in_current_batch,
+      const int            thread_id,
+      const int            block_size)
+    {
+      constexpr int n_q_total = Utilities::pow(n_q, dim);
+      constexpr int n_sym     = (dim * (dim + 1)) / 2;
+      constexpr int n_planes  = Utilities::pow(n_q, dim - 1);
+
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_planes; tid += block_size)
+        {
+          const int e     = tid / n_planes;
+          const int plane = tid % n_planes;
+          const int a1    = plane % n_q;                    // fixed index along axis 1
+          const int a2    = (dim == 3) ? (plane / n_q) : 0; // fixed index along axis 2
+
+          const int e_val  = e * n_q_total;
+          const int e_grad = e * dim * n_q_total;
+          const int e_ten  = e * n_sym * n_q_total;
+
+          // Derivative rows that stay fixed as this thread sweeps axis 0, plus
+          // the axis-0 fiber of every component (contiguous, reused for all a0).
+          Number d_row_1[n_q];
+          Number d_row_2[n_q];
+          Number fiber_0[n_components][n_q];
+          for (int n = 0; n < n_q; ++n)
+            {
+              d_row_1[n] = co_shape_gradients[n * n_q + a1];
+              if constexpr (dim == 3)
+                d_row_2[n] = co_shape_gradients[n * n_q + a2];
+              for (int c = 0; c < n_components; ++c)
+                fiber_0[c][n] = values[c][e_val + (n + a1 * n_q + a2 * n_q * n_q)];
+            }
+
+          for (int a0 = 0; a0 < n_q; ++a0) // output quadrature point along axis 0
+            {
+              const int q = a0 + a1 * n_q + a2 * n_q * n_q;
+
+              Number G[dim][dim];
+              for (int d0 = 0, s = 0; d0 < dim; ++d0)
+                for (int d1 = d0; d1 < dim; ++d1, ++s)
+                  {
+                    const Number g   = symmetric_tensor[e_ten + s * n_q_total + q];
+                    G[d0][d1]        = g;
+                    G[d1][d0]        = g;
+                  }
+
+              for (int c = 0; c < n_components; ++c)
+                {
+                  Number grad_ref[dim];
+                  for (int d = 0; d < dim; ++d)
+                    grad_ref[d] = 0;
+
+                  for (int n = 0; n < n_q; ++n)
+                    {
+                      grad_ref[0] += co_shape_gradients[n * n_q + a0] * fiber_0[c][n];
+                      grad_ref[1] += d_row_1[n] * values[c][e_val + (a0 + n * n_q + a2 * n_q * n_q)];
+                      if constexpr (dim == 3)
+                        grad_ref[2] +=
+                          d_row_2[n] * values[c][e_val + (a0 + a1 * n_q + n * n_q * n_q)];
+                    }
+
+                  for (int d1 = 0; d1 < dim; ++d1)
+                    {
+                      Number acc = 0;
+                      for (int d0 = 0; d0 < dim; ++d0)
+                        acc += grad_ref[d0] * G[d0][d1];
+                      gradients[c][e_grad + d1 * n_q_total + q] = acc;
+                    }
+                }
+            }
+        }
+
+      team_member.team_barrier();
+    }
+
+
+    /**
+     * Transpose of the collocation-gradient part of
+     * evaluate_vector_gradients_and_multiply_symmetric_tensor(): given the
+     * `dim` direction components of the gradient of each of `n_components`
+     * fields at the quadrature points, apply the transpose 1D
+     * collocation-derivative along each axis and accumulate into `values[c]`
+     * (which is *added to*, not overwritten):
+     *
+     *   values[c][q] += sum_{d} ( D_d^T gradients[c][d] )(q)
+     *
+     * Layout and batch-local indexing conventions match
+     * evaluate_vector_gradients_and_multiply_symmetric_tensor().
+     */
+    template <int dim, int n_components, int n_q, typename Number>
+    DEAL_II_HOST_DEVICE inline void
+    integrate_vector_gradients(const TeamHandle    &team_member,
+                               const Number        *co_shape_gradients,
+                               const Number *const *gradients,
+                               Number *const       *values,
+                               const int            n_elements_in_current_batch,
+                               const int            thread_id,
+                               const int            block_size)
+    {
+      constexpr int n_q_total = Utilities::pow(n_q, dim);
+      constexpr int n_planes  = Utilities::pow(n_q, dim - 1);
+
+      for (int tid = thread_id; tid < n_elements_in_current_batch * n_planes; tid += block_size)
+        {
+          const int e     = tid / n_planes;
+          const int plane = tid % n_planes;
+          const int a1    = plane % n_q;
+          const int a2    = (dim == 3) ? (plane / n_q) : 0;
+
+          const int e_val  = e * n_q_total;
+          const int e_grad = e * dim * n_q_total;
+
+          Number d_row_1[n_q];
+          Number d_row_2[n_q];
+          Number fiber_0[n_components][n_q];
+          for (int n = 0; n < n_q; ++n)
+            {
+              d_row_1[n] = co_shape_gradients[a1 * n_q + n];
+              if constexpr (dim == 3)
+                d_row_2[n] = co_shape_gradients[a2 * n_q + n];
+              for (int c = 0; c < n_components; ++c)
+                fiber_0[c][n] =
+                  gradients[c][e_grad + 0 * n_q_total + (n + a1 * n_q + a2 * n_q * n_q)];
+            }
+
+          for (int a0 = 0; a0 < n_q; ++a0)
+            {
+              const int q = a0 + a1 * n_q + a2 * n_q * n_q;
+
+              for (int c = 0; c < n_components; ++c)
+                {
+                  Number acc = 0;
+                  for (int n = 0; n < n_q; ++n)
+                    {
+                      acc += fiber_0[c][n] * co_shape_gradients[a0 * n_q + n];
+                      acc += gradients[c][e_grad + 1 * n_q_total + (a0 + n * n_q + a2 * n_q * n_q)] *
+                             d_row_1[n];
+                      if constexpr (dim == 3)
+                        acc +=
+                          gradients[c][e_grad + 2 * n_q_total + (a0 + a1 * n_q + n * n_q * n_q)] *
+                          d_row_2[n];
+                    }
+                  values[c][e_val + q] += acc;
+                }
+            }
+        }
+
+      team_member.team_barrier();
+    }
+
+
+    /**
      * View-based overload of apply() above.
      */
     template <int  dim,

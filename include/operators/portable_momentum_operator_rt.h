@@ -399,11 +399,20 @@ namespace Portable
             // std::cout << std::endl;
           }
 
-          quad_values = Kokkos::View<Number ***, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("quad_values", Kokkos::WithoutInitializing),
-            Utilities::pow(quadrature.size(), dim),
+          face_values_at_quads = Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("face_values_at_quads", Kokkos::WithoutInitializing),
+            Utilities::pow(quadrature.size(), dim - 1),
+            2 * dim,
             dim,
             n_cells);
+
+          face_normal_derivatives_at_quads =
+            Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
+              Kokkos::view_alloc("face_normal_derivatives_at_quads", Kokkos::WithoutInitializing),
+              Utilities::pow(quadrature.size(), dim - 1),
+              2 * dim,
+              dim,
+              n_cells);
         }
 
         compute_geometric_tensors(mapping, quadrature, dof_handler, n_cells);
@@ -1307,8 +1316,9 @@ namespace Portable
       void
       test(LinearAlgebra::distributed::Vector<Number, MemorySpace::Host>       &dst_host,
            const LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> &src_host,
-           const Number factor_mass    = Number(1),
-           const Number factor_laplace = Number(1))
+           const Number factor_mass          = Number(1),
+           const Number factor_laplace       = Number(1),
+           const bool   interpolate_to_faces = false)
       {
         LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> src, dst;
         src.reinit(partitioner);
@@ -1458,9 +1468,12 @@ namespace Portable
               geometric_tensor_stiffness,
               src_device,
               dst_device,
-              quad_values,
+              interpolate_quad_to_boundary,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
               dof_indices_per_cell,
               n_cells,
+              interpolate_to_faces,
               factor_mass,
               factor_laplace,
               1u,
@@ -1527,9 +1540,12 @@ namespace Portable
               geometric_tensor_stiffness,
               src_device,
               dst_device,
-              quad_values,
+              interpolate_quad_to_boundary,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
               dof_indices_per_cell,
               n_cells,
+              interpolate_to_faces,
               factor_mass,
               factor_laplace,
               1u,
@@ -1591,9 +1607,12 @@ namespace Portable
               geometric_tensor_stiffness,
               src_device,
               dst_device,
-              quad_values,
+              interpolate_quad_to_boundary,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
               dof_indices_per_cell,
               n_cells,
+              interpolate_to_faces,
               factor_mass,
               factor_laplace,
               1u,
@@ -1655,9 +1674,12 @@ namespace Portable
               geometric_tensor_stiffness,
               src_device,
               dst_device,
-              quad_values,
+              interpolate_quad_to_boundary,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
               dof_indices_per_cell,
               n_cells,
+              interpolate_to_faces,
               factor_mass,
               factor_laplace,
               1u,
@@ -1690,14 +1712,18 @@ namespace Portable
       // used as a boundary mask to distinguish which faces are on the boundary and which are not
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space> neighbor_cells;
 
-      Kokkos::View<Number ***, MemorySpace::Default::kokkos_space> quad_values;
-      std::shared_ptr<const Utilities::MPI::Partitioner>           partitioner;
+      // value and reference normal derivative of each component, interpolated to
+      // the quadrature points of every face: (n_q_face, 2*dim, n_components, n_cells)
+      Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_values_at_quads;
+      Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_normal_derivatives_at_quads;
+
+      std::shared_ptr<const Utilities::MPI::Partitioner> partitioner;
 
       mutable std::array<double, 15> timings;
 
       dealii::internal::MatrixFreeFunctions::ShapeInfo<Number> shape_info_cpu;
 
-      Kokkos::Array<internal::UnivariateShapeData<Number>, 2> shape_info;
+      Kokkos::Array<internal::MatrixFreeFunctions::UnivariateShapeData<Number>, 2> shape_info;
 
       ObserverPointer<const Quadrature<1>> quadrature;
 
