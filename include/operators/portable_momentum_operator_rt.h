@@ -364,6 +364,15 @@ namespace Portable
                               cell_indices[cell->active_cell_index()];
                           }
                       }
+                    else if (cell->face(f)->boundary_id() != 0)
+                      {
+                        // Dirichlet boundary (boundary_id != 0, see compute_boundary_faces):
+                        // not a real neighbor, but not skippable either -- compute_cell and
+                        // distribute_face_to_global must still write/read this face. A
+                        // Neumann boundary (boundary_id == 0) is left as invalid_unsigned_int
+                        // above, which is what makes those faces get skipped.
+                        neighbor_cells_host(f, cell_counter) = cell_counter;
+                      }
                   }
 
                 ++cell_counter;
@@ -464,7 +473,10 @@ namespace Portable
               }
         }
 
-        // enumerate faces once: [0] interior, [1] boundary.
+        // enumerate faces once: [0] interior, [1] Dirichlet boundary (boundary_id != 0).
+        // Neumann boundary faces (boundary_id == 0) need no entry here -- they are
+        // natural (zero flux) and are skipped entirely via neighbor_cells instead
+        // (see compute_cell_info and compute_boundary_faces).
         // entry = {cell_minus, cell_plus, f_minus, f_plus, orientation}
         face_info_cpu[0].clear();
         face_info_cpu[1].clear();
@@ -485,10 +497,14 @@ namespace Portable
 
                   if (cell->at_boundary(f))
                     {
-                      std::array<unsigned int, 5> info = {
-                        {cm, numbers::invalid_unsigned_int, f,
-                         static_cast<unsigned int>(cell->face(f)->boundary_id()), 0u}};
-                      face_info_cpu[1].push_back(info);
+                      // boundary_id == 0: Neumann, no entry needed (see comment above).
+                      if (cell->face(f)->boundary_id() != 0)
+                        {
+                          std::array<unsigned int, 5> info = {
+                            {cm, numbers::invalid_unsigned_int, f,
+                             static_cast<unsigned int>(cell->face(f)->boundary_id()), 0u}};
+                          face_info_cpu[1].push_back(info);
+                        }
                     }
                   else
                     {
@@ -1726,6 +1742,21 @@ namespace Portable
                   1u,
                   1u);
 
+                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_boundary_face,
+                  jxw_boundary_face,
+                  penalty_parameters_boundary_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[1],
+                  face_info_cpu[1].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
                   interpolate_quad_to_boundary,
@@ -1830,6 +1861,21 @@ namespace Portable
                   1u,
                   1u);
 
+                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_boundary_face,
+                  jxw_boundary_face,
+                  penalty_parameters_boundary_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[1],
+                  face_info_cpu[1].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
                   interpolate_quad_to_boundary,
@@ -1929,6 +1975,21 @@ namespace Portable
                   1u,
                   1u);
 
+                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_boundary_face,
+                  jxw_boundary_face,
+                  penalty_parameters_boundary_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[1],
+                  face_info_cpu[1].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
                   interpolate_quad_to_boundary,
@@ -2023,6 +2084,21 @@ namespace Portable
                   face_normal_derivatives_at_quads,
                   face_info[0],
                   face_info_cpu[0].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
+                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_boundary_face,
+                  jxw_boundary_face,
+                  penalty_parameters_boundary_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[1],
+                  face_info_cpu[1].size(),
                   factor_laplace,
                   1u,
                   1u,

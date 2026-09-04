@@ -4605,38 +4605,312 @@ namespace Portable
     }
 
 
-    // Boundary faces. Neumann only for now: the flux is zero, so this simply
-    // clears the boundary-face slots that compute_cell filled with the raw
-    // interpolation (otherwise distribute_face_to_global would add them as
-    // spurious flux). TODO: Dirichlet mirror.
+    // Dirichlet boundary faces (boundary_id != 0; g = 0 for now). Neumann boundary
+    // faces (boundary_id == 0) need no kernel at all: compute_cell and
+    // distribute_face_to_global already skip them via neighbor_cells, since their
+    // contribution is exactly zero. face_info here only lists Dirichlet faces (see
+    // compute_face_info), so every face this kernel touches gets the real treatment
+    // below -- no per-face boundary_id branch needed.
+    //
+    // Single-sided mirror of compute_inner_faces: the "minus" state is the real
+    // interior trace (read back from what compute_cell wrote), and the "plus"
+    // (ghost) state is synthesized in PHYSICAL space from the homogeneous Dirichlet
+    // condition once the Piola map has been applied, mirroring around g = 0:
+    //   u_phys_plus  = -u_phys_minus   (so the SIPG average {{u}} = 0 = g)
+    //   dn_phys_plus =  dn_phys_minus  (so the SIPG average {{du/dn}} = dn_phys_minus)
+    // Substituting m_plus = m_minus and piola_plus = piola_minus (same cell) into
+    // compute_inner_faces' step-3 formula with this mirror reduces to the formula
+    // used below; jacobians_times_normal_boundary_face / jxw_boundary_face /
+    // penalty_parameters_boundary_face already store only the one (interior) copy
+    // of that per-face geometry (penalty_parameters_boundary_face already carries
+    // the factor of 2 that comes from m_minus.norm() + m_plus.norm() collapsing to
+    // 2 * m_minus.norm()).
     template <int dim, int n_t, int n_q, typename Number>
     void
     compute_boundary_faces(
+      const DeviceView<Number> co_shape_gradients,
+      const DeviceView<Number> cell_piola,
+      const DeviceView<Number> jacobians_times_normal_boundary_face,
+      const DeviceView<Number> jxw_boundary_face,
+      const DeviceView<Number> penalty_parameters_boundary_face,
       Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_values_at_quads,
       Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>
         face_normal_derivatives_at_quads,
       const Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space> face_info,
-      const unsigned int                                                        n_boundary_faces)
+      const unsigned int                                                        n_boundary_faces,
+      const Number       factor_laplace    = Number(1),
+      const unsigned int n_faces_per_batch = numbers::invalid_unsigned_int,
+      const unsigned int n_blocks          = numbers::invalid_unsigned_int,
+      const unsigned int threads_per_block = numbers::invalid_unsigned_int)
     {
+      using Custom::Parallel::apply;
+
       if (n_boundary_faces == 0)
         return;
 
       constexpr int n_components = dim;
       constexpr int n_q_face     = Utilities::pow(n_q, dim - 1);
+      constexpr int n_face_dofs  = n_components; // one side only -- (component) tensors per face
+
+      const int nelmt = n_boundary_faces;
+
+      const int nelmtPerBatch =
+        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+          1 :
+          static_cast<int>(n_faces_per_batch);
+      const int numBlocks =
+        (n_blocks == numbers::invalid_unsigned_int) ?
+          std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
+          static_cast<int>(n_blocks);
+      const int threadsPerBlock =
+        (threads_per_block == numbers::invalid_unsigned_int) ?
+          std::min(nelmtPerBatch * n_q_face, 256) :
+          static_cast<int>(threads_per_block);
+
+      // per team scratch: collocation-gradient matrix (n_q*n_q)
+      //                 + face values buffer            (buffer_size)
+      //                 + apply() output buffer         (buffer_size)
+      //                 + face gradients buffer         (dim * buffer_size, one slab per axis)
+      const int          buffer_size = nelmtPerBatch * n_face_dofs * n_q_face;
+      const unsigned int ssize       = n_q * n_q + 2 * buffer_size + dim * buffer_size;
+      const unsigned int shmem_size  = ssize * sizeof(Number);
+
+      typedef Kokkos::TeamPolicy<>::member_type MemberType;
+      Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+      policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
       Kokkos::parallel_for(
-        Kokkos::RangePolicy<MemorySpace::Default::kokkos_space::execution_space>(
-          0, static_cast<int>(n_boundary_faces) * n_q_face),
-        KOKKOS_LAMBDA(const int tid) {
-          const int          face = tid / n_q_face;
-          const int          q    = tid % n_q_face;
-          const unsigned int cell = face_info(face, 0);
-          const unsigned int f    = face_info(face, 2);
+        policy, KOKKOS_LAMBDA(MemberType team_member) {
+          Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
-          for (int c = 0; c < n_components; ++c)
+          Number *s_co_shape_gradients = scratch;
+          Number *s_face_values        = s_co_shape_gradients + n_q * n_q;
+          Number *s_temp               = s_face_values + buffer_size;
+          Number *s_face_gradients     = s_temp + buffer_size;
+
+          // buffer index of the (face_in_batch, component) trace, one n_q_face-sized
+          // block per component, `n_face_dofs` of those per face.
+          const auto slot_index = [=](int face_in_batch, int component) {
+            return face_in_batch * n_components + component;
+          };
+
+          // tangent_index-th axis that is not normal_dir; dim == 2 has a single
+          // tangent axis, dim == 3 looks it up in this table.
+          constexpr int lookup_tangents_3d[3][2] = {
+            {1, 2}, // normal_dir == 0
+            {0, 2}, // normal_dir == 1
+            {0, 1}  // normal_dir == 2
+          };
+          const auto tangent_direction = [=](int normal_dir, int tang_index) {
+            if constexpr (dim == 2)
+              return 1 - normal_dir;
+            else
+              return lookup_tangents_3d[normal_dir][tang_index];
+          };
+
+          const int threadIdx = team_member.team_rank();
+          const int blockSize = team_member.team_size();
+
+          for (int idx = threadIdx; idx < n_q * n_q; idx += blockSize)
+            s_co_shape_gradients[idx] = co_shape_gradients[idx];
+          team_member.team_barrier();
+
+          int face_batch = team_member.league_rank();
+          while (face_batch < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
             {
-              face_values_at_quads(q, f, c, cell)             = Number(0);
-              face_normal_derivatives_at_quads(q, f, c, cell) = Number(0);
+              const int n_faces_this_batch =
+                std::min(nelmtPerBatch, nelmt - face_batch * nelmtPerBatch);
+
+              // ---- step 1: read the interior trace value and normal reference derivative ----
+              for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
+                   tid += blockSize)
+                {
+                  const int q_face        = tid % n_q_face;
+                  const int dof_slot      = tid / n_q_face;
+                  const int component     = dof_slot % n_components;
+                  const int face_in_batch = dof_slot / n_face_dofs;
+
+                  const int          face       = face_batch * nelmtPerBatch + face_in_batch;
+                  const unsigned int cell       = face_info(face, 0);
+                  const unsigned int local_face = face_info(face, 2);
+                  const int          normal_dir = face_info(face, 2) / 2;
+                  const int          slot       = slot_index(face_in_batch, component);
+
+                  // m = J^{-1} n, component along the normal reference axis
+                  const Number m_normal = jacobians_times_normal_boundary_face(
+                    face * dim * n_q_face + normal_dir * n_q_face + q_face);
+
+                  s_face_values[slot * n_q_face + q_face] =
+                    face_values_at_quads(q_face, local_face, component, cell);
+                  s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face] =
+                    face_normal_derivatives_at_quads(q_face, local_face, component, cell) *
+                    m_normal;
+                }
+              team_member.team_barrier();
+
+              // ---- step 2: add the tangential reference derivatives of the trace ----
+              for (int tang_index = 0; tang_index < dim - 1; ++tang_index)
+                {
+                  if (tang_index == 0)
+                    apply<dim - 1, 0, n_q, n_q, true, false, Number>(
+                      team_member, s_co_shape_gradients, s_face_values, s_temp,
+                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                  else if constexpr (dim == 3)
+                    apply<dim - 1, 1, n_q, n_q, true, false, Number>(
+                      team_member, s_co_shape_gradients, s_face_values, s_temp,
+                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+
+                  for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
+                       tid += blockSize)
+                    {
+                      const int q_face        = tid % n_q_face;
+                      const int dof_slot      = tid / n_q_face;
+                      const int component     = dof_slot % n_components;
+                      const int face_in_batch = dof_slot / n_face_dofs;
+
+                      const int face       = face_batch * nelmtPerBatch + face_in_batch;
+                      const int normal_dir = face_info(face, 2) / 2;
+                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+
+                      const int    slot = slot_index(face_in_batch, component);
+                      const Number m_tangent = jacobians_times_normal_boundary_face(
+                        face * dim * n_q_face + tangent_dir * n_q_face + q_face);
+                      s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face] +=
+                        s_temp[slot * n_q_face + q_face] * m_tangent;
+                    }
+                  team_member.team_barrier();
+                }
+
+              // ---- step 3: Piola map, Dirichlet mirror, SIPG flux, Piola-transpose ----
+              for (int tid = threadIdx; tid < n_faces_this_batch * n_q_face; tid += blockSize)
+                {
+                  const int q_face        = tid % n_q_face;
+                  const int face_in_batch = tid / n_q_face;
+
+                  const int          face       = face_batch * nelmtPerBatch + face_in_batch;
+                  const unsigned int cell       = face_info(face, 0);
+                  const int          normal_dir = face_info(face, 2) / 2;
+
+                  Number piola[dim][dim];
+                  for (int i = 0; i < dim; ++i)
+                    for (int j = 0; j < dim; ++j)
+                      piola[i][j] = cell_piola[cell * dim * dim + i * dim + j];
+
+                  Number m[dim];
+                  for (int axis = 0; axis < dim; ++axis)
+                    m[axis] =
+                      jacobians_times_normal_boundary_face(face * dim * n_q_face +
+                                                           axis * n_q_face + q_face);
+
+                  const Number jxw            = jxw_boundary_face(face * n_q_face + q_face);
+                  const Number penalty        = penalty_parameters_boundary_face[face];
+                  const Number laplace_factor = factor_laplace;
+
+                  Number u_ref[n_components], dn_ref[n_components];
+                  for (int component = 0; component < n_components; ++component)
+                    {
+                      const int slot = slot_index(face_in_batch, component);
+                      u_ref[component]  = s_face_values[slot * n_q_face + q_face];
+                      dn_ref[component] =
+                        s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face];
+                    }
+
+                  Number value_flux[n_components], grad_flux[n_components];
+                  {
+                    Number u_phys[n_components], dn_phys[n_components];
+                    for (int component = 0; component < n_components; ++component)
+                      {
+                        Number acc_u = 0, acc_dn = 0;
+                        for (int k = 0; k < n_components; ++k)
+                          {
+                            acc_u += piola[component][k] * u_ref[k];
+                            acc_dn += piola[component][k] * dn_ref[k];
+                          }
+                        u_phys[component]  = acc_u;
+                        dn_phys[component] = acc_dn;
+                      }
+                    // Dirichlet mirror (g = 0): jump = 2 * u_phys, {{du/dn}} = dn_phys.
+                    for (int component = 0; component < n_components; ++component)
+                      {
+                        value_flux[component] =
+                          jxw * laplace_factor *
+                          (penalty * Number(2) * u_phys[component] - dn_phys[component]);
+                        grad_flux[component] = -jxw * laplace_factor * u_phys[component];
+                      }
+                  }
+
+                  for (int component = 0; component < n_components; ++component)
+                    {
+                      Number pt_value = 0, pt_grad = 0;
+                      for (int k = 0; k < n_components; ++k)
+                        {
+                          pt_value += piola[k][component] * value_flux[k];
+                          pt_grad += piola[k][component] * grad_flux[k];
+                        }
+                      const int slot = slot_index(face_in_batch, component);
+                      s_face_values[slot * n_q_face + q_face] = pt_value;
+                      for (int axis = 0; axis < dim; ++axis)
+                        s_face_gradients[axis * buffer_size + slot * n_q_face + q_face] =
+                          pt_grad * m[axis];
+                    }
+                }
+              team_member.team_barrier();
+
+              // ---- step 4: integrate the tangential test gradients, then write the trace back
+              // ---- (mirror of step 2: axes undone in reverse order)
+              for (int tang_index = dim - 2; tang_index >= 0; --tang_index)
+                {
+                  for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
+                       tid += blockSize)
+                    {
+                      const int q_face        = tid % n_q_face;
+                      const int dof_slot      = tid / n_q_face;
+                      const int component     = dof_slot % n_components;
+                      const int face_in_batch = dof_slot / n_face_dofs;
+
+                      const int face       = face_batch * nelmtPerBatch + face_in_batch;
+                      const int normal_dir = face_info(face, 2) / 2;
+                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+
+                      // move the tangential test-gradient slab into s_temp for apply()
+                      const int slot = slot_index(face_in_batch, component);
+                      s_temp[slot * n_q_face + q_face] =
+                        s_face_gradients[tangent_dir * buffer_size + slot * n_q_face + q_face];
+                    }
+                  team_member.team_barrier();
+
+                  if (tang_index == 0)
+                    apply<dim - 1, 0, n_q, n_q, false, true, Number>(
+                      team_member, s_co_shape_gradients, s_temp, s_face_values,
+                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                  else if constexpr (dim == 3)
+                    apply<dim - 1, 1, n_q, n_q, false, true, Number>(
+                      team_member, s_co_shape_gradients, s_temp, s_face_values,
+                      n_faces_this_batch * n_face_dofs, threadIdx, blockSize);
+                }
+
+              for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
+                   tid += blockSize)
+                {
+                  const int q_face        = tid % n_q_face;
+                  const int dof_slot      = tid / n_q_face;
+                  const int component     = dof_slot % n_components;
+                  const int face_in_batch = dof_slot / n_face_dofs;
+
+                  const int          face       = face_batch * nelmtPerBatch + face_in_batch;
+                  const unsigned int cell       = face_info(face, 0);
+                  const unsigned int local_face = face_info(face, 2);
+                  const int          normal_dir = face_info(face, 2) / 2;
+                  const int          slot       = slot_index(face_in_batch, component);
+
+                  face_values_at_quads(q_face, local_face, component, cell) =
+                    s_face_values[slot * n_q_face + q_face];
+                  face_normal_derivatives_at_quads(q_face, local_face, component, cell) =
+                    s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face];
+                }
+              team_member.team_barrier();
+
+              face_batch += team_member.league_size();
             }
         });
       Kokkos::fence();

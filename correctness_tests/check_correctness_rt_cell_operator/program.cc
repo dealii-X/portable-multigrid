@@ -214,13 +214,57 @@ private:
       }
   }
 
+  // Single-sided mirror of inner_face_op: boundary_id == 0 is Neumann (natural,
+  // zero contribution -- u_outer = u_inner, dn_outer = -dn_inner cancels
+  // everything); boundary_id != 0 is homogeneous Dirichlet (g = 0), mirrored as
+  // u_outer = -u_inner, dn_outer = dn_inner. FEFaceEvaluation::get_value /
+  // get_gradient already return the Piola-mapped physical quantities for RT, so
+  // no manual Piola handling is needed here (unlike the GPU kernel).
   void
-  boundary_op(const MatrixFree<dim, Number> &,
-              VectorType &,
-              const VectorType &,
-              const std::pair<unsigned int, unsigned int> &) const
+  boundary_op(const MatrixFree<dim, Number>               &mf,
+              VectorType                                  &dst,
+              const VectorType                            &src,
+              const std::pair<unsigned int, unsigned int> &face_range) const
   {
-    // Neumann: no terms
+    FEFaceEvaluation<dim, -1, 0, dim, Number> phi(mf, true);
+    const unsigned int degree = mf.get_dof_handler().get_fe().degree;
+
+    for (unsigned int face = face_range.first; face < face_range.second; ++face)
+      {
+        phi.reinit(face);
+        phi.gather_evaluate(src, EvaluationFlags::values | EvaluationFlags::gradients);
+
+        const bool dirichlet = mf.get_boundary_id(face) != 0;
+
+        // penalty: 2 * |J^-1 n| * max(p,1)(p+1) * factor_lapl, matching
+        // inner_face_op's sigmaF with m_p == m_m (same cell on both sides).
+        const auto n0     = phi.normal_vector(0);
+        const auto m0     = n0 * phi.inverse_jacobian(0);
+        const auto sigmaF =
+          make_vectorized_array<Number>(2.) * m0.norm() *
+          make_vectorized_array<Number>(std::max<unsigned int>(degree, 1) * (degree + 1.0) *
+                                        factor_lapl);
+
+        for (unsigned int q = 0; q < phi.n_q_points; ++q)
+          {
+            const auto normal   = phi.normal_vector(q);
+            const auto u_inner  = phi.get_value(q);
+            const auto dn_inner = phi.get_gradient(q) * normal;
+
+            const auto u_outer  = dirichlet ? -u_inner : u_inner;
+            const auto dn_outer = dirichlet ? dn_inner : -dn_inner;
+
+            const auto viscous_value_flux =
+              make_vectorized_array<Number>(0.5 * factor_lapl) * (dn_inner + dn_outer) -
+              sigmaF * (u_inner - u_outer);
+            const auto viscous_gradient_flux =
+              make_vectorized_array<Number>(0.5 * factor_lapl) * (u_outer - u_inner);
+
+            phi.submit_value(-viscous_value_flux, q);
+            phi.submit_gradient(outer_product(viscous_gradient_flux, normal), q);
+          }
+        phi.integrate_scatter(EvaluationFlags::values | EvaluationFlags::gradients, dst);
+      }
   }
 
   const MatrixFree<dim, Number> &matrix_free;
@@ -244,13 +288,26 @@ shear(const Point<dim> &p)
 
 template <int dim, int fe_degree>
 bool
-run_test(const Number factor_mass, const Number factor_lapl, const bool deform = false)
+run_test(const Number factor_mass,
+        const Number factor_lapl,
+        const bool   deform    = false,
+        const bool   mixed_bc  = false)
 {
   const FE_RaviartThomasNodal<dim> fe(fe_degree);
 
   parallel::distributed::Triangulation<dim> triangulation(MPI_COMM_WORLD);
   GridGenerator::hyper_cube(triangulation, 0., 2.);
   triangulation.refine_global(dim == 2 ? 2 : 1);
+
+  // Tag the x == 0 boundary face Dirichlet (boundary_id 1); everything else
+  // stays Neumann (boundary_id 0, the hyper_cube default). Done before any
+  // shearing so the geometric test ("x == 0") is unambiguous.
+  if (mixed_bc)
+    for (const auto &cell : triangulation.active_cell_iterators())
+      for (const unsigned int f : cell->face_indices())
+        if (cell->face(f)->at_boundary() && cell->face(f)->center()[0] < 1e-10)
+          cell->face(f)->set_boundary_id(1);
+
   if (deform)
     GridTools::transform(&shear<dim>, triangulation);
 
@@ -332,7 +389,8 @@ run_test(const Number factor_mass, const Number factor_lapl, const bool deform =
   std::cout << "dim = " << dim << ", fe_degree = " << fe_degree
             << ", n_dofs = " << dof_handler.n_dofs()
             << " (factor_mass = " << factor_mass << ", factor_lapl = " << factor_lapl
-            << (deform ? ", sheared" : "") << ")" << std::endl;
+            << (deform ? ", sheared" : "") << (mixed_bc ? ", mixed Dirichlet/Neumann" : "") << ")"
+            << std::endl;
   std::cout << "  cell only:  max|ref| = " << max_abs_val << "   max|ref - gpu| = " << max_abs_diff
             << std::endl;
   std::cout << "  cell+face:  max|ref| = " << max_abs_val2 << "   max|ref - gpu| = " << max_abs_diff2
@@ -398,6 +456,23 @@ main(int argc, char *argv[])
 
   all_passed &= run_test<2, 2>(800., 1e-6, true);
   all_passed &= run_test<3, 2>(800., 1e-6, true);
+
+  // Mixed Dirichlet (x == 0 face) / Neumann (everywhere else) boundary:
+  // exercises compute_boundary_faces on axis-aligned and sheared meshes.
+  all_passed &= run_test<2, 1>(0., 1., /*deform=*/false, /*mixed_bc=*/true);
+  all_passed &= run_test<2, 2>(0., 1., false, true);
+  all_passed &= run_test<2, 3>(0., 1., false, true);
+  all_passed &= run_test<2, 4>(0., 1., false, true);
+  all_passed &= run_test<3, 1>(0., 1., false, true);
+  all_passed &= run_test<3, 2>(0., 1., false, true);
+  all_passed &= run_test<3, 3>(0., 1., false, true);
+  all_passed &= run_test<3, 4>(0., 1., false, true);
+
+  all_passed &= run_test<2, 2>(800., 1e-6, false, true);
+  all_passed &= run_test<3, 2>(800., 1e-6, false, true);
+
+  all_passed &= run_test<2, 2>(0., 1., /*deform=*/true, /*mixed_bc=*/true);
+  all_passed &= run_test<3, 2>(0., 1., true, true);
 
   std::cout << (all_passed ? "ALL PASS" : "SOME FAILED") << std::endl;
 
