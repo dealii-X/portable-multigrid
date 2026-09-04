@@ -77,349 +77,577 @@ namespace Portable
           if (cell->is_locally_owned())
             ++n_cells;
 
-        {
-          const MPI_Comm comm = dof_handler.get_mpi_communicator();
+        compute_cell_info(mapping, dof_handler, constraints, quadrature);
 
-          IndexSet locally_owned_dofs = dof_handler.locally_owned_dofs();
+        compute_face_info(mapping, dof_handler, quadrature);
 
-          unsigned int n_constrained_locally_owned_dofs = 0;
-          for (const auto &line : constraints.get_lines())
-            if (locally_owned_dofs.is_element(line.index))
-              ++n_constrained_locally_owned_dofs;
-
-          const types::global_dof_index n_unconstrained_owned_dofs =
-            locally_owned_dofs.n_elements() - n_constrained_locally_owned_dofs;
-
-          // Assign DoF numbers for the unconstrained degrees of freedom only
-          std::pair<types::global_dof_index, types::global_dof_index> positions =
-            Utilities::MPI::partial_and_total_sum(n_unconstrained_owned_dofs, comm);
-
-          std::vector<types::global_dof_index> dof_numbers(locally_owned_dofs.n_elements(),
-                                                           numbers::invalid_dof_index);
-          types::global_dof_index              counter = positions.first;
-          for (unsigned int i = 0; i < n_unconstrained_owned_dofs; ++i)
-            dof_numbers[i] = counter++;
-
-          // Extract ghost entries for which we need to query the numbers from
-          // remote processes - we do not know the start indices of the
-          // respective processes even though we could query the DoF index owner
-          // through the triangulation, so we need to perform a lookup anyway
-          // and do that by a ghost exchange of all data. While there, also
-          // extract a compressed representation, taking the first number on
-          // each entity (face, cell) in global index space, which we later
-          // translate to local numbers
+        shape_values[0] = shape_info[0].shape_values;
+        shape_values[1] = shape_info[1].shape_values;
+      }
 
 
-          std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
-          std::vector<types::global_dof_index> lexicographic_dof_indices(fe.dofs_per_cell);
+      template <typename OtherNumber>
+      void
+      compute_cell_info(const Mapping<dim>                   &mapping,
+                        const DoFHandler<dim>                &dof_handler,
+                        const AffineConstraints<OtherNumber> &constraints,
+                        const Quadrature<1>                  &quadrature)
+      {
+        const FiniteElement<dim> &fe = dof_handler.get_fe();
 
-          const std::vector<unsigned int> &lexicographic_numbering =
-            shape_info_cpu.lexicographic_numbering;
+        const MPI_Comm comm = dof_handler.get_mpi_communicator();
 
-          // We store the start of the indices per each geometric entity (first
-          // 2*dim faces and then the cell dofs).
-          std::vector<std::array<types::global_dof_index, 2 * dim + 1>> dof_indices_per_entity(
-            n_cells);
+        IndexSet locally_owned_dofs = dof_handler.locally_owned_dofs();
 
-          std::vector<types::global_dof_index> ghost_indices;
+        unsigned int n_constrained_locally_owned_dofs = 0;
+        for (const auto &line : constraints.get_lines())
+          if (locally_owned_dofs.is_element(line.index))
+            ++n_constrained_locally_owned_dofs;
 
-          unsigned int cell_counter = 0;
+        const types::global_dof_index n_unconstrained_owned_dofs =
+          locally_owned_dofs.n_elements() - n_constrained_locally_owned_dofs;
 
-          for (const auto &cell : dof_handler.active_cell_iterators())
-            {
-              if (cell->is_locally_owned())
-                {
-                  cell->get_dof_indices(local_dof_indices);
+        // Assign DoF numbers for the unconstrained degrees of freedom only
+        std::pair<types::global_dof_index, types::global_dof_index> positions =
+          Utilities::MPI::partial_and_total_sum(n_unconstrained_owned_dofs, comm);
 
-                  // Adjust dof indices due to periodicity
-                  for (types::global_dof_index &a : local_dof_indices)
-                    {
-                      const auto line = constraints.get_constraint_entries(a);
-                      if (line != nullptr && line->size() == 1 && (*line)[0].second == Number(1.0))
-                        a = (*line)[0].first;
-                    }
+        std::vector<types::global_dof_index> dof_numbers(locally_owned_dofs.n_elements(),
+                                                         numbers::invalid_dof_index);
+        types::global_dof_index              counter = positions.first;
+        for (unsigned int i = 0; i < n_unconstrained_owned_dofs; ++i)
+          dof_numbers[i] = counter++;
 
-                  for (types::global_dof_index a : local_dof_indices)
-                    if (!locally_owned_dofs.is_element(a) && !constraints.is_constrained(a))
-                      ghost_indices.push_back(a);
-
-                  const unsigned int dofs_per_face = fe.dofs_per_face;
-
-                  for (unsigned int f = 0; f < 2 * dim; ++f)
-                    {
-                      for (unsigned int i = 0; i < dofs_per_face; ++i)
-                        AssertThrow(local_dof_indices[f * dofs_per_face + i] ==
-                                      local_dof_indices[f * dofs_per_face] + i,
-                                    ExcInternalError());
-
-                      dof_indices_per_entity[cell_counter][f] =
-                        local_dof_indices[f * dofs_per_face];
-                    }
-
-                  const unsigned int start_cell_dofs = 2 * dim * dofs_per_face;
-                  for (unsigned int i = 0; i < fe.dofs_per_cell - start_cell_dofs; ++i)
-                    AssertThrow(local_dof_indices[start_cell_dofs + i] ==
-                                  local_dof_indices[start_cell_dofs] + i,
-                                ExcInternalError());
-
-                  dof_indices_per_entity[cell_counter][2 * dim] =
-                    local_dof_indices[start_cell_dofs];
-
-                  ++cell_counter;
-                }
-            }
-
-          IndexSet ghost_index_set(locally_owned_dofs.size());
-          ghost_index_set.add_indices(ghost_indices.begin(), ghost_indices.end());
-          ghost_index_set.compress();
-          Utilities::MPI::Partitioner partitioner_dofs(locally_owned_dofs, ghost_index_set, comm);
-
-          std::vector<types::global_dof_index> tmp_array(partitioner_dofs.n_import_indices());
-          std::vector<types::global_dof_index> numbers_ghosts(partitioner_dofs.n_ghost_indices());
-          std::vector<MPI_Request>             requests;
-          partitioner_dofs.export_to_ghosted_array_start(3,
-                                                         make_const_array_view(dof_numbers),
-                                                         make_array_view(tmp_array),
-                                                         make_array_view(numbers_ghosts),
-                                                         requests);
-          partitioner_dofs.export_to_ghosted_array_finish(make_array_view(numbers_ghosts),
-                                                          requests);
-
-          IndexSet owned_dofs(positions.second);
-          owned_dofs.add_range(positions.first, positions.first + n_unconstrained_owned_dofs);
-          std::vector<types::global_dof_index> compressed_ghost;
-          compressed_ghost.reserve(numbers_ghosts.size());
-          for (const types::global_dof_index a : numbers_ghosts)
-            if (a != numbers::invalid_dof_index)
-              compressed_ghost.push_back(a);
-          IndexSet ghost_dofs(positions.second);
-          ghost_dofs.add_indices(compressed_ghost.begin(), compressed_ghost.end());
-          ghost_dofs.compress();
-
-          partitioner = std::make_shared<Utilities::MPI::Partitioner>(owned_dofs, ghost_dofs, comm);
+        // Extract ghost entries for which we need to query the numbers from
+        // remote processes - we do not know the start indices of the
+        // respective processes even though we could query the DoF index owner
+        // through the triangulation, so we need to perform a lookup anyway
+        // and do that by a ghost exchange of all data. While there, also
+        // extract a compressed representation, taking the first number on
+        // each entity (face, cell) in global index space, which we later
+        // translate to local numbers
 
 
-          dof_indices = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("dof_indices", Kokkos::WithoutInitializing), 2 * dim + 1, n_cells);
+        std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
+        std::vector<types::global_dof_index> lexicographic_dof_indices(fe.dofs_per_cell);
 
-          neighbor_cells = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("neighbor_cells", Kokkos::WithoutInitializing), 2 * dim, n_cells);
+        const std::vector<unsigned int> &lexicographic_numbering =
+          shape_info_cpu.lexicographic_numbering;
 
-          auto dof_indices_host = Kokkos::create_mirror_view(dof_indices);
+        // We store the start of the indices per each geometric entity (first
+        // 2*dim faces and then the cell dofs).
+        std::vector<std::array<types::global_dof_index, 2 * dim + 1>> dof_indices_per_entity(
+          n_cells);
 
-          auto neighbor_cells_host = Kokkos::create_mirror_view(neighbor_cells);
+        std::vector<types::global_dof_index> ghost_indices;
 
-          dof_indices_per_cell = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("dof_indices_per_cell", Kokkos::WithoutInitializing),
-            fe.dofs_per_cell,
-            n_cells);
+        unsigned int cell_counter = 0;
 
-          auto dof_indices_per_cell_host = Kokkos::create_mirror_view(dof_indices_per_cell);
-
+        for (const auto &cell : dof_handler.active_cell_iterators())
           {
-            for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
+            if (cell->is_locally_owned())
               {
-                for (unsigned int i = 0; i < 2 * dim; ++i)
+                cell->get_dof_indices(local_dof_indices);
+
+                // Adjust dof indices due to periodicity
+                for (types::global_dof_index &a : local_dof_indices)
                   {
-                    neighbor_cells_host(i, cell_id) = numbers::invalid_unsigned_int;
-                    dof_indices_host(i, cell_id)    = numbers::invalid_unsigned_int;
+                    const auto line = constraints.get_constraint_entries(a);
+                    if (line != nullptr && line->size() == 1 && (*line)[0].second == Number(1.0))
+                      a = (*line)[0].first;
                   }
 
-                for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
-                  dof_indices_per_cell_host(i, cell_id) = numbers::invalid_unsigned_int;
+                for (types::global_dof_index a : local_dof_indices)
+                  if (!locally_owned_dofs.is_element(a) && !constraints.is_constrained(a))
+                    ghost_indices.push_back(a);
 
-                dof_indices_host(2 * dim, cell_id) = numbers::invalid_unsigned_int;
+                const unsigned int dofs_per_face = fe.dofs_per_face;
+
+                for (unsigned int f = 0; f < 2 * dim; ++f)
+                  {
+                    for (unsigned int i = 0; i < dofs_per_face; ++i)
+                      AssertThrow(local_dof_indices[f * dofs_per_face + i] ==
+                                    local_dof_indices[f * dofs_per_face] + i,
+                                  ExcInternalError());
+
+                    dof_indices_per_entity[cell_counter][f] =
+                      local_dof_indices[f * dofs_per_face];
+                  }
+
+                const unsigned int start_cell_dofs = 2 * dim * dofs_per_face;
+                for (unsigned int i = 0; i < fe.dofs_per_cell - start_cell_dofs; ++i)
+                  AssertThrow(local_dof_indices[start_cell_dofs + i] ==
+                                local_dof_indices[start_cell_dofs] + i,
+                              ExcInternalError());
+
+                dof_indices_per_entity[cell_counter][2 * dim] =
+                  local_dof_indices[start_cell_dofs];
+
+                ++cell_counter;
               }
           }
 
-          std::array<std::vector<unsigned int>, 2 * dim> cells_at_dirichlet_boundary_by_face;
-          std::vector<unsigned int> cell_indices(dof_handler.get_triangulation().n_active_cells(),
-                                                 numbers::invalid_unsigned_int);
+        IndexSet ghost_index_set(locally_owned_dofs.size());
+        ghost_index_set.add_indices(ghost_indices.begin(), ghost_indices.end());
+        ghost_index_set.compress();
+        Utilities::MPI::Partitioner partitioner_dofs(locally_owned_dofs, ghost_index_set, comm);
 
-          cell_counter = 0;
-          for (const auto &cell : dof_handler.active_cell_iterators())
+        std::vector<types::global_dof_index> tmp_array(partitioner_dofs.n_import_indices());
+        std::vector<types::global_dof_index> numbers_ghosts(partitioner_dofs.n_ghost_indices());
+        std::vector<MPI_Request>             requests;
+        partitioner_dofs.export_to_ghosted_array_start(3,
+                                                       make_const_array_view(dof_numbers),
+                                                       make_array_view(tmp_array),
+                                                       make_array_view(numbers_ghosts),
+                                                       requests);
+        partitioner_dofs.export_to_ghosted_array_finish(make_array_view(numbers_ghosts),
+                                                        requests);
+
+        IndexSet owned_dofs(positions.second);
+        owned_dofs.add_range(positions.first, positions.first + n_unconstrained_owned_dofs);
+        std::vector<types::global_dof_index> compressed_ghost;
+        compressed_ghost.reserve(numbers_ghosts.size());
+        for (const types::global_dof_index a : numbers_ghosts)
+          if (a != numbers::invalid_dof_index)
+            compressed_ghost.push_back(a);
+        IndexSet ghost_dofs(positions.second);
+        ghost_dofs.add_indices(compressed_ghost.begin(), compressed_ghost.end());
+        ghost_dofs.compress();
+
+        partitioner = std::make_shared<Utilities::MPI::Partitioner>(owned_dofs, ghost_dofs, comm);
+
+
+        dof_indices = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("dof_indices", Kokkos::WithoutInitializing), 2 * dim + 1, n_cells);
+
+        neighbor_cells = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("neighbor_cells", Kokkos::WithoutInitializing), 2 * dim, n_cells);
+
+        auto dof_indices_host = Kokkos::create_mirror_view(dof_indices);
+
+        auto neighbor_cells_host = Kokkos::create_mirror_view(neighbor_cells);
+
+        dof_indices_per_cell = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("dof_indices_per_cell", Kokkos::WithoutInitializing),
+          fe.dofs_per_cell,
+          n_cells);
+
+        auto dof_indices_per_cell_host = Kokkos::create_mirror_view(dof_indices_per_cell);
+
+        {
+          for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
             {
-              if (cell->is_locally_owned())
+              for (unsigned int i = 0; i < 2 * dim; ++i)
                 {
-                  for (unsigned int f = 0; f < 2 * dim + 1; ++f)
-                    {
-                      const types::global_dof_index index = dof_indices_per_entity[cell_counter][f];
-                      const unsigned int      my_index    = partitioner_dofs.global_to_local(index);
-                      types::global_dof_index number_compressed;
-
-                      if (my_index < locally_owned_dofs.n_elements())
-                        number_compressed = dof_numbers[my_index];
-                      else
-                        number_compressed = numbers_ghosts[my_index - dof_numbers.size()];
-
-                      Assert(number_compressed != numbers::invalid_dof_index ||
-                               constraints.is_constrained(index),
-                             ExcInternalError());
-
-                      if (number_compressed != numbers::invalid_dof_index)
-                        dof_indices_host(f, cell_counter) =
-                          partitioner->global_to_local(number_compressed);
-                      else
-                        dof_indices_host(f, cell_counter) = numbers::invalid_unsigned_int;
-                    }
-
-                  cell_indices[cell->active_cell_index()] = cell_counter;
-
-
-                  for (unsigned int f = 0; f < 2 * dim; ++f)
-                    if (dof_indices_host(f, cell_counter) == numbers::invalid_unsigned_int)
-                      cells_at_dirichlet_boundary_by_face[f].push_back(cell_counter);
-
-
-                  cell->get_dof_indices(local_dof_indices);
-
-                  // Adjust dof indices due to periodicity
-                  for (types::global_dof_index &a : local_dof_indices)
-                    {
-                      const auto line = constraints.get_constraint_entries(a);
-                      if (line != nullptr && line->size() == 1 && (*line)[0].second == Number(1.0))
-                        a = (*line)[0].first;
-                    }
-
-                  if (partitioner)
-                    for (auto &index : local_dof_indices)
-                      index = partitioner->global_to_local(index);
-
-                  for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
-                    {
-                      const types::global_dof_index dof_index =
-                        local_dof_indices[lexicographic_numbering[i]];
-
-                      if (constraints.is_constrained(dof_index))
-                        dof_indices_per_cell_host(i, cell_counter) = numbers::invalid_unsigned_int;
-                      else
-                        dof_indices_per_cell_host(i, cell_counter) = dof_index;
-                    }
-
-                  ++cell_counter;
+                  neighbor_cells_host(i, cell_id) = numbers::invalid_unsigned_int;
+                  dof_indices_host(i, cell_id)    = numbers::invalid_unsigned_int;
                 }
+
+              for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
+                dof_indices_per_cell_host(i, cell_id) = numbers::invalid_unsigned_int;
+
+              dof_indices_host(2 * dim, cell_id) = numbers::invalid_unsigned_int;
             }
+        }
 
-          // put cells at Dirichlet boundary together in one data structure
-          unsigned int n_cells_at_dirichlet_boundary = 0;
-          for (unsigned int f = 0; f < 2 * dim; ++f)
-            n_cells_at_dirichlet_boundary += cells_at_dirichlet_boundary_by_face[f].size();
+        std::array<std::vector<unsigned int>, 2 * dim> cells_at_dirichlet_boundary_by_face;
+        std::vector<unsigned int> cell_indices(dof_handler.get_triangulation().n_active_cells(),
+                                               numbers::invalid_unsigned_int);
 
-          std::map<unsigned int, std::vector<std::array<types::global_dof_index, 5>>>
-            proc_neighbors;
-
-          cell_counter = 0;
-
-          for (const auto &cell : dof_handler.active_cell_iterators())
-            {
-              if (cell->is_locally_owned())
-                {
-                  for (unsigned int f = 0; f < 2 * dim; ++f)
-                    {
-                      const bool at_boundary = cell->at_boundary(f);
-                      const bool has_periodic_neighbor =
-                        at_boundary && cell->has_periodic_neighbor(f);
-
-                      if (at_boundary == false || has_periodic_neighbor)
-                        {
-                          const auto neighbor =
-                            has_periodic_neighbor ? cell->periodic_neighbor(f) : cell->neighbor(f);
-
-                          if (neighbor->is_locally_owned())
-                            {
-                              AssertIndexRange(neighbor->active_cell_index(), cell_indices.size());
-                              neighbor_cells_host(f, cell_counter) =
-                                cell_indices[neighbor->active_cell_index()];
-                            }
-                          else
-                            {
-                              std::array<types::global_dof_index, 5> neighbor_data;
-                              neighbor_data[0] = cell_counter;
-                              neighbor_data[1] = has_periodic_neighbor ?
-                                                   cell->periodic_neighbor_face_no(f) :
-                                                   cell->neighbor_face_no(f);
-                              neighbor_data[2] = cell->global_active_cell_index();
-                              neighbor_data[3] = neighbor->global_active_cell_index();
-                              neighbor_data[4] = f;
-                              proc_neighbors[neighbor->subdomain_id()].push_back(neighbor_data);
-                              // set dummy
-                              neighbor_cells_host(f, cell_counter) =
-                                cell_indices[cell->active_cell_index()];
-                            }
-                        }
-                    }
-
-                  ++cell_counter;
-                }
-            }
-          Kokkos::deep_copy(dof_indices, dof_indices_host);
-          Kokkos::fence();
-
-          Kokkos::deep_copy(neighbor_cells, neighbor_cells_host);
-          Kokkos::fence();
-
-          Kokkos::deep_copy(dof_indices_per_cell, dof_indices_per_cell_host);
-          Kokkos::fence();
-
+        cell_counter = 0;
+        for (const auto &cell : dof_handler.active_cell_iterators())
           {
-            std::vector<Polynomials::Polynomial<double>> basis =
-              Polynomials::generate_complete_Lagrange_basis(quadrature.get_points());
-
-
-            interpolate_quad_to_boundary =
-              Kokkos::View<Number ***, MemorySpace::Default::kokkos_space>(
-                Kokkos::view_alloc("interpolate_quad_to_boundary", Kokkos::WithoutInitializing),
-                2,
-                basis.size(),
-                2);
-            auto interpolate_quad_to_boundary_host =
-              Kokkos::create_mirror_view(interpolate_quad_to_boundary);
-
-            std::vector<double> val_and_der(2);
-
-            for (unsigned int i = 0; i < basis.size(); ++i)
+            if (cell->is_locally_owned())
               {
-                basis[i].value(0., val_and_der);
-                interpolate_quad_to_boundary_host(0, i, 0) = val_and_der[0];
-                interpolate_quad_to_boundary_host(1, i, 0) = val_and_der[1];
+                for (unsigned int f = 0; f < 2 * dim + 1; ++f)
+                  {
+                    const types::global_dof_index index = dof_indices_per_entity[cell_counter][f];
+                    const unsigned int      my_index    = partitioner_dofs.global_to_local(index);
+                    types::global_dof_index number_compressed;
 
-                basis[i].value(1., val_and_der);
-                interpolate_quad_to_boundary_host(0, i, 1) = val_and_der[0];
-                interpolate_quad_to_boundary_host(1, i, 1) = val_and_der[1];
+                    if (my_index < locally_owned_dofs.n_elements())
+                      number_compressed = dof_numbers[my_index];
+                    else
+                      number_compressed = numbers_ghosts[my_index - dof_numbers.size()];
+
+                    Assert(number_compressed != numbers::invalid_dof_index ||
+                             constraints.is_constrained(index),
+                           ExcInternalError());
+
+                    if (number_compressed != numbers::invalid_dof_index)
+                      dof_indices_host(f, cell_counter) =
+                        partitioner->global_to_local(number_compressed);
+                    else
+                      dof_indices_host(f, cell_counter) = numbers::invalid_unsigned_int;
+                  }
+
+                cell_indices[cell->active_cell_index()] = cell_counter;
+
+
+                for (unsigned int f = 0; f < 2 * dim; ++f)
+                  if (dof_indices_host(f, cell_counter) == numbers::invalid_unsigned_int)
+                    cells_at_dirichlet_boundary_by_face[f].push_back(cell_counter);
+
+
+                cell->get_dof_indices(local_dof_indices);
+
+                // Adjust dof indices due to periodicity
+                for (types::global_dof_index &a : local_dof_indices)
+                  {
+                    const auto line = constraints.get_constraint_entries(a);
+                    if (line != nullptr && line->size() == 1 && (*line)[0].second == Number(1.0))
+                      a = (*line)[0].first;
+                  }
+
+                if (partitioner)
+                  for (auto &index : local_dof_indices)
+                    index = partitioner->global_to_local(index);
+
+                for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
+                  {
+                    const types::global_dof_index dof_index =
+                      local_dof_indices[lexicographic_numbering[i]];
+
+                    if (constraints.is_constrained(dof_index))
+                      dof_indices_per_cell_host(i, cell_counter) = numbers::invalid_unsigned_int;
+                    else
+                      dof_indices_per_cell_host(i, cell_counter) = dof_index;
+                  }
+
+                ++cell_counter;
               }
-
-            Kokkos::deep_copy(interpolate_quad_to_boundary, interpolate_quad_to_boundary_host);
-            Kokkos::fence();
-
-            // std::cout << basis.size() << " == " << fe.degree << std::endl;
-            // for (unsigned int i = 0; i < 2; ++i)
-            //   for (unsigned int j = 0; j < basis.size(); ++j)
-            //     for (int k = 0; k < 2; ++k)
-            //       std::cout << interpolate_quad_to_boundary_host(i, j, k) << "  ";
-            // std::cout << std::endl;
           }
 
-          face_values_at_quads = Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("face_values_at_quads", Kokkos::WithoutInitializing),
+        // put cells at Dirichlet boundary together in one data structure
+        unsigned int n_cells_at_dirichlet_boundary = 0;
+        for (unsigned int f = 0; f < 2 * dim; ++f)
+          n_cells_at_dirichlet_boundary += cells_at_dirichlet_boundary_by_face[f].size();
+
+        std::map<unsigned int, std::vector<std::array<types::global_dof_index, 5>>>
+          proc_neighbors;
+
+        cell_counter = 0;
+
+        for (const auto &cell : dof_handler.active_cell_iterators())
+          {
+            if (cell->is_locally_owned())
+              {
+                for (unsigned int f = 0; f < 2 * dim; ++f)
+                  {
+                    const bool at_boundary = cell->at_boundary(f);
+                    const bool has_periodic_neighbor =
+                      at_boundary && cell->has_periodic_neighbor(f);
+
+                    if (at_boundary == false || has_periodic_neighbor)
+                      {
+                        const auto neighbor =
+                          has_periodic_neighbor ? cell->periodic_neighbor(f) : cell->neighbor(f);
+
+                        if (neighbor->is_locally_owned())
+                          {
+                            AssertIndexRange(neighbor->active_cell_index(), cell_indices.size());
+                            neighbor_cells_host(f, cell_counter) =
+                              cell_indices[neighbor->active_cell_index()];
+                          }
+                        else
+                          {
+                            std::array<types::global_dof_index, 5> neighbor_data;
+                            neighbor_data[0] = cell_counter;
+                            neighbor_data[1] = has_periodic_neighbor ?
+                                                 cell->periodic_neighbor_face_no(f) :
+                                                 cell->neighbor_face_no(f);
+                            neighbor_data[2] = cell->global_active_cell_index();
+                            neighbor_data[3] = neighbor->global_active_cell_index();
+                            neighbor_data[4] = f;
+                            proc_neighbors[neighbor->subdomain_id()].push_back(neighbor_data);
+                            // set dummy
+                            neighbor_cells_host(f, cell_counter) =
+                              cell_indices[cell->active_cell_index()];
+                          }
+                      }
+                  }
+
+                ++cell_counter;
+              }
+          }
+        Kokkos::deep_copy(dof_indices, dof_indices_host);
+        Kokkos::fence();
+
+        Kokkos::deep_copy(neighbor_cells, neighbor_cells_host);
+        Kokkos::fence();
+
+        Kokkos::deep_copy(dof_indices_per_cell, dof_indices_per_cell_host);
+        Kokkos::fence();
+
+        compute_geometric_tensors(mapping, quadrature, dof_handler, n_cells);
+      }
+
+
+      // Face connectivity and the geometry the face integrals need (Piola
+      // matrix, J^{-1} n, surface JxW, penalty). Affine cells only for now.
+      void
+      compute_face_info(const Mapping<dim>    &mapping,
+                        const DoFHandler<dim> &dof_handler,
+                        const Quadrature<1>   &quadrature)
+      {
+        {
+          std::vector<Polynomials::Polynomial<double>> basis =
+            Polynomials::generate_complete_Lagrange_basis(quadrature.get_points());
+
+
+          interpolate_quad_to_boundary =
+            Kokkos::View<Number ***, MemorySpace::Default::kokkos_space>(
+              Kokkos::view_alloc("interpolate_quad_to_boundary", Kokkos::WithoutInitializing),
+              2,
+              basis.size(),
+              2);
+          auto interpolate_quad_to_boundary_host =
+            Kokkos::create_mirror_view(interpolate_quad_to_boundary);
+
+          std::vector<double> val_and_der(2);
+
+          for (unsigned int i = 0; i < basis.size(); ++i)
+            {
+              basis[i].value(0., val_and_der);
+              interpolate_quad_to_boundary_host(0, i, 0) = val_and_der[0];
+              interpolate_quad_to_boundary_host(1, i, 0) = val_and_der[1];
+
+              basis[i].value(1., val_and_der);
+              interpolate_quad_to_boundary_host(0, i, 1) = val_and_der[0];
+              interpolate_quad_to_boundary_host(1, i, 1) = val_and_der[1];
+            }
+
+          Kokkos::deep_copy(interpolate_quad_to_boundary, interpolate_quad_to_boundary_host);
+          Kokkos::fence();
+
+          // std::cout << basis.size() << " == " << fe.degree << std::endl;
+          // for (unsigned int i = 0; i < 2; ++i)
+          //   for (unsigned int j = 0; j < basis.size(); ++j)
+          //     for (int k = 0; k < 2; ++k)
+          //       std::cout << interpolate_quad_to_boundary_host(i, j, k) << "  ";
+          // std::cout << std::endl;
+        }
+
+        face_values_at_quads = Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("face_values_at_quads", Kokkos::WithoutInitializing),
+          Utilities::pow(quadrature.size(), dim - 1),
+          2 * dim,
+          dim,
+          n_cells);
+
+        face_normal_derivatives_at_quads =
+          Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("face_normal_derivatives_at_quads", Kokkos::WithoutInitializing),
             Utilities::pow(quadrature.size(), dim - 1),
             2 * dim,
             dim,
             n_cells);
 
-          face_normal_derivatives_at_quads =
-            Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>(
-              Kokkos::view_alloc("face_normal_derivatives_at_quads", Kokkos::WithoutInitializing),
-              Utilities::pow(quadrature.size(), dim - 1),
-              2 * dim,
-              dim,
-              n_cells);
+        // ---------------------------------------------------------------
+        //  face lists + geometry
+        // ---------------------------------------------------------------
+        const auto        &triangulation = dof_handler.get_triangulation();
+        const unsigned int face_degree   = dof_handler.get_fe().degree;
+        const unsigned int n_q_face       = Utilities::pow(quadrature.size(), dim - 1);
+
+        // active cell index -> local (locally-owned) cell id, and the iterators
+        std::vector<unsigned int> active_to_local(triangulation.n_active_cells(),
+                                                  numbers::invalid_unsigned_int);
+        std::vector<typename DoFHandler<dim>::active_cell_iterator> local_cells(n_cells);
+        {
+          unsigned int c = 0;
+          for (const auto &cell : dof_handler.active_cell_iterators())
+            if (cell->is_locally_owned())
+              {
+                active_to_local[cell->active_cell_index()] = c;
+                local_cells[c]                             = cell;
+                ++c;
+              }
         }
 
-        compute_geometric_tensors(mapping, quadrature, dof_handler, n_cells);
+        // enumerate faces once: [0] interior, [1] boundary.
+        // entry = {cell_minus, cell_plus, f_minus, f_plus, orientation}
+        face_info_cpu[0].clear();
+        face_info_cpu[1].clear();
+        {
+          std::vector<unsigned char> visited(triangulation.n_raw_faces(), 0);
+          for (const auto &cell : dof_handler.active_cell_iterators())
+            {
+              if (!cell->is_locally_owned())
+                continue;
+              const unsigned int cm = active_to_local[cell->active_cell_index()];
 
-        // Kokkos::Array<DeviceVector<Number>, 2> shape_values;
-        shape_values[0] = shape_info[0].shape_values;
-        shape_values[1] = shape_info[1].shape_values;
+              for (const unsigned int f : cell->face_indices())
+                {
+                  const unsigned int fi = cell->face(f)->index();
+                  if (visited[fi])
+                    continue;
+                  visited[fi] = 1;
+
+                  if (cell->at_boundary(f))
+                    {
+                      std::array<unsigned int, 5> info = {
+                        {cm, numbers::invalid_unsigned_int, f,
+                         static_cast<unsigned int>(cell->face(f)->boundary_id()), 0u}};
+                      face_info_cpu[1].push_back(info);
+                    }
+                  else
+                    {
+                      const auto neighbor = cell->neighbor(f);
+                      // single MPI rank for now: skip faces to non-owned neighbours
+                      if (!neighbor->is_locally_owned())
+                        continue;
+                      std::array<unsigned int, 5> info = {
+                        {cm, active_to_local[neighbor->active_cell_index()], f,
+                         cell->neighbor_face_no(f), 0u}};
+                      face_info_cpu[0].push_back(info);
+                    }
+                }
+            }
+
+          const std::string names[] = {"inner_face_info", "boundary_face_info"};
+          for (unsigned int i = 0; i < 2; ++i)
+            {
+              const unsigned int n = face_info_cpu[i].size();
+              face_info[i] = Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space>(
+                Kokkos::view_alloc(names[i], Kokkos::WithoutInitializing), n);
+              if (n > 0)
+                {
+                  auto h = Kokkos::create_mirror_view(face_info[i]);
+                  for (unsigned int f = 0; f < n; ++f)
+                    for (unsigned int k = 0; k < 5; ++k)
+                      h(f, k) = face_info_cpu[i][f][k];
+                  Kokkos::deep_copy(face_info[i], h);
+                }
+            }
+          Kokkos::fence();
+        }
+
+        const unsigned int n_inner    = face_info_cpu[0].size();
+        const unsigned int n_boundary = face_info_cpu[1].size();
+
+        jacobians_times_normal_inner_face =
+          Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("jacobians_times_normal_inner_face", Kokkos::WithoutInitializing),
+            n_inner * dim * n_q_face);
+        jxw_inner_face = Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("jxw_inner_face", Kokkos::WithoutInitializing), n_inner * n_q_face);
+        penalty_parameters_inner_face = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("penalty_parameters_inner_face", Kokkos::WithoutInitializing), n_inner);
+
+        jacobians_times_normal_boundary_face =
+          Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("jacobians_times_normal_boundary_face", Kokkos::WithoutInitializing),
+            n_boundary * dim * n_q_face);
+        jxw_boundary_face = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
+          Kokkos::view_alloc("jxw_boundary_face", Kokkos::WithoutInitializing),
+          n_boundary * n_q_face);
+        penalty_parameters_boundary_face =
+          Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("penalty_parameters_boundary_face", Kokkos::WithoutInitializing),
+            n_boundary);
+
+        auto jtn_inner_host   = Kokkos::create_mirror_view(jacobians_times_normal_inner_face);
+        auto jtn_bdry_host    = Kokkos::create_mirror_view(jacobians_times_normal_boundary_face);
+        auto jxw_inner_host   = Kokkos::create_mirror_view(jxw_inner_face);
+        auto jxw_bdry_host    = Kokkos::create_mirror_view(jxw_boundary_face);
+        auto pen_inner_host   = Kokkos::create_mirror_view(penalty_parameters_inner_face);
+        auto pen_bdry_host    = Kokkos::create_mirror_view(penalty_parameters_boundary_face);
+
+        const Quadrature<dim - 1> face_quadrature(quadrature);
+        FEFaceValues<dim>         fev(mapping,
+                              dof_handler.get_fe(),
+                              face_quadrature,
+                              update_jacobians | update_normal_vectors | update_JxW_values);
+        FEFaceValues<dim>         fev_nb(mapping,
+                                 dof_handler.get_fe(),
+                                 face_quadrature,
+                                 update_jacobians | update_normal_vectors | update_JxW_values);
+
+        const Number penalty_degree_factor =
+          static_cast<Number>(std::max(face_degree, 1u)) * static_cast<Number>(face_degree + 1);
+
+        for (unsigned int f = 0; f < n_inner; ++f)
+          {
+            const auto &e = face_info_cpu[0][f];
+            fev.reinit(local_cells[e[0]], e[2]);
+            fev_nb.reinit(local_cells[e[1]], e[3]);
+
+            for (unsigned int q = 0; q < n_q_face; ++q)
+              {
+                const Tensor<1, dim> n = fev.normal_vector(q); // interior outward normal
+                const Tensor<2, dim> Jm_inv(invert(static_cast<Tensor<2, dim>>(fev.jacobian(q))));
+                const Tensor<2, dim> Jp_inv(invert(static_cast<Tensor<2, dim>>(fev_nb.jacobian(q))));
+                const Tensor<1, dim> m_minus = Jm_inv * n; // = J^{-1} n
+                const Tensor<1, dim> m_plus  = Jp_inv * n;
+
+                jxw_inner_host(f * n_q_face + q, 0) = fev.JxW(q);
+                jxw_inner_host(f * n_q_face + q, 1) = fev_nb.JxW(q);
+                for (unsigned int d = 0; d < dim; ++d)
+                  {
+                    jtn_inner_host(f * dim * n_q_face + d * n_q_face + q, 0) = m_minus[d];
+                    jtn_inner_host(f * dim * n_q_face + d * n_q_face + q, 1) = m_plus[d];
+                  }
+              }
+
+            // affine -> geometry constant on the face; use q = 0
+            const Tensor<1, dim> n0 = fev.normal_vector(0);
+            const Tensor<2, dim> Jm_inv0(invert(static_cast<Tensor<2, dim>>(fev.jacobian(0))));
+            const Tensor<2, dim> Jp_inv0(invert(static_cast<Tensor<2, dim>>(fev_nb.jacobian(0))));
+            pen_inner_host(f) =
+              ((Jm_inv0 * n0).norm() + (Jp_inv0 * n0).norm()) * penalty_degree_factor;
+          }
+
+        for (unsigned int f = 0; f < n_boundary; ++f)
+          {
+            const auto &e = face_info_cpu[1][f];
+            fev.reinit(local_cells[e[0]], e[2]);
+
+            for (unsigned int q = 0; q < n_q_face; ++q)
+              {
+                const Tensor<1, dim> n = fev.normal_vector(q);
+                const Tensor<2, dim> J_inv(invert(static_cast<Tensor<2, dim>>(fev.jacobian(q))));
+                const Tensor<1, dim> m = J_inv * n;
+
+                jxw_bdry_host(f * n_q_face + q) = fev.JxW(q);
+                for (unsigned int d = 0; d < dim; ++d)
+                  jtn_bdry_host(f * dim * n_q_face + d * n_q_face + q) = m[d];
+              }
+
+            const Tensor<1, dim> n0 = fev.normal_vector(0);
+            const Tensor<2, dim> J_inv0(invert(static_cast<Tensor<2, dim>>(fev.jacobian(0))));
+            pen_bdry_host(f) = Number(2) * (J_inv0 * n0).norm() * penalty_degree_factor;
+          }
+
+        Kokkos::deep_copy(jacobians_times_normal_inner_face, jtn_inner_host);
+        Kokkos::deep_copy(jacobians_times_normal_boundary_face, jtn_bdry_host);
+        Kokkos::deep_copy(jxw_inner_face, jxw_inner_host);
+        Kokkos::deep_copy(jxw_boundary_face, jxw_bdry_host);
+        Kokkos::deep_copy(penalty_parameters_inner_face, pen_inner_host);
+        Kokkos::deep_copy(penalty_parameters_boundary_face, pen_bdry_host);
+        Kokkos::fence();
+
+        // Piola matrix P = J / det(J), one dim x dim per cell (affine: constant over the cell)
+        cell_piola = DeviceVector<Number>(
+          Kokkos::view_alloc("cell_piola", Kokkos::WithoutInitializing), n_cells * dim * dim);
+        auto cell_piola_host = Kokkos::create_mirror_view(cell_piola);
+        {
+          const Quadrature<dim> vol_quadrature(quadrature);
+          FEValues<dim>         fe_values(mapping,
+                                  dof_handler.get_fe(),
+                                  vol_quadrature,
+                                  update_jacobians);
+          for (unsigned int c = 0; c < n_cells; ++c)
+            {
+              fe_values.reinit(local_cells[c]);
+              const Tensor<2, dim> J(fe_values.jacobian(0));
+              const Number         det = determinant(J);
+              for (unsigned int i = 0; i < dim; ++i)
+                for (unsigned int j = 0; j < dim; ++j)
+                  cell_piola_host(c * dim * dim + i * dim + j) = J[i][j] / det;
+            }
+        }
+        Kokkos::deep_copy(cell_piola, cell_piola_host);
+        Kokkos::fence();
       }
 
       void
@@ -1472,6 +1700,7 @@ namespace Portable
               face_values_at_quads,
               face_normal_derivatives_at_quads,
               dof_indices_per_cell,
+              neighbor_cells,
               n_cells,
               interpolate_to_faces,
               factor_mass,
@@ -1479,6 +1708,37 @@ namespace Portable
               1u,
               1u,
               1u);
+
+            if (interpolate_to_faces)
+              {
+                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_inner_face,
+                  jxw_inner_face,
+                  penalty_parameters_inner_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[0],
+                  face_info_cpu[0].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
+                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
+                  shape_values,
+                  interpolate_quad_to_boundary,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  dof_indices_per_cell,
+                  neighbor_cells,
+                  dst_device,
+                  n_cells,
+                  1u,
+                  1u,
+                  1u);
+              }
 
             // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
             // test_cpu<n_t, n_q, 1>(in1.data(), out1.data(), src_device, dst_device);
@@ -1544,6 +1804,7 @@ namespace Portable
               face_values_at_quads,
               face_normal_derivatives_at_quads,
               dof_indices_per_cell,
+              neighbor_cells,
               n_cells,
               interpolate_to_faces,
               factor_mass,
@@ -1551,6 +1812,37 @@ namespace Portable
               1u,
               1u,
               1u);
+
+            if (interpolate_to_faces)
+              {
+                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_inner_face,
+                  jxw_inner_face,
+                  penalty_parameters_inner_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[0],
+                  face_info_cpu[0].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
+                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
+                  shape_values,
+                  interpolate_quad_to_boundary,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  dof_indices_per_cell,
+                  neighbor_cells,
+                  dst_device,
+                  n_cells,
+                  1u,
+                  1u,
+                  1u);
+              }
           }
         else if (shape_info[0].fe_degree == 4)
           {
@@ -1611,6 +1903,7 @@ namespace Portable
               face_values_at_quads,
               face_normal_derivatives_at_quads,
               dof_indices_per_cell,
+              neighbor_cells,
               n_cells,
               interpolate_to_faces,
               factor_mass,
@@ -1618,6 +1911,37 @@ namespace Portable
               1u,
               1u,
               1u);
+
+            if (interpolate_to_faces)
+              {
+                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_inner_face,
+                  jxw_inner_face,
+                  penalty_parameters_inner_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[0],
+                  face_info_cpu[0].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
+                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
+                  shape_values,
+                  interpolate_quad_to_boundary,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  dof_indices_per_cell,
+                  neighbor_cells,
+                  dst_device,
+                  n_cells,
+                  1u,
+                  1u,
+                  1u);
+              }
           }
         else if (shape_info[0].fe_degree == 5)
           {
@@ -1678,6 +2002,7 @@ namespace Portable
               face_values_at_quads,
               face_normal_derivatives_at_quads,
               dof_indices_per_cell,
+              neighbor_cells,
               n_cells,
               interpolate_to_faces,
               factor_mass,
@@ -1685,6 +2010,37 @@ namespace Portable
               1u,
               1u,
               1u);
+
+            if (interpolate_to_faces)
+              {
+                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
+                  shape_info[0].shape_gradients_collocation,
+                  cell_piola,
+                  jacobians_times_normal_inner_face,
+                  jxw_inner_face,
+                  penalty_parameters_inner_face,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  face_info[0],
+                  face_info_cpu[0].size(),
+                  factor_laplace,
+                  1u,
+                  1u,
+                  1u);
+
+                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
+                  shape_values,
+                  interpolate_quad_to_boundary,
+                  face_values_at_quads,
+                  face_normal_derivatives_at_quads,
+                  dof_indices_per_cell,
+                  neighbor_cells,
+                  dst_device,
+                  n_cells,
+                  1u,
+                  1u,
+                  1u);
+              }
           }
 
         dst.compress(VectorOperation::add);
@@ -1716,6 +2072,31 @@ namespace Portable
       // the quadrature points of every face: (n_q_face, 2*dim, n_components, n_cells)
       Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_values_at_quads;
       Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_normal_derivatives_at_quads;
+
+      // ---- face_info: connectivity + geometry for the face integrals ----
+
+      // per face: {cell_minus, cell_plus, f_minus, f_plus, orientation}
+      // ([1] boundary faces store boundary_id in slot 3 and invalid in slot 1)
+      std::array<std::vector<std::array<unsigned int, 5>>, 2> face_info_cpu;
+      Kokkos::Array<Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space>, 2> face_info;
+
+      // m = J^{-1} n at each face quadrature point, laid out
+      // [face * dim * n_q_face + d * n_q_face + q], last View index = side
+      // (0 = interior / minus, 1 = exterior / plus).
+      Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space> jacobians_times_normal_inner_face;
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space> jacobians_times_normal_boundary_face;
+
+      // physical surface JxW at each face quadrature point, per side.
+      Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space> jxw_inner_face;
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space>    jxw_boundary_face;
+
+      // SIPG penalty per face -- geometry only, factor_laplace is applied in the kernel.
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space> penalty_parameters_inner_face;
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space> penalty_parameters_boundary_face;
+
+      // Piola matrix P = J / det(J), one dim x dim per cell (constant per cell: affine only).
+      // Layout: [cell * dim * dim + row * dim + col].
+      DeviceVector<Number> cell_piola;
 
       std::shared_ptr<const Utilities::MPI::Partitioner> partitioner;
 
