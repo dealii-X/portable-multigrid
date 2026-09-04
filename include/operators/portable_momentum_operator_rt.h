@@ -169,8 +169,7 @@ namespace Portable
                                     local_dof_indices[f * dofs_per_face] + i,
                                   ExcInternalError());
 
-                    dof_indices_per_entity[cell_counter][f] =
-                      local_dof_indices[f * dofs_per_face];
+                    dof_indices_per_entity[cell_counter][f] = local_dof_indices[f * dofs_per_face];
                   }
 
                 const unsigned int start_cell_dofs = 2 * dim * dofs_per_face;
@@ -179,8 +178,7 @@ namespace Portable
                                 local_dof_indices[start_cell_dofs] + i,
                               ExcInternalError());
 
-                dof_indices_per_entity[cell_counter][2 * dim] =
-                  local_dof_indices[start_cell_dofs];
+                dof_indices_per_entity[cell_counter][2 * dim] = local_dof_indices[start_cell_dofs];
 
                 ++cell_counter;
               }
@@ -199,8 +197,7 @@ namespace Portable
                                                        make_array_view(tmp_array),
                                                        make_array_view(numbers_ghosts),
                                                        requests);
-        partitioner_dofs.export_to_ghosted_array_finish(make_array_view(numbers_ghosts),
-                                                        requests);
+        partitioner_dofs.export_to_ghosted_array_finish(make_array_view(numbers_ghosts), requests);
 
         IndexSet owned_dofs(positions.second);
         owned_dofs.add_range(positions.first, positions.first + n_unconstrained_owned_dofs);
@@ -322,8 +319,7 @@ namespace Portable
         for (unsigned int f = 0; f < 2 * dim; ++f)
           n_cells_at_dirichlet_boundary += cells_at_dirichlet_boundary_by_face[f].size();
 
-        std::map<unsigned int, std::vector<std::array<types::global_dof_index, 5>>>
-          proc_neighbors;
+        std::map<unsigned int, std::vector<std::array<types::global_dof_index, 5>>> proc_neighbors;
 
         cell_counter = 0;
 
@@ -456,7 +452,7 @@ namespace Portable
         // ---------------------------------------------------------------
         const auto        &triangulation = dof_handler.get_triangulation();
         const unsigned int face_degree   = dof_handler.get_fe().degree;
-        const unsigned int n_q_face       = Utilities::pow(quadrature.size(), dim - 1);
+        const unsigned int n_q_face      = Utilities::pow(quadrature.size(), dim - 1);
 
         // active cell index -> local (locally-owned) cell id, and the iterators
         std::vector<unsigned int> active_to_local(triangulation.n_active_cells(),
@@ -501,8 +497,11 @@ namespace Portable
                       if (cell->face(f)->boundary_id() != 0)
                         {
                           std::array<unsigned int, 5> info = {
-                            {cm, numbers::invalid_unsigned_int, f,
-                             static_cast<unsigned int>(cell->face(f)->boundary_id()), 0u}};
+                            {cm,
+                             numbers::invalid_unsigned_int,
+                             f,
+                             static_cast<unsigned int>(cell->face(f)->boundary_id()),
+                             0u}};
                           face_info_cpu[1].push_back(info);
                         }
                     }
@@ -513,8 +512,11 @@ namespace Portable
                       if (!neighbor->is_locally_owned())
                         continue;
                       std::array<unsigned int, 5> info = {
-                        {cm, active_to_local[neighbor->active_cell_index()], f,
-                         cell->neighbor_face_no(f), 0u}};
+                        {cm,
+                         active_to_local[neighbor->active_cell_index()],
+                         f,
+                         cell->neighbor_face_no(f),
+                         0u}};
                       face_info_cpu[0].push_back(info);
                     }
                 }
@@ -548,7 +550,8 @@ namespace Portable
         jxw_inner_face = Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space>(
           Kokkos::view_alloc("jxw_inner_face", Kokkos::WithoutInitializing), n_inner * n_q_face);
         penalty_parameters_inner_face = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
-          Kokkos::view_alloc("penalty_parameters_inner_face", Kokkos::WithoutInitializing), n_inner);
+          Kokkos::view_alloc("penalty_parameters_inner_face", Kokkos::WithoutInitializing),
+          n_inner);
 
         jacobians_times_normal_boundary_face =
           Kokkos::View<Number *, MemorySpace::Default::kokkos_space>(
@@ -562,19 +565,19 @@ namespace Portable
             Kokkos::view_alloc("penalty_parameters_boundary_face", Kokkos::WithoutInitializing),
             n_boundary);
 
-        auto jtn_inner_host   = Kokkos::create_mirror_view(jacobians_times_normal_inner_face);
-        auto jtn_bdry_host    = Kokkos::create_mirror_view(jacobians_times_normal_boundary_face);
-        auto jxw_inner_host   = Kokkos::create_mirror_view(jxw_inner_face);
-        auto jxw_bdry_host    = Kokkos::create_mirror_view(jxw_boundary_face);
-        auto pen_inner_host   = Kokkos::create_mirror_view(penalty_parameters_inner_face);
-        auto pen_bdry_host    = Kokkos::create_mirror_view(penalty_parameters_boundary_face);
+        auto jtn_inner_host = Kokkos::create_mirror_view(jacobians_times_normal_inner_face);
+        auto jtn_bdry_host  = Kokkos::create_mirror_view(jacobians_times_normal_boundary_face);
+        auto jxw_inner_host = Kokkos::create_mirror_view(jxw_inner_face);
+        auto jxw_bdry_host  = Kokkos::create_mirror_view(jxw_boundary_face);
+        auto pen_inner_host = Kokkos::create_mirror_view(penalty_parameters_inner_face);
+        auto pen_bdry_host  = Kokkos::create_mirror_view(penalty_parameters_boundary_face);
 
         const Quadrature<dim - 1> face_quadrature(quadrature);
         FEFaceValues<dim>         fev(mapping,
-                              dof_handler.get_fe(),
-                              face_quadrature,
-                              update_jacobians | update_normal_vectors | update_JxW_values);
-        FEFaceValues<dim>         fev_nb(mapping,
+                                      dof_handler.get_fe(),
+                                      face_quadrature,
+                                      update_jacobians | update_normal_vectors | update_JxW_values);
+        FEFaceValues<dim> fev_nb(mapping,
                                  dof_handler.get_fe(),
                                  face_quadrature,
                                  update_jacobians | update_normal_vectors | update_JxW_values);
@@ -592,7 +595,8 @@ namespace Portable
               {
                 const Tensor<1, dim> n = fev.normal_vector(q); // interior outward normal
                 const Tensor<2, dim> Jm_inv(invert(static_cast<Tensor<2, dim>>(fev.jacobian(q))));
-                const Tensor<2, dim> Jp_inv(invert(static_cast<Tensor<2, dim>>(fev_nb.jacobian(q))));
+                const Tensor<2, dim> Jp_inv(
+                  invert(static_cast<Tensor<2, dim>>(fev_nb.jacobian(q))));
                 const Tensor<1, dim> m_minus = Jm_inv * n; // = J^{-1} n
                 const Tensor<1, dim> m_plus  = Jp_inv * n;
 
@@ -643,15 +647,13 @@ namespace Portable
         Kokkos::fence();
 
         // Piola matrix P = J / det(J), one dim x dim per cell (affine: constant over the cell)
-        cell_piola = DeviceVector<Number>(
-          Kokkos::view_alloc("cell_piola", Kokkos::WithoutInitializing), n_cells * dim * dim);
+        cell_piola =
+          DeviceVector<Number>(Kokkos::view_alloc("cell_piola", Kokkos::WithoutInitializing),
+                               n_cells * dim * dim);
         auto cell_piola_host = Kokkos::create_mirror_view(cell_piola);
         {
           const Quadrature<dim> vol_quadrature(quadrature);
-          FEValues<dim>         fe_values(mapping,
-                                  dof_handler.get_fe(),
-                                  vol_quadrature,
-                                  update_jacobians);
+          FEValues<dim> fe_values(mapping, dof_handler.get_fe(), vol_quadrature, update_jacobians);
           for (unsigned int c = 0; c < n_cells; ++c)
             {
               fe_values.reinit(local_cells[c]);
@@ -1399,26 +1401,6 @@ namespace Portable
               threads_per_block);
           }
 
-        if (shape_info[0].fe_degree == 2)
-          {
-            constexpr int n_t = 2, n_q = 3;
-
-
-            Portable::RT::helmholtz_operator<dim, n_t, n_q, Number>(
-              shape_values,
-              shape_info[0].shape_gradients_collocation,
-              geometric_tensor_mass,
-              geometric_tensor_stiffness,
-              src_device,
-              dst_device,
-              dof_indices_per_cell,
-              n_cells,
-              factor_mass,
-              factor_laplace,
-              n_cells_per_batch,
-              n_blocks,
-              threads_per_block);
-          }
 
         if (shape_info[0].fe_degree == 3)
           {
@@ -1555,6 +1537,83 @@ namespace Portable
         src.zero_out_ghost_values();
       }
 
+      template <int n_t, int n_q>
+      void
+      run_operator(const DeviceVector<Number> src_device,
+                   DeviceVector<Number>       dst_device,
+                   const Number               factor_mass,
+                   const Number               factor_laplace,
+                   const bool                 interpolate_to_faces,
+                   const unsigned int         n_elements_per_batch = numbers::invalid_unsigned_int,
+                   const unsigned int         n_blocks             = numbers::invalid_unsigned_int,
+                   const unsigned int         threads_per_block    = numbers::invalid_unsigned_int)
+      {
+        Portable::RT::compute_cell<dim, n_t, n_q, Number>(shape_values,
+                                                          shape_info[0].shape_gradients_collocation,
+                                                          geometric_tensor_mass,
+                                                          geometric_tensor_stiffness,
+                                                          src_device,
+                                                          dst_device,
+                                                          interpolate_quad_to_boundary,
+                                                          face_values_at_quads,
+                                                          face_normal_derivatives_at_quads,
+                                                          dof_indices_per_cell,
+                                                          neighbor_cells,
+                                                          n_cells,
+                                                          interpolate_to_faces,
+                                                          factor_mass,
+                                                          factor_laplace,
+                                                          n_elements_per_batch,
+                                                          n_blocks,
+                                                          threads_per_block);
+
+        if (interpolate_to_faces)
+          {
+            Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
+              shape_info[0].shape_gradients_collocation,
+              cell_piola,
+              jacobians_times_normal_inner_face,
+              jxw_inner_face,
+              penalty_parameters_inner_face,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
+              face_info[0],
+              face_info_cpu[0].size(),
+              factor_laplace,
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
+
+            Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
+              shape_info[0].shape_gradients_collocation,
+              cell_piola,
+              jacobians_times_normal_boundary_face,
+              jxw_boundary_face,
+              penalty_parameters_boundary_face,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
+              face_info[1],
+              face_info_cpu[1].size(),
+              factor_laplace,
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
+
+            Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
+              shape_values,
+              interpolate_quad_to_boundary,
+              face_values_at_quads,
+              face_normal_derivatives_at_quads,
+              dof_indices_per_cell,
+              neighbor_cells,
+              dst_device,
+              n_cells,
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
+          }
+      }
+
       // Same as test_cell_operator, but also runs the SIPG face kernels
       // (compute_inner_faces / compute_boundary_faces / distribute_face_to_global)
       // -- i.e. the full matvec, not just the cell term. Operates directly on
@@ -1564,15 +1623,15 @@ namespace Portable
       test_full_operator(
         LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
         const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-        const Number factor_mass    = Number(1),
-        const Number factor_laplace = Number(1))
+        const Number factor_mass          = Number(1),
+        const Number factor_laplace       = Number(1),
+        const bool   interpolate_to_faces = false)
       {
         src.update_ghost_values();
         DeviceVector<Number> src_device(src.get_values(), src.locally_owned_size());
         DeviceVector<Number> dst_device(dst.get_values(), dst.locally_owned_size());
 
-        apply_device(
-          src_device, dst_device, factor_mass, factor_laplace, /*interpolate_to_faces=*/true);
+        apply_device(src_device, dst_device, factor_mass, factor_laplace, interpolate_to_faces);
 
         dst.compress(VectorOperation::add);
         src.zero_out_ghost_values();
@@ -1580,10 +1639,10 @@ namespace Portable
 
       void
       apply_device(const DeviceVector<Number> src_device,
-                  DeviceVector<Number>       dst_device,
-                  const Number factor_mass          = Number(1),
-                  const Number factor_laplace       = Number(1),
-                  const bool   interpolate_to_faces = false)
+                   DeviceVector<Number>       dst_device,
+                   const Number               factor_mass          = Number(1),
+                   const Number               factor_laplace       = Number(1),
+                   const bool                 interpolate_to_faces = false)
       {
         // Batch/block/thread-count launch parameters: numbers::invalid_unsigned_int
         // lets every kernel fall back to its own internal (shared-memory-budget
@@ -1604,526 +1663,160 @@ namespace Portable
         shape_values[0] = shape_info[0].shape_values;
         shape_values[1] = shape_info[1].shape_values;
 
-        // const unsigned int n_dofs_per_component =
-        //   (shape_info[0].fe_degree + 1) * Utilities::pow(shape_info[0].fe_degree, dim - 1);
-        // const unsigned int n_q_points = Utilities::pow(shape_info[0].n_q_points_1d, dim);
-
-        // std::vector<Number> in0(n_dofs_per_component);
-        // std::vector<Number> in1(n_dofs_per_component);
-        // std::vector<Number> in2(n_dofs_per_component);
-        // std::vector<Number> out0(n_q_points);
-        // std::vector<Number> out1(n_q_points);
-        // std::vector<Number> out2(n_q_points);
-        // std::vector<Number> temp1(n_q_points);
-        // std::vector<Number> temp2(n_q_points);
-
-
-
-        // for (unsigned int i = 0; i < n_dofs_per_component; ++i)
-        //   {
-        //     in0[i] = src_host[dof_indices_per_cell(0 * n_dofs_per_component + i, 0)];
-        //     in1[i] = src_host[dof_indices_per_cell(1 * n_dofs_per_component + i, 0)];
-        //     if (dim > 2)
-        //       in2[i] = src_host[dof_indices_per_cell(2 * n_dofs_per_component + i, 0)];
-        //   }
-
-
-        // const unsigned int nn_n = shape_info[0].fe_degree + 1;
-        // const unsigned int nn_t = shape_info[0].fe_degree;
-        // const unsigned int nn_q = shape_info[0].n_q_points_1d;
-
-        // std::cout << "-----------------------------------\n";
-        // std::cout << "shape_info[0].shape_data_on_face[0].size() = "
-        //           << shape_info[0].shape_data_on_face[0].size() << std::endl;
-        // std::cout << "shape_info[0].shape_data_on_face[1].size() = "
-        //           << shape_info[0].shape_data_on_face[1].size() << std::endl;
-        // std::cout << "-----------------------------------\n";
-
-        // std::cout << "-----------------------------------\n";
-        // std::cout << "shape_info[1].shape_data_on_face[0].size() = "
-        //           << shape_info[1].shape_data_on_face[0].size() << std::endl;
-        // std::cout << "shape_info[1].shape_data_on_face[1].size() = "
-        //           << shape_info[1].shape_data_on_face[1].size() << std::endl;
-        // std::cout << "-----------------------------------\n";
-
-        // std::cout << "-----------------------------------\n";
-        // for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[0].size(); ++i)
-        //   std::cout << shape_info[0].shape_data_on_face[0][i] << "  ";
-        // std::cout << std::endl << std::endl;
-
-        // for (unsigned int i = 0; i < shape_info[0].shape_data_on_face[1].size(); ++i)
-        //   std::cout << shape_info[0].shape_data_on_face[1][i] << "  ";
-        // std::cout << std::endl << std::endl;
-
-        // for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[0].size(); ++i)
-        //   std::cout << shape_info[1].shape_data_on_face[0][i] << "  ";
-        // std::cout << std::endl << std::endl;
-
-
-        // for (unsigned int i = 0; i < shape_info[1].shape_data_on_face[1].size(); ++i)
-        //   std::cout << shape_info[1].shape_data_on_face[1][i] << "  ";
-        // std::cout << std::endl << std::endl;
-
-        // std::cout << "-----------------------------------\n";
-
 
         // std::cout << std::endl << std::endl;
         if (shape_info[0].fe_degree == 2)
           {
             constexpr int n_t = 2, n_q = 3;
 
-            // Portable::RT::mass_operator<dim, n_t, n_q, Number>(shape_values,
-            //                                                    geometric_tensor_mass,
-            //                                                    src_device,
-            //                                                    dst_device,
-            //                                                    dof_indices_per_cell,
-            //                                                    n_cells,
-            //                                                    1u,
-            //                                                    1u,
-            //                                                    1u);
-
-
-
-            // Portable::RT::stiffness_operator<dim, n_t, n_q, Number>(
-            //   shape_values,
-            //   shape_info[0].shape_gradients_collocation,
-            //   geometric_tensor_mass,
-            //   geometric_tensor_stiffness,
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_cell,
-            //   n_cells,
-            //   1u,
-            //   1u,
-            //   1u);
-
-            // Portable::RT::helmholtz_operator<dim, n_t, n_q, Number>(
-            //   shape_values,
-            //   shape_info[0].shape_gradients_collocation,
-            //   geometric_tensor_mass,
-            //   geometric_tensor_stiffness,
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_cell,
-            //   n_cells,
-            //   factor_mass,
-            //   factor_laplace,
-            //   1u,
-            //   1u,
-            //   1u);
-
-            Portable::RT::compute_cell<dim, n_t, n_q, Number>(
-              shape_values,
-              shape_info[0].shape_gradients_collocation,
-              geometric_tensor_mass,
-              geometric_tensor_stiffness,
-              src_device,
-              dst_device,
-              interpolate_quad_to_boundary,
-              face_values_at_quads,
-              face_normal_derivatives_at_quads,
-              dof_indices_per_cell,
-              neighbor_cells,
-              n_cells,
-              interpolate_to_faces,
-              factor_mass,
-              factor_laplace,
-              n_elements_per_batch,
-              n_blocks,
-              threads_per_block);
-
-            if (interpolate_to_faces)
-              {
-                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_inner_face,
-                  jxw_inner_face,
-                  penalty_parameters_inner_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[0],
-                  face_info_cpu[0].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_boundary_face,
-                  jxw_boundary_face,
-                  penalty_parameters_boundary_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[1],
-                  face_info_cpu[1].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
-                  shape_values,
-                  interpolate_quad_to_boundary,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  dof_indices_per_cell,
-                  neighbor_cells,
-                  dst_device,
-                  n_cells,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-              }
-
-            // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
-            // test_cpu<n_t, n_q, 1>(in1.data(), out1.data(), src_device, dst_device);
-            // if (dim == 3)
-            //   test_cpu<n_t, n_q, 2>(in2.data(), out2.data(), src_device, dst_device);
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
           }
+
         else if (shape_info[0].fe_degree == 3)
           {
             constexpr int n_t = 3, n_q = 4;
 
-            // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
-            // test_cpu<n_t, n_q, 1>(in1.data(), out1.data(), src_device, dst_device);
-
-            // if (dim == 3)
-            //   test_cpu<n_t, n_q, 2>(in2.data(), out2.data(), src_device, dst_device);
-
-            // Portable::RT::mass_operator<dim, n_t, n_q, Number>(shape_values,
-            //                                                    geometric_tensor_mass,
-            //                                                    src_device,
-            //                                                    dst_device,
-            //                                                    dof_indices_per_cell,
-            //                                                    n_cells,
-            //                                                    1u,
-            //                                                    1u,
-            //                                                    1u);
-
-            // Portable::RT::stiffness_operator<dim, n_t, n_q, Number>(
-            //   shape_values,
-            //   shape_info[0].shape_gradients_collocation,
-            //   geometric_tensor_mass,
-            //   geometric_tensor_stiffness,
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_cell,
-            //   n_cells,
-            //   1u,
-            //   1u,
-            //   1u);
-
-            // Portable::RT::helmholtz_operator<dim, n_t, n_q, Number>(
-            // shape_values,
-            // shape_info[0].shape_gradients_collocation,
-            // geometric_tensor_mass,
-            // geometric_tensor_stiffness,
-            // src_device,
-            // dst_device,
-            // dof_indices_per_cell,
-            // n_cells,
-            // factor_mass,
-            // factor_laplace,
-            // 1u,
-            // 1u,
-            // 1u);
-
-            Portable::RT::compute_cell<dim, n_t, n_q, Number>(
-              shape_values,
-              shape_info[0].shape_gradients_collocation,
-              geometric_tensor_mass,
-              geometric_tensor_stiffness,
-              src_device,
-              dst_device,
-              interpolate_quad_to_boundary,
-              face_values_at_quads,
-              face_normal_derivatives_at_quads,
-              dof_indices_per_cell,
-              neighbor_cells,
-              n_cells,
-              interpolate_to_faces,
-              factor_mass,
-              factor_laplace,
-              n_elements_per_batch,
-              n_blocks,
-              threads_per_block);
-
-            if (interpolate_to_faces)
-              {
-                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_inner_face,
-                  jxw_inner_face,
-                  penalty_parameters_inner_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[0],
-                  face_info_cpu[0].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_boundary_face,
-                  jxw_boundary_face,
-                  penalty_parameters_boundary_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[1],
-                  face_info_cpu[1].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
-                  shape_values,
-                  interpolate_quad_to_boundary,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  dof_indices_per_cell,
-                  neighbor_cells,
-                  dst_device,
-                  n_cells,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-              }
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
           }
         else if (shape_info[0].fe_degree == 4)
           {
             constexpr int n_t = 4, n_q = 5;
 
-            // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
-            // test_cpu<n_t, n_q, 1>(in1.data(), out1.data(), src_device, dst_device);
-            // if (dim == 3)
-            //   test_cpu<n_t, n_q, 2>(in2.data(), out2.data(), src_device, dst_device);
 
-            // Portable::RT::mass_operator<dim, n_t, n_q, Number>(shape_values,
-            //                                                    geometric_tensor_mass,
-            //                                                    src_device,
-            //                                                    dst_device,
-            //                                                    dof_indices_per_cell,
-            //                                                    n_cells,
-            //                                                    1u,
-            //                                                    1u,
-            //                                                    1u);
-
-
-            // Portable::RT::stiffness_operator<dim, n_t, n_q, Number>(
-            //   shape_values,
-            //   shape_info[0].shape_gradients_collocation,
-            //   geometric_tensor_mass,
-            //   geometric_tensor_stiffness,
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_cell,
-            //   n_cells,
-            //   1u,
-            //   1u,
-            //   1u);
-
-            // Portable::RT::helmholtz_operator<dim, n_t, n_q, Number>(
-            // shape_values,
-            // shape_info[0].shape_gradients_collocation,
-            // geometric_tensor_mass,
-            // geometric_tensor_stiffness,
-            // src_device,
-            // dst_device,
-            // dof_indices_per_cell,
-            // n_cells,
-            // factor_mass,
-            // factor_laplace,
-            // 1u,
-            // 1u,
-            // 1u);
-
-            Portable::RT::compute_cell<dim, n_t, n_q, Number>(
-              shape_values,
-              shape_info[0].shape_gradients_collocation,
-              geometric_tensor_mass,
-              geometric_tensor_stiffness,
-              src_device,
-              dst_device,
-              interpolate_quad_to_boundary,
-              face_values_at_quads,
-              face_normal_derivatives_at_quads,
-              dof_indices_per_cell,
-              neighbor_cells,
-              n_cells,
-              interpolate_to_faces,
-              factor_mass,
-              factor_laplace,
-              n_elements_per_batch,
-              n_blocks,
-              threads_per_block);
-
-            if (interpolate_to_faces)
-              {
-                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_inner_face,
-                  jxw_inner_face,
-                  penalty_parameters_inner_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[0],
-                  face_info_cpu[0].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_boundary_face,
-                  jxw_boundary_face,
-                  penalty_parameters_boundary_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[1],
-                  face_info_cpu[1].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-
-                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
-                  shape_values,
-                  interpolate_quad_to_boundary,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  dof_indices_per_cell,
-                  neighbor_cells,
-                  dst_device,
-                  n_cells,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-              }
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
           }
         else if (shape_info[0].fe_degree == 5)
           {
             constexpr int n_t = 5, n_q = 6;
 
-            // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
-            // test_cpu<n_t, n_q, 1>(in1.data(), out1.data(), src_device, dst_device);
-            // if (dim == 3)
-            //   test_cpu<n_t, n_q, 2>(in2.data(), out2.data(), src_device, dst_device);
 
-            // Portable::RT::mass_operator<dim, n_t, n_q, Number>(shape_values,
-            //                                                    geometric_tensor_mass,
-            //                                                    src_device,
-            //                                                    dst_device,
-            //                                                    dof_indices_per_cell,
-            //                                                    n_cells,
-            //                                                    1u,
-            //                                                    1u,
-            //                                                    1u);
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 6)
+          {
+            constexpr int n_t = 6, n_q = 7;
 
 
-            // Portable::RT::stiffness_operator<dim, n_t, n_q, Number>(
-            //   shape_values,
-            //   shape_info[0].shape_gradients_collocation,
-            //   geometric_tensor_mass,
-            //   geometric_tensor_stiffness,
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_cell,
-            //   n_cells,
-            //   1u,
-            //   1u,
-            //   1u);
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 7)
+          {
+            constexpr int n_t = 7, n_q = 8;
 
-            // Portable::RT::helmholtz_operator<dim, n_t, n_q, Number>(
-            // shape_values,
-            // shape_info[0].shape_gradients_collocation,
-            // geometric_tensor_mass,
-            // geometric_tensor_stiffness,
-            // src_device,
-            // dst_device,
-            // dof_indices_per_cell,
-            // n_cells,
-            // factor_mass,
-            // factor_laplace,
-            // 1u,
-            // 1u,
-            // 1u);
 
-            Portable::RT::compute_cell<dim, n_t, n_q, Number>(
-              shape_values,
-              shape_info[0].shape_gradients_collocation,
-              geometric_tensor_mass,
-              geometric_tensor_stiffness,
-              src_device,
-              dst_device,
-              interpolate_quad_to_boundary,
-              face_values_at_quads,
-              face_normal_derivatives_at_quads,
-              dof_indices_per_cell,
-              neighbor_cells,
-              n_cells,
-              interpolate_to_faces,
-              factor_mass,
-              factor_laplace,
-              n_elements_per_batch,
-              n_blocks,
-              threads_per_block);
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 8)
+          {
+            constexpr int n_t = 8, n_q = 9;
 
-            if (interpolate_to_faces)
-              {
-                Portable::RT::compute_inner_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_inner_face,
-                  jxw_inner_face,
-                  penalty_parameters_inner_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[0],
-                  face_info_cpu[0].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
 
-                Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
-                  shape_info[0].shape_gradients_collocation,
-                  cell_piola,
-                  jacobians_times_normal_boundary_face,
-                  jxw_boundary_face,
-                  penalty_parameters_boundary_face,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  face_info[1],
-                  face_info_cpu[1].size(),
-                  factor_laplace,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 9)
+          {
+            constexpr int n_t = 9, n_q = 10;
 
-                Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
-                  shape_values,
-                  interpolate_quad_to_boundary,
-                  face_values_at_quads,
-                  face_normal_derivatives_at_quads,
-                  dof_indices_per_cell,
-                  neighbor_cells,
-                  dst_device,
-                  n_cells,
-                  n_elements_per_batch,
-                  n_blocks,
-                  threads_per_block);
-              }
+
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 10)
+          {
+            constexpr int n_t = 10, n_q = 11;
+
+
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 11)
+          {
+            constexpr int n_t = 11, n_q = 12;
+
+
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
+          }
+        else if (shape_info[0].fe_degree == 12)
+          {
+            constexpr int n_t = 12, n_q = 13;
+
+
+            run_operator<n_t, n_q>(src_device,
+                                   dst_device,
+                                   factor_mass,
+                                   factor_laplace,
+                                   interpolate_to_faces,
+                                   n_elements_per_batch,
+                                   n_blocks,
+                                   threads_per_block);
           }
       }
 
@@ -2188,26 +1881,31 @@ namespace Portable
 
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space> dof_indices_per_cell;
 
-      // used as a boundary mask to distinguish which faces are on the boundary and which are not
+      // used as a boundary mask to distinguish which faces are on the boundary and which are
+      // not
       Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space> neighbor_cells;
 
       // value and reference normal derivative of each component, interpolated to
       // the quadrature points of every face: (n_q_face, 2*dim, n_components, n_cells)
       Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_values_at_quads;
-      Kokkos::View<Number ****, MemorySpace::Default::kokkos_space> face_normal_derivatives_at_quads;
+      Kokkos::View<Number ****, MemorySpace::Default::kokkos_space>
+        face_normal_derivatives_at_quads;
 
       // ---- face_info: connectivity + geometry for the face integrals ----
 
       // per face: {cell_minus, cell_plus, f_minus, f_plus, orientation}
       // ([1] boundary faces store boundary_id in slot 3 and invalid in slot 1)
       std::array<std::vector<std::array<unsigned int, 5>>, 2> face_info_cpu;
-      Kokkos::Array<Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space>, 2> face_info;
+      Kokkos::Array<Kokkos::View<unsigned int *[5], MemorySpace::Default::kokkos_space>, 2>
+        face_info;
 
       // m = J^{-1} n at each face quadrature point, laid out
       // [face * dim * n_q_face + d * n_q_face + q], last View index = side
       // (0 = interior / minus, 1 = exterior / plus).
-      Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space> jacobians_times_normal_inner_face;
-      Kokkos::View<Number *, MemorySpace::Default::kokkos_space> jacobians_times_normal_boundary_face;
+      Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space>
+        jacobians_times_normal_inner_face;
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space>
+        jacobians_times_normal_boundary_face;
 
       // physical surface JxW at each face quadrature point, per side.
       Kokkos::View<Number *[2], MemorySpace::Default::kokkos_space> jxw_inner_face;

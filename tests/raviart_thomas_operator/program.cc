@@ -289,9 +289,31 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
   pcout << "Memory stats [MB]: " << memory.min << " [p" << memory.min_index << "] " << memory.avg
         << " " << memory.max << " [p" << memory.max_index << "]" << std::endl;
 
+  // -- Correctness check: our compute_cell (no face interpolation) is a second,
+  // -- independent kernel implementation of the same Helmholtz cell integrand
+  // -- that helmholtz_operator computes -- their results should agree exactly.
+  {
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dst_helm, dst_ours;
+    rt_operator_double.initialize_dof_vector(dst_helm);
+    rt_operator_double.initialize_dof_vector(dst_ours);
+    dst_helm = 0.;
+    dst_ours = 0.;
+
+    rt_operator_double.test_cell_operator(dst_helm, src_double);
+    rt_operator_double.test_full_operator(
+      dst_ours, src_double, 1., 1., /*interpolate_to_faces=*/false);
+
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff = dst_helm;
+    diff -= dst_ours;
+
+    pcout << "  cell operator check: |helm| = " << dst_helm.l2_norm()
+          << "   |ours| = " << dst_ours.l2_norm() << "   |helm - ours| = " << diff.l2_norm()
+          << std::endl;
+  }
+
   Timer time;
 
-  double best_mv_double = 1e10;
+  double best_mv_helm_double = 1e10;
   for (unsigned int i = 0; i < 5; ++i)
     {
       const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
@@ -305,16 +327,16 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
       Utilities::MPI::MinMaxAvg stat =
         Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
 
-      best_mv_double = std::min(best_mv_double, stat.max);
+      best_mv_helm_double = std::min(best_mv_helm_double, stat.max);
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        std::cout << "matvec time double " << stat.min << " [p" << stat.min_index << "] "
-                  << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+        std::cout << "matvec time double (cell, helmholtz) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
                   << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
     }
 
   pcout << std::endl << std::endl;
-  double best_mv_float = 1e10;
+  double best_mv_helm_float = 1e10;
   for (unsigned int i = 0; i < 5; ++i)
     {
       const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
@@ -328,13 +350,62 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
       Utilities::MPI::MinMaxAvg stat =
         Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
 
+      best_mv_helm_float = std::min(best_mv_helm_float, stat.max);
+
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        std::cout << "matvec time float (cell, helmholtz) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+                  << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
+    }
+
+  pcout << std::endl << std::endl;
+  double best_mv_double = 1e10;
+  for (unsigned int i = 0; i < 5; ++i)
+    {
+      const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+
+      Kokkos::fence();
+      time.restart();
+      for (unsigned int i = 0; i < n_mv; ++i)
+        rt_operator_double.test_full_operator(
+          dst_double, src_double, 1., 1., /*interpolate_to_faces=*/false);
+      Kokkos::fence();
+
+      Utilities::MPI::MinMaxAvg stat =
+        Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
+      best_mv_double = std::min(best_mv_double, stat.max);
+
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        std::cout << "matvec time double (cell, ours) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+                  << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
+    }
+
+  pcout << std::endl << std::endl;
+  double best_mv_float = 1e10;
+  for (unsigned int i = 0; i < 5; ++i)
+    {
+      const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+
+      Kokkos::fence();
+      time.restart();
+      for (unsigned int i = 0; i < n_mv; ++i)
+        rt_operator_float.test_full_operator(
+          dst_float, src_float, 1., 1., /*interpolate_to_faces=*/false);
+      Kokkos::fence();
+
+      Utilities::MPI::MinMaxAvg stat =
+        Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
       best_mv_float = std::min(best_mv_float, stat.max);
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        std::cout << "matvec time float " << stat.min << " [p" << stat.min_index << "] " << stat.avg
-                  << " " << stat.max << " [p" << stat.max_index << "]"
+        std::cout << "matvec time float (cell, ours) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
                   << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
     }
+
   pcout << std::endl << std::endl;
   double best_mv_full_double = 1e10;
   for (unsigned int i = 0; i < 5; ++i)
@@ -383,6 +454,8 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
 
   convergence_table.add_value("cells", triangulation.n_global_active_cells());
   convergence_table.add_value("dofs", dof_handler.n_dofs());
+  convergence_table.add_value("mv_helm_double", best_mv_helm_double);
+  convergence_table.add_value("mv_helm_float", best_mv_helm_float);
   convergence_table.add_value("mv_double", best_mv_double);
   convergence_table.add_value("mv_float", best_mv_float);
   convergence_table.add_value("mv_full_double", best_mv_full_double);
@@ -487,6 +560,10 @@ RaviartThomasOperator<dim, fe_degree>::run(const std::size_t min_size,
       // if (cycle >= 0)
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {
+          convergence_table.set_scientific("mv_helm_double", true);
+          convergence_table.set_precision("mv_helm_double", 3);
+          convergence_table.set_scientific("mv_helm_float", true);
+          convergence_table.set_precision("mv_helm_float", 3);
           convergence_table.set_scientific("mv_double", true);
           convergence_table.set_precision("mv_double", 3);
           convergence_table.set_scientific("mv_float", true);

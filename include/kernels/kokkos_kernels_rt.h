@@ -898,8 +898,8 @@ namespace Portable
                                 s_wsp1[e * n_q * n_t * n_n + k * n_q * n_t + j * n_q + p] = tmp;
                               }
                           }
-                          team_member.team_barrier();
                         }
+                      team_member.team_barrier();
 
                       // component 2 in x direction
                       {
@@ -1016,15 +1016,14 @@ namespace Portable
 
       int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      const int nelmtPerBatch =
-        (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          // at least 1: for large degree/dim the per-cell scratch footprint can
-          // exceed the shmemPerBlock budget on its own, flooring this to 0
-          // otherwise and dividing by zero below.
-          std::max(1,
-                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
-                    static_cast<int>(sizeof(Number))) :
-          n_cells_per_batch;
+      const int nelmtPerBatch = (n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                                  // at least 1: for large degree/dim the per-cell scratch footprint
+                                  // can exceed the shmemPerBlock budget on its own, flooring this
+                                  // to 0 otherwise and dividing by zero below.
+                                  std::max(1,
+                                           shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                                             static_cast<int>(sizeof(Number))) :
+                                  n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
                               std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
@@ -2201,8 +2200,8 @@ namespace Portable
                                 s_duq_1[e * n_q * n_t * n_n + k * n_q * n_t + j * n_q + p] = tmp;
                               }
                           }
-                          team_member.team_barrier();
                         }
+                      team_member.team_barrier();
 
                       // component 2 in x direction
                       {
@@ -2322,15 +2321,14 @@ namespace Portable
 
       int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      const int nelmtPerBatch =
-        (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          // at least 1: for large degree/dim the per-cell scratch footprint can
-          // exceed the shmemPerBlock budget on its own, flooring this to 0
-          // otherwise and dividing by zero below.
-          std::max(1,
-                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
-                    static_cast<int>(sizeof(Number))) :
-          n_cells_per_batch;
+      const int nelmtPerBatch = (n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                                  // at least 1: for large degree/dim the per-cell scratch footprint
+                                  // can exceed the shmemPerBlock budget on its own, flooring this
+                                  // to 0 otherwise and dividing by zero below.
+                                  std::max(1,
+                                           shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                                             static_cast<int>(sizeof(Number))) :
+                                  n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
                               std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
@@ -3535,8 +3533,8 @@ namespace Portable
                                 s_duq_1[e * n_q * n_t * n_n + k * n_q * n_t + j * n_q + p] = tmp;
                               }
                           }
-                          team_member.team_barrier();
                         }
+                      team_member.team_barrier();
 
                       // component 2 in x direction
                       {
@@ -3609,9 +3607,6 @@ namespace Portable
                 team_member.team_barrier();
               }
 
-
-
-              team_member.team_barrier();
               eb += team_member.league_size();
             }
         });
@@ -3730,15 +3725,14 @@ namespace Portable
 
       int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      const int nelmtPerBatch =
-        (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          // at least 1: for large degree/dim the per-cell scratch footprint can
-          // exceed the shmemPerBlock budget on its own, flooring this to 0
-          // otherwise and dividing by zero below.
-          std::max(1,
-                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
-                    static_cast<int>(sizeof(Number))) :
-          n_cells_per_batch;
+      const int nelmtPerBatch = (n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                                  // at least 1: for large degree/dim the per-cell scratch footprint
+                                  // can exceed the shmemPerBlock budget on its own, flooring this
+                                  // to 0 otherwise and dividing by zero below.
+                                  std::max(1,
+                                           shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                                             static_cast<int>(sizeof(Number))) :
+                                  n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
                               std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
@@ -4338,12 +4332,11 @@ namespace Portable
       // against a shared-memory budget, same idea as compute_cell.
       const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
 
-      const int nelmtPerBatch =
-        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
-          std::max(1,
-                  shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
-                    static_cast<int>(sizeof(Number))) :
-          static_cast<int>(n_faces_per_batch);
+      const int nelmtPerBatch   = (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+                                    std::max(1,
+                                             shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
+                                               static_cast<int>(sizeof(Number))) :
+                                    static_cast<int>(n_faces_per_batch);
       const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
                                     std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
                                     static_cast<int>(n_blocks);
@@ -4405,7 +4398,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, side == 0 ? 0 : 1);
                   const unsigned int local_face = face_info(face, side == 0 ? 2 : 3);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = inner_face_slot_index<dim>(face_in_batch, side, component);
+                  const int slot = inner_face_slot_index<dim>(face_in_batch, side, component);
 
                   // m = J^{-1} n, component along the normal reference axis
                   const Number m_normal =
@@ -4505,8 +4498,9 @@ namespace Portable
 
                   for (int component = 0; component < n_components; ++component)
                     {
-                      const int slot_minus   = inner_face_slot_index<dim>(face_in_batch, 0, component);
-                      const int slot_plus    = inner_face_slot_index<dim>(face_in_batch, 1, component);
+                      const int slot_minus =
+                        inner_face_slot_index<dim>(face_in_batch, 0, component);
+                      const int slot_plus = inner_face_slot_index<dim>(face_in_batch, 1, component);
                       u_ref_minus[component] = s_face_values[slot_minus * n_q_face + q_face];
                       u_ref_plus[component]  = s_face_values[slot_plus * n_q_face + q_face];
                       // (grad_xi u_ref) . m, summed over reference axes already
@@ -4557,8 +4551,9 @@ namespace Portable
                           pt_grad_minus += piola_minus[k][component] * grad_flux[k];
                           pt_grad_plus += piola_plus[k][component] * grad_flux[k];
                         }
-                      const int slot_minus = inner_face_slot_index<dim>(face_in_batch, 0, component);
-                      const int slot_plus  = inner_face_slot_index<dim>(face_in_batch, 1, component);
+                      const int slot_minus =
+                        inner_face_slot_index<dim>(face_in_batch, 0, component);
+                      const int slot_plus = inner_face_slot_index<dim>(face_in_batch, 1, component);
                       s_face_values[slot_minus * n_q_face + q_face] =
                         pt_value_minus; // [[v]]: minus +
                       s_face_values[slot_plus * n_q_face + q_face] =
@@ -4631,7 +4626,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, side == 0 ? 0 : 1);
                   const unsigned int local_face = face_info(face, side == 0 ? 2 : 3);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = inner_face_slot_index<dim>(face_in_batch, side, component);
+                  const int slot = inner_face_slot_index<dim>(face_in_batch, side, component);
 
                   face_values_at_quads(q_face, local_face, component, cell) =
                     s_face_values[slot * n_q_face + q_face];
@@ -4701,12 +4696,11 @@ namespace Portable
       // against a shared-memory budget, same idea as compute_cell.
       const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
 
-      const int nelmtPerBatch =
-        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
-          std::max(1,
-                  shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
-                    static_cast<int>(sizeof(Number))) :
-          static_cast<int>(n_faces_per_batch);
+      const int nelmtPerBatch   = (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+                                    std::max(1,
+                                             shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
+                                               static_cast<int>(sizeof(Number))) :
+                                    static_cast<int>(n_faces_per_batch);
       const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
                                     std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
                                     static_cast<int>(n_blocks);
@@ -4761,7 +4755,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, 0);
                   const unsigned int local_face = face_info(face, 2);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = boundary_face_slot_index<dim>(face_in_batch, component);
+                  const int          slot = boundary_face_slot_index<dim>(face_in_batch, component);
 
                   // m = J^{-1} n, component along the normal reference axis
                   const Number m_normal = jacobians_times_normal_boundary_face(
@@ -4809,7 +4803,7 @@ namespace Portable
                       const int normal_dir  = face_info(face, 2) / 2;
                       const int tangent_dir = face_tangent_direction<dim>(normal_dir, tang_index);
 
-                      const int    slot      = boundary_face_slot_index<dim>(face_in_batch, component);
+                      const int    slot = boundary_face_slot_index<dim>(face_in_batch, component);
                       const Number m_tangent = jacobians_times_normal_boundary_face(
                         face * dim * n_q_face + tangent_dir * n_q_face + q_face);
                       s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face] +=
@@ -4947,7 +4941,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, 0);
                   const unsigned int local_face = face_info(face, 2);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = boundary_face_slot_index<dim>(face_in_batch, component);
+                  const int          slot = boundary_face_slot_index<dim>(face_in_batch, component);
 
                   face_values_at_quads(q_face, local_face, component, cell) =
                     s_face_values[slot * n_q_face + q_face];
@@ -4999,15 +4993,14 @@ namespace Portable
       // per-cell term against a shared-memory budget, same idea as compute_cell.
       const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
 
-      const int nelmtPerBatch =
-        (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          std::max(1,
-                  shmemPerBlock / ((n_components + 2 * dim) * n_q_total) /
-                    static_cast<int>(sizeof(Number))) :
-          static_cast<int>(n_cells_per_batch);
-      const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
-                                    std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
-                                    static_cast<int>(n_blocks);
+      const int nelmtPerBatch = (n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                                  std::max(1,
+                                           shmemPerBlock / ((n_components + 2 * dim) * n_q_total) /
+                                             static_cast<int>(sizeof(Number))) :
+                                  static_cast<int>(n_cells_per_batch);
+      const int numBlocks     = (n_blocks == numbers::invalid_unsigned_int) ?
+                                  std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
+                                  static_cast<int>(n_blocks);
       const int threadsPerBlock = (threads_per_block == numbers::invalid_unsigned_int) ?
                                     std::min(nelmtPerBatch * Utilities::pow(n_q, dim - 1), 512) :
                                     static_cast<int>(threads_per_block);
