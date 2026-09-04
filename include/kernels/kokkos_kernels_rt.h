@@ -4317,7 +4317,7 @@ namespace Portable
           // n_q_face-sized block per (side, component) pair, `n_face_dofs` of
           // those per face -- this is what lets apply() batch over all of
           // them (and both sides) in a single sum-factorization call.
-          const auto slot_index = [=](int face_in_batch, int side, int component)
+          const auto slot_index = KOKKOS_LAMBDA(int face_in_batch, int side, int component)
             { return (face_in_batch * 2 + side) * n_components + component; };
 
           // tangent_index-th axis that is not normal_dir; dim == 2 has a
@@ -4327,7 +4327,7 @@ namespace Portable
             {0, 2}, // normal_dir == 1
             {0, 1}  // normal_dir == 2
           };
-          const auto tangent_direction = [=](int normal_dir, int tang_index)
+          const auto tangent_direction = KOKKOS_LAMBDA(int normal_dir, int tang_index)
             {
               if constexpr (dim == 2)
                 return 1 - normal_dir;
@@ -4687,8 +4687,9 @@ namespace Portable
 
           // buffer index of the (face_in_batch, component) trace, one n_q_face-sized
           // block per component, `n_face_dofs` of those per face.
-          const auto slot_index = [=](int face_in_batch, int component)
-            { return face_in_batch * n_components + component; };
+          const auto slot_index = KOKKOS_LAMBDA(int face_in_batch, int component) {
+            return face_in_batch * n_components + component;
+          };
 
           // tangent_index-th axis that is not normal_dir; dim == 2 has a single
           // tangent axis, dim == 3 looks it up in this table.
@@ -4697,13 +4698,12 @@ namespace Portable
             {0, 2}, // normal_dir == 1
             {0, 1}  // normal_dir == 2
           };
-          const auto tangent_direction = [=](int normal_dir, int tang_index)
-            {
-              if constexpr (dim == 2)
-                return 1 - normal_dir;
-              else
-                return lookup_tangents_3d[normal_dir][tang_index];
-            };
+          const auto tangent_direction = KOKKOS_LAMBDA(int normal_dir, int tang_index) {
+            if constexpr (dim == 2)
+              return 1 - normal_dir;
+            else
+              return lookup_tangents_3d[normal_dir][tang_index];
+          };
 
           const int threadIdx = team_member.team_rank();
           const int blockSize = team_member.team_size();

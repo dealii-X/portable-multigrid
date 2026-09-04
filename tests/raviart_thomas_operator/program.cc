@@ -335,10 +335,58 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
                   << " " << stat.max << " [p" << stat.max_index << "]"
                   << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
     }
+  pcout << std::endl << std::endl;
+  double best_mv_full_double = 1e10;
+  for (unsigned int i = 0; i < 5; ++i)
+    {
+      const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+
+      Kokkos::fence();
+      time.restart();
+      for (unsigned int i = 0; i < n_mv; ++i)
+        rt_operator_double.test_full_operator(dst_double, src_double);
+      Kokkos::fence();
+
+      Utilities::MPI::MinMaxAvg stat =
+        Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
+      best_mv_full_double = std::min(best_mv_full_double, stat.max);
+
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        std::cout << "matvec time double (cell+face) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+                  << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
+    }
+
+  pcout << std::endl << std::endl;
+  double best_mv_full_float = 1e10;
+  for (unsigned int i = 0; i < 5; ++i)
+    {
+      const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
+
+      Kokkos::fence();
+      time.restart();
+      for (unsigned int i = 0; i < n_mv; ++i)
+        rt_operator_float.test_full_operator(dst_float, src_float);
+      Kokkos::fence();
+
+      Utilities::MPI::MinMaxAvg stat =
+        Utilities::MPI::min_max_avg(time.wall_time() / n_mv, MPI_COMM_WORLD);
+
+      best_mv_full_float = std::min(best_mv_full_float, stat.max);
+
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        std::cout << "matvec time float (cell+face) " << stat.min << " [p" << stat.min_index
+                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+                  << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
+    }
+
   convergence_table.add_value("cells", triangulation.n_global_active_cells());
   convergence_table.add_value("dofs", dof_handler.n_dofs());
   convergence_table.add_value("mv_double", best_mv_double);
   convergence_table.add_value("mv_float", best_mv_float);
+  convergence_table.add_value("mv_full_double", best_mv_full_double);
+  convergence_table.add_value("mv_full_float", best_mv_full_float);
 }
 
 
@@ -443,6 +491,10 @@ RaviartThomasOperator<dim, fe_degree>::run(const std::size_t min_size,
           convergence_table.set_precision("mv_double", 3);
           convergence_table.set_scientific("mv_float", true);
           convergence_table.set_precision("mv_float", 3);
+          convergence_table.set_scientific("mv_full_double", true);
+          convergence_table.set_precision("mv_full_double", 3);
+          convergence_table.set_scientific("mv_full_float", true);
+          convergence_table.set_precision("mv_full_float", 3);
           // convergence_table.set_scientific("cg_reduction", true);
           // convergence_table.set_precision("cg_reduction", 3);
           // convergence_table.set_scientific("cg_time", true);

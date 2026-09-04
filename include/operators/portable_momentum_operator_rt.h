@@ -1557,42 +1557,36 @@ namespace Portable
         src.zero_out_ghost_values();
       }
 
+      // Same as test_cell_operator, but also runs the SIPG face kernels
+      // (compute_inner_faces / compute_boundary_faces / distribute_face_to_global)
+      // -- i.e. the full matvec, not just the cell term. Operates directly on
+      // device vectors (no host round-trip) so it is suitable for timing, unlike
+      // test().
       void
-      test(LinearAlgebra::distributed::Vector<Number, MemorySpace::Host>       &dst_host,
-           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> &src_host,
-           const Number factor_mass          = Number(1),
-           const Number factor_laplace       = Number(1),
-           const bool   interpolate_to_faces = false)
+      test_full_operator(
+        LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+        const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
+        const Number factor_mass    = Number(1),
+        const Number factor_laplace = Number(1))
       {
-        LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> src, dst;
-        src.reinit(partitioner);
-        dst.reinit(partitioner);
-
-        // std::cout << src.size() << " " << dst.size() << std::endl;
-        // std::cout << src_host.size() << " " << dst_host.size() << std::endl;
-
-        LinearAlgebra::ReadWriteVector<Number> rw(src_host.locally_owned_elements());
-        rw.import_elements(src_host, VectorOperation::insert);
-        src.reinit(partitioner);
-        src.import_elements(rw, VectorOperation::insert);
-
-        // for (unsigned int cell = 0; cell < n_cells; ++cell)
-        //   {
-        //     std::cout << "Cell " << cell << ": ";
-        //     for (unsigned int i = 0; i < dof_indices_per_cell.extent(0); ++i)
-        //       {
-        //         const auto index = dof_indices_per_cell(i, cell);
-
-        //         std::cout << index << " ";
-        //       }
-        //     std::cout << std::endl;
-        //   }
-
-
+        src.update_ghost_values();
         DeviceVector<Number> src_device(src.get_values(), src.locally_owned_size());
         DeviceVector<Number> dst_device(dst.get_values(), dst.locally_owned_size());
 
+        apply_device(
+          src_device, dst_device, factor_mass, factor_laplace, /*interpolate_to_faces=*/true);
 
+        dst.compress(VectorOperation::add);
+        src.zero_out_ghost_values();
+      }
+
+      void
+      apply_device(const DeviceVector<Number> src_device,
+                  DeviceVector<Number>       dst_device,
+                  const Number factor_mass          = Number(1),
+                  const Number factor_laplace       = Number(1),
+                  const bool   interpolate_to_faces = false)
+      {
         Kokkos::Array<DeviceVector<Number>, 2> shape_values;
         shape_values[0] = shape_info[0].shape_values;
         shape_values[1] = shape_info[1].shape_values;
@@ -2118,6 +2112,46 @@ namespace Portable
                   1u);
               }
           }
+      }
+
+
+      void
+      test(LinearAlgebra::distributed::Vector<Number, MemorySpace::Host>       &dst_host,
+           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> &src_host,
+           const Number factor_mass          = Number(1),
+           const Number factor_laplace       = Number(1),
+           const bool   interpolate_to_faces = false)
+      {
+        LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> src, dst;
+        src.reinit(partitioner);
+        dst.reinit(partitioner);
+
+        // std::cout << src.size() << " " << dst.size() << std::endl;
+        // std::cout << src_host.size() << " " << dst_host.size() << std::endl;
+
+        LinearAlgebra::ReadWriteVector<Number> rw(src_host.locally_owned_elements());
+        rw.import_elements(src_host, VectorOperation::insert);
+        src.reinit(partitioner);
+        src.import_elements(rw, VectorOperation::insert);
+
+        // for (unsigned int cell = 0; cell < n_cells; ++cell)
+        //   {
+        //     std::cout << "Cell " << cell << ": ";
+        //     for (unsigned int i = 0; i < dof_indices_per_cell.extent(0); ++i)
+        //       {
+        //         const auto index = dof_indices_per_cell(i, cell);
+
+        //         std::cout << index << " ";
+        //       }
+        //     std::cout << std::endl;
+        //   }
+
+
+        DeviceVector<Number> src_device(src.get_values(), src.locally_owned_size());
+        DeviceVector<Number> dst_device(dst.get_values(), dst.locally_owned_size());
+
+
+        apply_device(src_device, dst_device, factor_mass, factor_laplace, interpolate_to_faces);
 
         dst.compress(VectorOperation::add);
 
