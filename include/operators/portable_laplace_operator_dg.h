@@ -30,6 +30,13 @@ namespace Portable
                       const AffineConstraints<Number> &constraints,
                       bool                             overlap_communication_computation);
 
+    void
+    vmult_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override
+    {
+      DEAL_II_NOT_IMPLEMENTED();
+    }
 
     void
     reinit(const Mapping<dim>              &mapping,
@@ -283,7 +290,6 @@ namespace Portable
 
     if (n_cells > 0)
       {
-
         BK3::DG::compute_cell<dim, fe_degree + 1, n_q_points_1d, Number>(
           shape_data.shape_values,
           shape_data.shape_gradients_collocation,
@@ -346,7 +352,6 @@ namespace Portable
 
 
     matrix_free.copy_constrained_values(src, dst);
-
   }
 
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>

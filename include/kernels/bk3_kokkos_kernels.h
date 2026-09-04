@@ -1,5 +1,5 @@
-#ifndef bk3_kokkos_kernel_h
-#define bk3_kokkos_kernel_h
+#ifndef bk3_kokkos_kernels_h
+#define bk3_kokkos_kernels_h
 
 #include <deal.II/base/memory_space.h>
 #include <deal.II/base/utilities.h>
@@ -7,6 +7,8 @@
 #include <Kokkos_Core.hpp>
 
 #include <vector>
+
+#include "matrix_free/portable_evaluation_kernels.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -22,6 +24,175 @@ namespace BK3
 
     using CellRangeIdView = Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>;
 
+
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+    void
+    KokkosKernelAbstracted(const DeviceView<Number> d_shape_values,
+                           const DeviceView<Number> d_co_shape_gradients,
+                           const DeviceView<Number> d_G,
+                           const DeviceView<Number> d_in,
+                           DeviceView<Number>       d_out,
+                           const DoFIndicesView     dof_indices,
+                           const unsigned int       n_cells,
+                           const unsigned int       n_blocks       = numbers::invalid_unsigned_int,
+                           const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
+                           const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
+                           const CellRangeIdView cell_range_ids    = CellRangeIdView())
+    {
+      if (n_cells == 0)
+        return;
+
+      constexpr int n_quad_points_total = Utilities::pow(n_q_points_1d, dim);
+      constexpr int n_local_dofs_1d     = fe_degree + 1;
+
+      // finding the batch size
+      constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
+
+      constexpr int n_scratch_arrays = 1 + dim;
+
+      if (cell_range_ids.size() > 0)
+        AssertDimension(cell_range_ids.size(), n_cells);
+
+      const int nelmt = n_cells;
+
+      const int nelmtPerBatch =
+        std::max(1,
+                 ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                    static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
+                                     sizeof(Number)) :
+                    static_cast<int>(n_cells_per_batch)));
+
+
+      const int numBlocks = std::max(1,
+                                     ((n_blocks == numbers::invalid_unsigned_int) ?
+                                        ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
+                                        static_cast<int>(n_blocks)));
+
+      const int threadsPerBlock =
+        std::max(1,
+                 ((threads_per_block == numbers::invalid_unsigned_int) ?
+                    (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
+                    static_cast<int>(threads_per_block)));
+
+      {
+        const int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
+                          n_q_points_1d * n_q_points_1d +   // co-shape gradients
+                          n_scratch_arrays * nelmtPerBatch *
+                            n_quad_points_total; // values slot + dim gradients-pool slots
+
+        const unsigned int shmem_size = ssize * sizeof(Number);
+
+        typedef Kokkos::TeamPolicy<>::member_type member_type;
+        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+        Kokkos::parallel_for(
+          policy, KOKKOS_LAMBDA(member_type team_member) {
+            Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+
+            Number *s_shape_values       = scratch;
+            Number *s_co_shape_gradients = s_shape_values + n_q_points_1d * n_local_dofs_1d;
+
+            Number *s_values    = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
+            Number *s_gradients = s_values + nelmtPerBatch * n_quad_points_total;
+
+            const int threadIdx = team_member.team_rank();
+            const int blockSize = team_member.team_size();
+
+            // copy to shared memory
+            for (int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d; tid += blockSize)
+              {
+                s_shape_values[tid] = d_shape_values[tid];
+              }
+
+            for (int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d; tid += blockSize)
+              {
+                s_co_shape_gradients[tid] = d_co_shape_gradients[tid];
+              }
+            team_member.team_barrier();
+
+            // element batch iteration
+            int batchIdx = team_member.league_rank();
+
+            while (batchIdx < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+              {
+                // current nelmtPerBatch (edge case, last batch size can be
+                // less)
+                const int c_nelmtPerBatch = (batchIdx * nelmtPerBatch + nelmtPerBatch > nelmt) ?
+                                              (nelmt - batchIdx * nelmtPerBatch) :
+                                              nelmtPerBatch;
+
+                // 1. read dof values from global memory to shared memory
+                {
+                  Custom::Parallel::read_dof_values<dim, n_local_dofs_1d>(team_member,
+                                                                          dof_indices,
+                                                                          cell_range_ids,
+                                                                          d_in,
+                                                                          s_values,
+                                                                          batchIdx,
+                                                                          nelmtPerBatch,
+                                                                          c_nelmtPerBatch,
+                                                                          threadIdx,
+                                                                          blockSize);
+                }
+
+
+                const Custom::Parallel::
+                  FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+                    fe_eval(team_member,
+                            s_shape_values,
+                            s_co_shape_gradients,
+                            nelmtPerBatch,
+                            c_nelmtPerBatch,
+                            batchIdx,
+                            threadIdx,
+                            blockSize);
+
+                // 2. interpolate from dof values to quadrature points
+                {
+                  fe_eval.evaluate_values(s_values, s_values, s_gradients);
+                }
+
+                // 3. Evaluate Laplacian operator at quadrature points
+                {
+                  fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(d_G,
+                                                                           cell_range_ids,
+                                                                           s_values,
+                                                                           s_gradients);
+                }
+
+                // 4. integrate gradients to dof values
+                {
+                  fe_eval.integrate_gradients(s_gradients, s_values);
+                }
+
+                // 5. integrate values to dof values
+                {
+                  fe_eval.integrate_values(s_values, s_values, s_gradients);
+                }
+
+                // 6. distribute dof values from shared memory to global memory
+                {
+                  Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(
+                    team_member,
+                    dof_indices,
+                    cell_range_ids,
+                    s_values,
+                    d_out,
+                    batchIdx,
+                    nelmtPerBatch,
+                    c_nelmtPerBatch,
+                    threadIdx,
+                    blockSize);
+                }
+
+                batchIdx += team_member.league_size();
+              }
+          });
+
+        Kokkos::fence();
+      }
+    }
     template <int dim, int nm, int nq, typename Number>
     void
     KokkosKernel(const DeviceView<Number> d_shape_values,
@@ -33,6 +204,7 @@ namespace BK3
                  const unsigned int       n_cells,
                  const unsigned int       n_blocks          = numbers::invalid_unsigned_int,
                  const unsigned int       threads_per_block = numbers::invalid_unsigned_int,
+                 const unsigned int       n_cells_per_batch = numbers::invalid_unsigned_int,
                  const CellRangeIdView    cell_range_ids    = CellRangeIdView())
     {
       if (n_cells == 0)
@@ -44,16 +216,19 @@ namespace BK3
       // finding the batch size
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      constexpr int n_scratch_arrays = 4;
+      constexpr int n_scratch_arrays = 1 + dim;
 
       if (cell_range_ids.size() > 0)
         AssertDimension(cell_range_ids.size(), n_cells);
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
-        std::max(1,
-                 static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)));
+      const int nelmtPerBatch = std::max(
+        1,
+        ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+           static_cast<int>(shmemPerBlock / (n_scratch_arrays * nq_total) / sizeof(Number)) :
+           static_cast<int>(n_cells_per_batch)));
+
 
       const int numBlocks = std::max(1,
                                      ((n_blocks == numbers::invalid_unsigned_int) ?
@@ -92,8 +267,14 @@ namespace BK3
             Number *s_wsp1 = s_wsp0 + nelmtPerBatch * nq_total;
 
             Number *s_rqr = s_wsp1 + nelmtPerBatch * nq_total;
-            Number *s_rqs = s_rqr + nelmtPerBatch * nq_total;
-            Number *s_rqt = s_wsp0;
+            Number *s_rqs;
+            if (dim == 2)
+              s_rqs = s_wsp1;
+            else
+              s_rqs = s_rqr + nelmtPerBatch * nq_total;
+            Number *s_rqt;
+            if (dim == 3)
+              s_rqt = s_wsp0;
 
             const int threadIdx = team_member.team_rank();
             const int blockSize = team_member.team_size();
@@ -744,414 +925,421 @@ namespace BK3
       }
     }
 
-    template <int dim, int n_local_dofs_1d, int n_q_points_1d, typename Number>
-    void
-    KokkosKernel_1D_Block(const DeviceView<Number> shape_values_device,
-                          const DeviceView<Number> co_shape_gradients_device,
-                          const DeviceView<Number> G_device,
-                          const DeviceView<Number> in_device,
-                          DeviceView<Number>       out_device,
-                          const DoFIndicesView     dof_indices,
-                          const unsigned int       n_cells,
-                          unsigned int             numThreads      = numbers::invalid_unsigned_int,
-                          unsigned int             threadsPerBlock = numbers::invalid_unsigned_int,
-                          const CellRangeIdView    cell_range_ids  = CellRangeIdView())
+    // template <int dim, int n_local_dofs_1d, int n_q_points_1d, typename Number>
+    // void
+    // KokkosKernel_1D_Block(const DeviceView<Number> shape_values_device,
+    //                       const DeviceView<Number> co_shape_gradients_device,
+    //                       const DeviceView<Number> G_device,
+    //                       const DeviceView<Number> in_device,
+    //                       DeviceView<Number>       out_device,
+    //                       const DoFIndicesView     dof_indices,
+    //                       const unsigned int       n_cells,
+    //                       unsigned int             numThreads      =
+    //                       numbers::invalid_unsigned_int, unsigned int             threadsPerBlock
+    //                       = numbers::invalid_unsigned_int, const CellRangeIdView cell_range_ids
+    //                       = CellRangeIdView())
+
+    // {
+    //   if (n_cells == 0)
+    //     return;
+
+    //   constexpr unsigned n_q_points_total   = Utilities::pow(n_q_points_1d, dim);
+    //   constexpr unsigned n_local_dofs_total = Utilities::pow(n_local_dofs_1d, dim);
 
-    {
-      if (n_cells == 0)
-        return;
-
-      constexpr unsigned n_q_points_total   = Utilities::pow(n_q_points_1d, dim);
-      constexpr unsigned n_local_dofs_total = Utilities::pow(n_local_dofs_1d, dim);
-
-      const int nelmt = n_cells;
-
-      if (numThreads == numbers::invalid_unsigned_int)
-        numThreads = nelmt * n_q_points_total / 2;
-
-      if (threadsPerBlock == numbers::invalid_unsigned_int)
-        threadsPerBlock = n_q_points_total;
-
-      unsigned int numBlocks = numThreads / (std::min(n_q_points_total, threadsPerBlock));
-      if (numBlocks == 0)
-        numBlocks = 1;
-
-      {
-        const unsigned int scratch_pad_size = 5 * n_q_points_total; // working scratch arrays:
-                                                                    // s_wsp0, s_wsp1, rqr,rqq, rqt
-
-        unsigned int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
-                             n_q_points_1d * n_q_points_1d +   // co-shape gradients
-                             scratch_pad_size;                 // at most 5 tmp arrays
-
-        const unsigned int shmem_size = ssize * sizeof(Number);
-
-        typedef Kokkos::TeamPolicy<>::member_type member_type;
-        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
-        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
-
-        Kokkos::parallel_for(
-          policy, KOKKOS_LAMBDA(member_type team_member) {
-            Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
-
-            Number *shape_values_scratch = scratch;
-            Number *co_shape_gradients_scratch =
-              shape_values_scratch + n_q_points_1d * n_local_dofs_1d;
-
-            Number *s_wsp0 = co_shape_gradients_scratch + n_q_points_1d * n_q_points_1d;
-            Number *s_wsp1 = s_wsp0 + n_q_points_total;
-
-            Number *rqr = s_wsp1 + n_q_points_total;
-            Number *rqs = rqr + n_q_points_total;
-            Number *rqt = rqs + n_q_points_total;
-
-            const unsigned int threadIdx = team_member.team_rank();
-            const unsigned int blockSize = team_member.team_size();
-
-
-            // copy to shared memory
-            {
-              for (unsigned int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d;
-                   tid += blockSize)
-                {
-                  shape_values_scratch[tid] = shape_values_device[tid];
-                }
-
-              for (unsigned int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d;
-                   tid += blockSize)
-                {
-                  co_shape_gradients_scratch[tid] = co_shape_gradients_device[tid];
-                }
-            }
-
-            // std::cout << "BK3 kernel shape_values:";
-            // for (unsigned int i = 0; i < n_local_dofs_1d * n_q_points_1d;
-            // ++i)
-            //   std::cout << shape_values_device(i) << " ";
-            // std::cout << std::endl << std::endl;
-
-            // std::cout << "BK3 kernel shape_grads:";
-            // for (unsigned int i = 0; i < n_local_dofs_1d * n_q_points_1d;
-            // ++i)
-            //   std::cout << co_shape_gradients_device(i) << " ";
-            // std::cout << std::endl << std::endl;
-
-
-            // std::cout << "BK3 kernel G_device:";
-            // for (unsigned int i = 0; i < G_device.size(); ++i)
-            //   std::cout << G_device(i) << " ";
-            // std::cout << std::endl << std::endl;
-
-
-            team_member.team_barrier();
-
-            /*
-            Interpolate to GL nodes
-            */
-
-            unsigned int cell_index = team_member.league_rank();
-
-            while (cell_index < nelmt)
-              {
-                unsigned int cell_id = cell_index;
-
-                if (cell_range_ids.size() > 0)
-                  cell_id = cell_range_ids(cell_index);
-
-                // std::cout << "cell_id: " << cell_id << std::endl;
-
-                team_member.team_barrier();
-                {
-                  // step-1 : Copy from in to the scratch values
-                  for (unsigned int tid = threadIdx; tid < n_local_dofs_total; tid += blockSize)
-                    {
-                      const unsigned int dof_index = dof_indices(tid, cell_index);
-
-                      if (dof_index == numbers::invalid_unsigned_int)
-                        s_wsp0[tid] = 0;
-                      else
-                        s_wsp0[tid] = in_device[dof_index];
-                    }
-                }
-                team_member.team_barrier();
-
-                // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
-                // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
-                //   std::cout << s_wsp0(i) << " ";
-                // std::cout << std::endl << std::endl;
-
-
-                if constexpr (dim == 3)
-                  {
-                    // step-2 : direction 0
-                    for (unsigned int tid = threadIdx;
-                         tid < n_q_points_1d * n_local_dofs_1d * n_local_dofs_1d;
-                         tid += blockSize)
-                      {
-                        const int p = tid / (n_local_dofs_1d * n_local_dofs_1d);
-                        const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-                        const int k = tid % n_local_dofs_1d;
-
-                        Number sum = 0.0;
-                        for (unsigned int i = 0; i < n_local_dofs_1d; ++i)
-                          {
-                            sum += s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d +
-                                          j * n_local_dofs_1d + i] *
-                                   shape_values_scratch[i * n_q_points_1d + p];
-                          }
-                        s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] = sum;
-                      }
-                    team_member.team_barrier();
-
-                    // step-3 : direction 1
-                    for (unsigned int tid = threadIdx;
-                         tid < n_q_points_1d * n_q_points_1d * n_local_dofs_1d;
-                         tid += blockSize)
-                      {
-                        const int i = tid / (n_q_points_1d * n_local_dofs_1d);
-                        const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-                        const int k = tid % n_local_dofs_1d;
-
-                        Number sum = 0.0;
-                        for (unsigned int j = 0; j < n_local_dofs_1d; j++)
-                          {
-                            sum +=
-                              s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + i] *
-                              shape_values_scratch[j * n_q_points_1d + q];
-                          }
-
-                        s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + i] = sum;
-                      }
-                    team_member.team_barrier();
-
-                    // step-4 : direction 2
-                    for (unsigned int tid = threadIdx;
-                         tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
-                         tid += blockSize)
-                      {
-                        const int i = tid / (n_q_points_1d * n_q_points_1d);
-                        const int j = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
-                        const int r = tid % n_q_points_1d;
-
-                        Number sum = 0.0;
-                        for (unsigned int k = 0; k < n_local_dofs_1d; ++k)
-                          {
-                            sum +=
-                              s_wsp0[k * n_q_points_1d * n_q_points_1d + j * n_q_points_1d + i] *
-                              shape_values_scratch[k * n_q_points_1d + r];
-                          }
-                        s_wsp1[r * n_q_points_1d * n_q_points_1d + j * n_q_points_1d + i] = sum;
-                      }
-                    team_member.team_barrier();
-                  }
-
-                // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
-                // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
-                //   std::cout << s_wsp1(i) << " ";
-                // std::cout << std::endl << std::endl;
-
-                // Geometric vals
-                Number        Grr, Grs, Grt, Gss, Gst, Gtt;
-                Number        qr, qs, qt;
-                constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
-
-                // std::cout << "BK3 kernel cell_id = " << cell_id << ": "
-                //           << std::endl;
-
-                for (unsigned int tid = threadIdx;
-                     tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
-                     tid += blockSize)
-                  {
-                    const int p = tid / (n_q_points_1d * n_q_points_1d);
-                    const int q = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
-                    const int r = tid % n_q_points_1d;
-
-                    qr = 0;
-                    qs = 0;
-                    qt = 0;
-
-                    // step-5 : Load Geometric Factors, coalesced access
-                    Grr = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   0 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-                    Grs = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   1 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-                    Grt = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   2 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-                    Gss = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   3 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-                    Gst = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   4 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-                    Gtt = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
-                                   5 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
-                                   q * n_q_points_1d + r];
-
-                    // step-6 : Multiply by D
-                    for (unsigned int n = 0; n < n_q_points_1d; n++)
-                      {
-                        qr += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + n] *
-                              co_shape_gradients_scratch[n * n_q_points_1d + p];
-                      }
-
-                    for (unsigned int n = 0; n < n_q_points_1d; n++)
-                      {
-                        qs += s_wsp1[r * n_q_points_1d * n_q_points_1d + n * n_q_points_1d + p] *
-                              co_shape_gradients_scratch[n * n_q_points_1d + q];
-                      }
-
-                    for (unsigned int n = 0; n < n_q_points_1d; n++)
-                      {
-                        qt += s_wsp1[n * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
-                              co_shape_gradients_scratch[n * n_q_points_1d + r];
-                      }
-
-                    // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
-                    // std::cout << qt << " " << qs << " " << qr << " ";
-                    // std::cout << std::endl << std::endl;
-
-                    // step-7 : Apply chain rule
-                    rqr[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
-                      Grr * qr + Grs * qs + Grt * qt;
-                    rqs[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
-                      Grs * qr + Gss * qs + Gst * qt;
-                    rqt[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
-                      Grt * qr + Gst * qs + Gtt * qt;
-                  }
-                team_member.team_barrier();
-
-
-                // std::cout << "BK3 kernel cell_id = " << cell_id << ": "
-                //           << std::endl
-                //           << std::endl;
-
-                // for (unsigned int tid = 0;
-                //      tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
-                //      tid += 1)
-                //   {
-                //     // std::cout << qt << " " << qs << " " << qr << " ";
-                //     std::cout << rqr[tid] << " " << rqs[tid] << " " <<
-                //     rqt[tid]
-                //               << " ";
-
-                //     std::cout << std::endl << std::endl;
-                //   }
-
-
-
-                // step-8 : Compute out vector in GL nodes
-                for (unsigned int tid = threadIdx;
-                     tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
-                     tid += blockSize)
-                  {
-                    const int p = tid / (n_q_points_1d * n_q_points_1d);
-                    const int q = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
-                    const int r = tid % n_q_points_1d;
-
-                    Number sum = 0;
-                    for (unsigned int n = 0; n < n_q_points_1d; ++n)
-                      sum += rqr[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + n] *
-                             co_shape_gradients_scratch[p * n_q_points_1d + n];
-
-                    for (unsigned int n = 0; n < n_q_points_1d; ++n)
-                      sum += rqs[r * n_q_points_1d * n_q_points_1d + n * n_q_points_1d + p] *
-                             co_shape_gradients_scratch[q * n_q_points_1d + n];
-
-                    for (unsigned int n = 0; n < n_q_points_1d; ++n)
-                      sum += rqt[n * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
-                             co_shape_gradients_scratch[r * n_q_points_1d + n];
-
-                    s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] = sum;
-                  }
-                team_member.team_barrier();
-
-                // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
-                // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
-                //   std::cout << s_wsp1(i) << " ";
-                // std::cout << std::endl << std::endl;
-
-                /*
-                Interpolate to GLL nodes
-                */
-
-
-
-                // step-9 : direction 2
-                for (unsigned int tid = threadIdx;
-                     tid < n_q_points_1d * n_q_points_1d * n_local_dofs_1d;
-                     tid += blockSize)
-                  {
-                    const int p = tid / (n_q_points_1d * n_local_dofs_1d);
-                    const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-                    const int k = tid % n_local_dofs_1d;
-
-                    Number sum = 0.0;
-                    for (unsigned int r = 0; r < n_q_points_1d; ++r)
-                      {
-                        sum += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
-                               shape_values_scratch[k * n_local_dofs_1d + r];
-                      }
-                    s_wsp0[k * n_q_points_1d * n_local_dofs_1d + q * n_q_points_1d + p] = sum;
-                  }
-                team_member.team_barrier();
-
-                // step-10 : direction 1
-                for (unsigned int tid = threadIdx;
-                     tid < n_q_points_1d * n_local_dofs_1d * n_local_dofs_1d;
-                     tid += blockSize)
-                  {
-                    const int p = tid / (n_local_dofs_1d * n_local_dofs_1d);
-                    const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-                    const int k = tid % n_local_dofs_1d;
-
-                    Number sum = 0.0;
-                    for (unsigned int q = 0; q < n_q_points_1d; q++)
-                      {
-                        sum += s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
-                               shape_values_scratch[j * n_q_points_1d + q];
-                      }
-                    s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] = sum;
-                  }
-                team_member.team_barrier();
-
-                // step-11 : direction 0
-                for (unsigned int tid = threadIdx;
-                     tid < n_local_dofs_1d * n_local_dofs_1d * n_local_dofs_1d;
-                     tid += blockSize)
-                  {
-                    const int i = tid / (n_local_dofs_1d * n_local_dofs_1d);
-                    const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
-                    const int k = tid % n_local_dofs_1d;
-
-                    Number sum = 0.0;
-                    for (unsigned int p = 0; p < n_q_points_1d; ++p)
-                      {
-                        sum += s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] *
-                               shape_values_scratch[i * n_q_points_1d + p];
-                      }
-                    s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d + j * n_local_dofs_1d + i] = sum;
-                  }
-                team_member.team_barrier();
-
-                // step-12 : Copy wsp0 to out
-                for (unsigned int tid = threadIdx; tid < n_local_dofs_total; tid += blockSize)
-                  {
-                    const unsigned int dof_index = dof_indices(tid, cell_index);
-
-                    if (dof_index != numbers::invalid_unsigned_int)
-                      Kokkos::atomic_add(&out_device[dof_index], s_wsp0[tid]);
-                  }
-                team_member.team_barrier();
-
-                cell_index += team_member.league_size();
-              }
-          });
-        Kokkos::fence();
-      }
-    }
+    //   const int nelmt = n_cells;
+
+    //   if (numThreads == numbers::invalid_unsigned_int)
+    //     numThreads = nelmt * n_q_points_total / 2;
+
+    //   if (threadsPerBlock == numbers::invalid_unsigned_int)
+    //     threadsPerBlock = n_q_points_total;
+
+    //   unsigned int numBlocks = numThreads / (std::min(n_q_points_total, threadsPerBlock));
+    //   if (numBlocks == 0)
+    //     numBlocks = 1;
+
+    //   {
+    //     const unsigned int scratch_pad_size = 5 * n_q_points_total; // working scratch arrays:
+    //                                                                 // s_wsp0, s_wsp1, rqr,rqq,
+    //                                                                 rqt
+
+    //     unsigned int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
+    //                          n_q_points_1d * n_q_points_1d +   // co-shape gradients
+    //                          scratch_pad_size;                 // at most 5 tmp arrays
+
+    //     const unsigned int shmem_size = ssize * sizeof(Number);
+
+    //     typedef Kokkos::TeamPolicy<>::member_type member_type;
+    //     Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+    //     policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+    //     Kokkos::parallel_for(
+    //       policy, KOKKOS_LAMBDA(member_type team_member) {
+    //         Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+
+    //         Number *shape_values_scratch = scratch;
+    //         Number *co_shape_gradients_scratch =
+    //           shape_values_scratch + n_q_points_1d * n_local_dofs_1d;
+
+    //         Number *s_wsp0 = co_shape_gradients_scratch + n_q_points_1d * n_q_points_1d;
+    //         Number *s_wsp1 = s_wsp0 + n_q_points_total;
+
+    //         Number *rqr = s_wsp1 + n_q_points_total;
+    //         Number *rqs = rqr + n_q_points_total;
+    //         Number *rqt = rqs + n_q_points_total;
+
+    //         const unsigned int threadIdx = team_member.team_rank();
+    //         const unsigned int blockSize = team_member.team_size();
+
+
+    //         // copy to shared memory
+    //         {
+    //           for (unsigned int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d;
+    //                tid += blockSize)
+    //             {
+    //               shape_values_scratch[tid] = shape_values_device[tid];
+    //             }
+
+    //           for (unsigned int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d;
+    //                tid += blockSize)
+    //             {
+    //               co_shape_gradients_scratch[tid] = co_shape_gradients_device[tid];
+    //             }
+    //         }
+
+    //         // std::cout << "BK3 kernel shape_values:";
+    //         // for (unsigned int i = 0; i < n_local_dofs_1d * n_q_points_1d;
+    //         // ++i)
+    //         //   std::cout << shape_values_device(i) << " ";
+    //         // std::cout << std::endl << std::endl;
+
+    //         // std::cout << "BK3 kernel shape_grads:";
+    //         // for (unsigned int i = 0; i < n_local_dofs_1d * n_q_points_1d;
+    //         // ++i)
+    //         //   std::cout << co_shape_gradients_device(i) << " ";
+    //         // std::cout << std::endl << std::endl;
+
+
+    //         // std::cout << "BK3 kernel G_device:";
+    //         // for (unsigned int i = 0; i < G_device.size(); ++i)
+    //         //   std::cout << G_device(i) << " ";
+    //         // std::cout << std::endl << std::endl;
+
+
+    //         team_member.team_barrier();
+
+    //         /*
+    //         Interpolate to GL nodes
+    //         */
+
+    //         unsigned int cell_index = team_member.league_rank();
+
+    //         while (cell_index < nelmt)
+    //           {
+    //             unsigned int cell_id = cell_index;
+
+    //             if (cell_range_ids.size() > 0)
+    //               cell_id = cell_range_ids(cell_index);
+
+    //             // std::cout << "cell_id: " << cell_id << std::endl;
+
+    //             team_member.team_barrier();
+    //             {
+    //               // step-1 : Copy from in to the scratch values
+    //               for (unsigned int tid = threadIdx; tid < n_local_dofs_total; tid += blockSize)
+    //                 {
+    //                   const unsigned int dof_index = dof_indices(tid, cell_index);
+
+    //                   if (dof_index == numbers::invalid_unsigned_int)
+    //                     s_wsp0[tid] = 0;
+    //                   else
+    //                     s_wsp0[tid] = in_device[dof_index];
+    //                 }
+    //             }
+    //             team_member.team_barrier();
+
+    //             // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
+    //             // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
+    //             //   std::cout << s_wsp0(i) << " ";
+    //             // std::cout << std::endl << std::endl;
+
+
+    //             if constexpr (dim == 3)
+    //               {
+    //                 // step-2 : direction 0
+    //                 for (unsigned int tid = threadIdx;
+    //                      tid < n_q_points_1d * n_local_dofs_1d * n_local_dofs_1d;
+    //                      tid += blockSize)
+    //                   {
+    //                     const int p = tid / (n_local_dofs_1d * n_local_dofs_1d);
+    //                     const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) /
+    //                     n_local_dofs_1d; const int k = tid % n_local_dofs_1d;
+
+    //                     Number sum = 0.0;
+    //                     for (unsigned int i = 0; i < n_local_dofs_1d; ++i)
+    //                       {
+    //                         sum += s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d +
+    //                                       j * n_local_dofs_1d + i] *
+    //                                shape_values_scratch[i * n_q_points_1d + p];
+    //                       }
+    //                     s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] =
+    //                     sum;
+    //                   }
+    //                 team_member.team_barrier();
+
+    //                 // step-3 : direction 1
+    //                 for (unsigned int tid = threadIdx;
+    //                      tid < n_q_points_1d * n_q_points_1d * n_local_dofs_1d;
+    //                      tid += blockSize)
+    //                   {
+    //                     const int i = tid / (n_q_points_1d * n_local_dofs_1d);
+    //                     const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) /
+    //                     n_local_dofs_1d; const int k = tid % n_local_dofs_1d;
+
+    //                     Number sum = 0.0;
+    //                     for (unsigned int j = 0; j < n_local_dofs_1d; j++)
+    //                       {
+    //                         sum +=
+    //                           s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + i]
+    //                           * shape_values_scratch[j * n_q_points_1d + q];
+    //                       }
+
+    //                     s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + i] = sum;
+    //                   }
+    //                 team_member.team_barrier();
+
+    //                 // step-4 : direction 2
+    //                 for (unsigned int tid = threadIdx;
+    //                      tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
+    //                      tid += blockSize)
+    //                   {
+    //                     const int i = tid / (n_q_points_1d * n_q_points_1d);
+    //                     const int j = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
+    //                     const int r = tid % n_q_points_1d;
+
+    //                     Number sum = 0.0;
+    //                     for (unsigned int k = 0; k < n_local_dofs_1d; ++k)
+    //                       {
+    //                         sum +=
+    //                           s_wsp0[k * n_q_points_1d * n_q_points_1d + j * n_q_points_1d + i] *
+    //                           shape_values_scratch[k * n_q_points_1d + r];
+    //                       }
+    //                     s_wsp1[r * n_q_points_1d * n_q_points_1d + j * n_q_points_1d + i] = sum;
+    //                   }
+    //                 team_member.team_barrier();
+    //               }
+
+    //             // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
+    //             // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
+    //             //   std::cout << s_wsp1(i) << " ";
+    //             // std::cout << std::endl << std::endl;
+
+    //             // Geometric vals
+    //             Number        Grr, Grs, Grt, Gss, Gst, Gtt;
+    //             Number        qr, qs, qt;
+    //             constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
+
+    //             // std::cout << "BK3 kernel cell_id = " << cell_id << ": "
+    //             //           << std::endl;
+
+    //             for (unsigned int tid = threadIdx;
+    //                  tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
+    //                  tid += blockSize)
+    //               {
+    //                 const int p = tid / (n_q_points_1d * n_q_points_1d);
+    //                 const int q = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
+    //                 const int r = tid % n_q_points_1d;
+
+    //                 qr = 0;
+    //                 qs = 0;
+    //                 qt = 0;
+
+    //                 // step-5 : Load Geometric Factors, coalesced access
+    //                 Grr = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                0 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+    //                 Grs = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                1 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+    //                 Grt = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                2 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+    //                 Gss = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                3 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+    //                 Gst = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                4 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+    //                 Gtt = G_device[cell_index * symmetric_tensor_dimension * n_q_points_total +
+    //                                5 * n_q_points_total + p * n_q_points_1d * n_q_points_1d +
+    //                                q * n_q_points_1d + r];
+
+    //                 // step-6 : Multiply by D
+    //                 for (unsigned int n = 0; n < n_q_points_1d; n++)
+    //                   {
+    //                     qr += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + n] *
+    //                           co_shape_gradients_scratch[n * n_q_points_1d + p];
+    //                   }
+
+    //                 for (unsigned int n = 0; n < n_q_points_1d; n++)
+    //                   {
+    //                     qs += s_wsp1[r * n_q_points_1d * n_q_points_1d + n * n_q_points_1d + p] *
+    //                           co_shape_gradients_scratch[n * n_q_points_1d + q];
+    //                   }
+
+    //                 for (unsigned int n = 0; n < n_q_points_1d; n++)
+    //                   {
+    //                     qt += s_wsp1[n * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
+    //                           co_shape_gradients_scratch[n * n_q_points_1d + r];
+    //                   }
+
+    //                 // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
+    //                 // std::cout << qt << " " << qs << " " << qr << " ";
+    //                 // std::cout << std::endl << std::endl;
+
+    //                 // step-7 : Apply chain rule
+    //                 rqr[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
+    //                   Grr * qr + Grs * qs + Grt * qt;
+    //                 rqs[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
+    //                   Grs * qr + Gss * qs + Gst * qt;
+    //                 rqt[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] =
+    //                   Grt * qr + Gst * qs + Gtt * qt;
+    //               }
+    //             team_member.team_barrier();
+
+
+    //             // std::cout << "BK3 kernel cell_id = " << cell_id << ": "
+    //             //           << std::endl
+    //             //           << std::endl;
+
+    //             // for (unsigned int tid = 0;
+    //             //      tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
+    //             //      tid += 1)
+    //             //   {
+    //             //     // std::cout << qt << " " << qs << " " << qr << " ";
+    //             //     std::cout << rqr[tid] << " " << rqs[tid] << " " <<
+    //             //     rqt[tid]
+    //             //               << " ";
+
+    //             //     std::cout << std::endl << std::endl;
+    //             //   }
+
+
+
+    //             // step-8 : Compute out vector in GL nodes
+    //             for (unsigned int tid = threadIdx;
+    //                  tid < n_q_points_1d * n_q_points_1d * n_q_points_1d;
+    //                  tid += blockSize)
+    //               {
+    //                 const int p = tid / (n_q_points_1d * n_q_points_1d);
+    //                 const int q = (tid % (n_q_points_1d * n_q_points_1d)) / n_q_points_1d;
+    //                 const int r = tid % n_q_points_1d;
+
+    //                 Number sum = 0;
+    //                 for (unsigned int n = 0; n < n_q_points_1d; ++n)
+    //                   sum += rqr[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + n] *
+    //                          co_shape_gradients_scratch[p * n_q_points_1d + n];
+
+    //                 for (unsigned int n = 0; n < n_q_points_1d; ++n)
+    //                   sum += rqs[r * n_q_points_1d * n_q_points_1d + n * n_q_points_1d + p] *
+    //                          co_shape_gradients_scratch[q * n_q_points_1d + n];
+
+    //                 for (unsigned int n = 0; n < n_q_points_1d; ++n)
+    //                   sum += rqt[n * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] *
+    //                          co_shape_gradients_scratch[r * n_q_points_1d + n];
+
+    //                 s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p] = sum;
+    //               }
+    //             team_member.team_barrier();
+
+    //             // std::cout << "BK3 kernel cell_id = " << cell_id << ": ";
+    //             // for (unsigned int i = 0; i < n_local_dofs_total; ++i)
+    //             //   std::cout << s_wsp1(i) << " ";
+    //             // std::cout << std::endl << std::endl;
+
+    //             /*
+    //             Interpolate to GLL nodes
+    //             */
+
+
+
+    //             // step-9 : direction 2
+    //             for (unsigned int tid = threadIdx;
+    //                  tid < n_q_points_1d * n_q_points_1d * n_local_dofs_1d;
+    //                  tid += blockSize)
+    //               {
+    //                 const int p = tid / (n_q_points_1d * n_local_dofs_1d);
+    //                 const int q = (tid % (n_q_points_1d * n_local_dofs_1d)) / n_local_dofs_1d;
+    //                 const int k = tid % n_local_dofs_1d;
+
+    //                 Number sum = 0.0;
+    //                 for (unsigned int r = 0; r < n_q_points_1d; ++r)
+    //                   {
+    //                     sum += s_wsp1[r * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p]
+    //                     *
+    //                            shape_values_scratch[k * n_local_dofs_1d + r];
+    //                   }
+    //                 s_wsp0[k * n_q_points_1d * n_local_dofs_1d + q * n_q_points_1d + p] = sum;
+    //               }
+    //             team_member.team_barrier();
+
+    //             // step-10 : direction 1
+    //             for (unsigned int tid = threadIdx;
+    //                  tid < n_q_points_1d * n_local_dofs_1d * n_local_dofs_1d;
+    //                  tid += blockSize)
+    //               {
+    //                 const int p = tid / (n_local_dofs_1d * n_local_dofs_1d);
+    //                 const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
+    //                 const int k = tid % n_local_dofs_1d;
+
+    //                 Number sum = 0.0;
+    //                 for (unsigned int q = 0; q < n_q_points_1d; q++)
+    //                   {
+    //                     sum += s_wsp0[k * n_q_points_1d * n_q_points_1d + q * n_q_points_1d + p]
+    //                     *
+    //                            shape_values_scratch[j * n_q_points_1d + q];
+    //                   }
+    //                 s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d + p] = sum;
+    //               }
+    //             team_member.team_barrier();
+
+    //             // step-11 : direction 0
+    //             for (unsigned int tid = threadIdx;
+    //                  tid < n_local_dofs_1d * n_local_dofs_1d * n_local_dofs_1d;
+    //                  tid += blockSize)
+    //               {
+    //                 const int i = tid / (n_local_dofs_1d * n_local_dofs_1d);
+    //                 const int j = (tid % (n_local_dofs_1d * n_local_dofs_1d)) / n_local_dofs_1d;
+    //                 const int k = tid % n_local_dofs_1d;
+
+    //                 Number sum = 0.0;
+    //                 for (unsigned int p = 0; p < n_q_points_1d; ++p)
+    //                   {
+    //                     sum += s_wsp1[k * n_q_points_1d * n_local_dofs_1d + j * n_q_points_1d +
+    //                     p] *
+    //                            shape_values_scratch[i * n_q_points_1d + p];
+    //                   }
+    //                 s_wsp0[k * n_local_dofs_1d * n_local_dofs_1d + j * n_local_dofs_1d + i] =
+    //                 sum;
+    //               }
+    //             team_member.team_barrier();
+
+    //             // step-12 : Copy wsp0 to out
+    //             for (unsigned int tid = threadIdx; tid < n_local_dofs_total; tid += blockSize)
+    //               {
+    //                 const unsigned int dof_index = dof_indices(tid, cell_index);
+
+    //                 if (dof_index != numbers::invalid_unsigned_int)
+    //                   Kokkos::atomic_add(&out_device[dof_index], s_wsp0[tid]);
+    //               }
+    //             team_member.team_barrier();
+
+    //             cell_index += team_member.league_size();
+    //           }
+    //       });
+    //     Kokkos::fence();
+    //   }
+    // }
 
   } // namespace Parallel
 } // namespace BK3

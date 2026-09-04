@@ -814,7 +814,7 @@ namespace Portable
           }
 
         BK1::Parallel::
-          KokkosProlongationBatchedKernel<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
+          KokkosProlongationBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
             scheme.prolongation_matrix_shared_memory,
             src_device,
             dst_device,
@@ -863,7 +863,7 @@ namespace Portable
           }
 
         BK1::Parallel::
-          KokkosRestrictionBatchedKernel<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
+          KokkosRestrictionBatchedKernelAbstracted<dim, fe_degree + 1, 2 * fe_degree + 1, number>(
             scheme.prolongation_matrix_shared_memory,
             src_device,
             dst_device,
@@ -877,7 +877,6 @@ namespace Portable
         ++scheme_index;
       }
   }
-
 
   template <int dim, int fe_degree, typename number>
   void

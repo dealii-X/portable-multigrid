@@ -1,6 +1,8 @@
 #ifndef portable_laplace_operator_bk3_h
 #define portable_laplace_operator_bk3_h
 
+#include <deal.II/base/quadrature_lib.h>
+
 #include <deal.II/dofs/dof_handler.h>
 
 #include <deal.II/fe/mapping_q1.h>
@@ -8,7 +10,7 @@
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
-#include "kernels/bk3_kokkos_kernel.h"
+#include "kernels/bk3_kokkos_kernels.h"
 #include "operators/portable_laplace_operator_quad.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -159,7 +161,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -169,18 +171,6 @@ namespace Portable
               n_cells,
               numBlocks,
               threadsPerBlock);
-
-            // BK3::Parallel::
-            //   KokkosKernel_1D_Block<dim, fe_degree + 1, fe_degree + 1, number>(
-            //     precomputed_data.shape_values,
-            //     precomputed_data.co_shape_gradients,
-            //     G_tensors[color],
-            //     src_device,
-            //     dst_device,
-            //     dof_indices_per_color[color],
-            //     n_cells,
-            //     numBlocks,
-            //     threadsPerBlock);
           }
       };
 
@@ -266,7 +256,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernel<dim, fe_degree + 1, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -276,18 +266,6 @@ namespace Portable
               n_cells,
               numBlocks,
               threadsPerBlock);
-
-            //    BK3::Parallel::
-            // KokkosKernel_1D_Block<dim, fe_degree + 1, fe_degree + 1, number>(
-            //   precomputed_data.shape_values,
-            //   precomputed_data.co_shape_gradients,
-            //   G_tensors[color],
-            //   src_device,
-            //   dst_device,
-            //   dof_indices_per_color[color],
-            //   n_cells,
-            //   numBlocks,
-            //   threadsPerBlock);
           }
       };
 

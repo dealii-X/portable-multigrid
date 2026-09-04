@@ -19,6 +19,7 @@
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/la_parallel_vector.h>
 #include <deal.II/lac/precondition.h>
+#include <deal.II/lac/read_write_vector.h>
 #include <deal.II/lac/solver_cg.h>
 
 #include <deal.II/matrix_free/operators.h>
@@ -31,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <random>
 
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_transfer.h"
@@ -77,16 +79,10 @@ namespace multigrid
         const unsigned int n_post_smooth,
         const bool         use_doubling_mesh);
 
-    // void
-    // run();
-
     using VectorTypeMG = LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>;
 
     using SmootherType =
       PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, vcycle_number>, VectorTypeMG>;
-
-    void
-    test();
 
   private:
     void
@@ -775,12 +771,9 @@ namespace multigrid
         best_only_comp  = 1e10;
 
         for (unsigned int i = 0; i < 5; ++i)
-          // for (unsigned int i = 0; i < 1; ++i)
           {
-            // const unsigned int n_mv =
-            //   dof_handler.n_dofs() < 10000000 ? 200 : 50;
-
-            const unsigned int n_mv = 1;
+            const unsigned int n_mv =
+              dof_handler.n_dofs() < 10000000 ? 200 : 50;
 
             {
               Kokkos::fence();
@@ -844,67 +837,6 @@ namespace multigrid
     ghost_timing_table.add_value("mv_ghost_and_compute", best_mv_both);
     ghost_timing_table.add_value("mv_compute_only", best_only_comp);
     ghost_timing_table.add_value("mv_ghost_only", best_only_ghost);
-  }
-
-  template <int dim, int fe_degree>
-  void
-  LaplaceProblem<dim, fe_degree>::test()
-  {
-    pcout << std::endl << std::endl;
-    // for (unsigned int level = 0; level <= level_matrices.max_level();
-    // ++level)
-    //   {
-    //     LinearAlgebra::distributed::Vector<vcycle_number,
-    //     MemorySpace::Default>
-    //       src, vec_bk3, vec_dealii, err;
-
-
-    //     const auto &matrix_bk3    = *level_matrices[level];
-    //     const auto &matrix_dealii = *level_matrices_dealii[level];
-
-    //     matrix_bk3.initialize_dof_vector(src);
-    //     vec_bk3.reinit(src);
-    //     vec_dealii.reinit(src);
-
-    //     src = 1.;
-
-    //     matrix_dealii.vmult(vec_dealii, src);
-    //     matrix_bk3.vmult(vec_bk3, src);
-
-    //     err = vec_bk3;
-    //     err -= vec_dealii;
-
-    //     pcout << "L = " << level << ": " << vec_bk3.l2_norm() << " | "
-    //           << vec_dealii.l2_norm() << " | " << err.l2_norm() << std::endl;
-    //   }
-
-    // for (unsigned int level = 0; level <= level_matrices.max_level();
-    // ++level)
-    //   {
-    //     LinearAlgebra::distributed::Vector<vcycle_number,
-    //     MemorySpace::Default>
-    //       src, vec_bk3, vec_dealii, err;
-
-
-    //     const auto &matrix_bk3    = *level_matrices[level];
-    //     const auto &matrix_dealii = *level_matrices_dealii[level];
-
-    //     matrix_bk3.initialize_dof_vector(src);
-    //     vec_bk3.reinit(src);
-    //     vec_dealii.reinit(src);
-
-    //     src = 1.;
-
-    //     matrix_dealii.vmult(vec_dealii, src);
-    //     matrix_bk3.vmult(vec_bk3, src);
-
-    //     err = vec_bk3;
-    //     err -= vec_dealii;
-
-    //     pcout << "L = " << level << ": " << vec_bk3.l2_norm() << " | "
-    //           << vec_dealii.l2_norm() << " | " << err.l2_norm() << std::endl;
-    //   }
-    // pcout << std::endl << std::endl;
   }
 
 
@@ -1034,6 +966,7 @@ namespace multigrid
             ghost_timing_table.write_text(std::cout);
 
             std::cout << std::endl << std::endl;
+
           }
       }
   }

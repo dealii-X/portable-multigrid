@@ -3,6 +3,8 @@
 
 #include <deal.II/lac/la_parallel_vector.h>
 
+#include <deal.II/matrix_free/evaluation_flags.h>
+#include <deal.II/matrix_free/portable_fe_evaluation.h>
 #include <deal.II/matrix_free/portable_matrix_free.h>
 
 DEAL_II_NAMESPACE_OPEN
@@ -214,211 +216,247 @@ namespace Portable
 
   } // namespace internal
 
+
+  // True step-64-style kernel: real deal.II's own Portable::FEEvaluation,
+  // driven through real Portable::MatrixFree::cell_loop() (called directly
+  // from LaplaceOperator::vmult_dealii() now, not this file's own
+  // cell_loop()/ApplyCellKernel/CellData machinery below) -- so operator()
+  // must take real deal.II's own MatrixFree<dim, number>::Data, not this
+  // project's CellData (that mismatch, plus a few copy-paste typos, is what
+  // made the first draft of this class not compile).
   template <int dim, int fe_degree, int n_q_points_1d, typename number>
-  class LocalLaplaceOperator
+  class LocalLaplaceOperatorStep64
   {
   public:
     static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
     static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
 
-    LocalLaplaceOperator()
-    {}
+    LocalLaplaceOperatorStep64() = default;
 
     DEAL_II_HOST_DEVICE void
-    operator()(const CellData<dim, number> *data,
-               const DeviceVector<number>  &src,
-               DeviceVector<number>        &dst) const;
+    operator()(const typename MatrixFree<dim, number>::Data *data,
+               const DeviceVector<number>                    &src,
+               DeviceVector<number>                          &dst) const
+    {
+      FEEvaluation<dim, fe_degree, n_q_points_1d, 1, number> fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+      fe_eval.evaluate(EvaluationFlags::gradients);
+
+      data->for_each_quad_point([&](const int q_point)
+                                  { fe_eval.submit_gradient(fe_eval.get_gradient(q_point), q_point); });
+
+      fe_eval.integrate(EvaluationFlags::gradients);
+
+      fe_eval.distribute_local_to_global(dst);
+    }
   };
 
-  template <int dim, int fe_degree, int n_q_points_1d, typename number>
+
+template <int dim, int fe_degree, int n_q_points_1d, typename number>
+class LocalLaplaceOperator
+{
+public:
+  static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
+  static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
+
+  LocalLaplaceOperator()
+  {}
+
   DEAL_II_HOST_DEVICE void
-  LocalLaplaceOperator<dim, fe_degree, n_q_points_1d, number>::operator()(
-    const CellData<dim, number> *data,
-    const DeviceVector<number>  &src,
-    DeviceVector<number>        &dst) const
+  operator()(const CellData<dim, number> *data,
+             const DeviceVector<number>  &src,
+             DeviceVector<number>        &dst) const;
+};
+
+template <int dim, int fe_degree, int n_q_points_1d, typename number>
+DEAL_II_HOST_DEVICE void
+LocalLaplaceOperator<dim, fe_degree, n_q_points_1d, number>::operator()(
+  const CellData<dim, number> *data,
+  const DeviceVector<number>  &src,
+  DeviceVector<number>        &dst) const
+{
+  const auto &precomputed_data = data->precomputed_data;
+  const int   cell_id          = data->cell_index;
+  const auto &team_member      = data->team_member;
+
+  auto &values      = data->values;
+  auto &gradients   = data->gradients;
+  auto &scratch_pad = data->scratch_pad;
+
+  // 1. read dof values
   {
-    const auto &precomputed_data = data->precomputed_data;
-    const int   cell_id          = data->cell_index;
-    const auto &team_member      = data->team_member;
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(data->team_member, n_local_dofs),
+                         [&](const int &i)
+                           {
+                             if (data->dof_indices(i, cell_id) == numbers::invalid_unsigned_int)
+                               values(i) = 0.;
+                             else
+                               values(i) = src[data->dof_indices(i, cell_id)];
+                           });
 
-    auto &values      = data->values;
-    auto &gradients   = data->gradients;
-    auto &scratch_pad = data->scratch_pad;
+    data->team_member.team_barrier();
+  }
 
-    // 1. read dof values
-    {
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(data->team_member, n_local_dofs),
-                           [&](const int &i)
-                             {
-                               if (data->dof_indices(i, cell_id) == numbers::invalid_unsigned_int)
-                                 values(i) = 0.;
-                               else
-                                 values(i) = src[data->dof_indices(i, cell_id)];
-                             });
+  // std::cout << "dealii kernel cell_id = " << cell_id << ": ";
+  // for (unsigned int i = 0; i < n_local_dofs; ++i)
+  //   std::cout << values(i) << " ";
+  // std::cout << std::endl << std::endl;
 
-      data->team_member.team_barrier();
-    }
+  // 2. define scratch pad for the evaluation
+  constexpr int scratch_size     = Utilities::pow(n_q_points_1d, dim);
+  auto          scratch_for_eval = Kokkos::subview(scratch_pad, Kokkos::make_pair(0, scratch_size));
+
+  // 3. initialize tensor-product kernel
+  internal::EvaluatorTensorProduct<internal::EvaluatorVariant::evaluate_general,
+                                   dim,
+                                   fe_degree + 1,
+                                   n_q_points_1d,
+                                   number>
+    eval(team_member,
+         precomputed_data.shape_values,
+         precomputed_data.shape_gradients,
+         precomputed_data.co_shape_gradients,
+         scratch_for_eval);
+
+
+  // 4.evaluate the kernel using sum factorization
+  {
+    // 4a.transform to the collocation space
+    eval.template values<0, true, false, true>(values, values);
+    if constexpr (dim > 1)
+      eval.template values<1, true, false, true>(values, values);
+    if constexpr (dim > 2)
+      eval.template values<2, true, false, true>(values, values);
 
     // std::cout << "dealii kernel cell_id = " << cell_id << ": ";
     // for (unsigned int i = 0; i < n_local_dofs; ++i)
     //   std::cout << values(i) << " ";
     // std::cout << std::endl << std::endl;
 
-    // 2. define scratch pad for the evaluation
-    constexpr int scratch_size = Utilities::pow(n_q_points_1d, dim);
-    auto scratch_for_eval      = Kokkos::subview(scratch_pad, Kokkos::make_pair(0, scratch_size));
+    // 4b. evaluate gradients in the colloction space
+    eval.template co_gradients<0, true, false, false>(values,
+                                                      Kokkos::subview(gradients, Kokkos::ALL, 0));
+    if constexpr (dim > 1)
+      eval.template co_gradients<1, true, false, false>(values,
+                                                        Kokkos::subview(gradients, Kokkos::ALL, 1));
+    if constexpr (dim > 2)
+      eval.template co_gradients<2, true, false, false>(values,
+                                                        Kokkos::subview(gradients, Kokkos::ALL, 2));
 
-    // 3. initialize tensor-product kernel
-    internal::EvaluatorTensorProduct<internal::EvaluatorVariant::evaluate_general,
-                                     dim,
-                                     fe_degree + 1,
-                                     n_q_points_1d,
-                                     number>
-      eval(team_member,
-           precomputed_data.shape_values,
-           precomputed_data.shape_gradients,
-           precomputed_data.co_shape_gradients,
-           scratch_for_eval);
-
-
-    // 4.evaluate the kernel using sum factorization
-    {
-      // 4a.transform to the collocation space
-      eval.template values<0, true, false, true>(values, values);
-      if constexpr (dim > 1)
-        eval.template values<1, true, false, true>(values, values);
-      if constexpr (dim > 2)
-        eval.template values<2, true, false, true>(values, values);
-
-      // std::cout << "dealii kernel cell_id = " << cell_id << ": ";
-      // for (unsigned int i = 0; i < n_local_dofs; ++i)
-      //   std::cout << values(i) << " ";
-      // std::cout << std::endl << std::endl;
-
-      // 4b. evaluate gradients in the colloction space
-      eval.template co_gradients<0, true, false, false>(values,
-                                                        Kokkos::subview(gradients, Kokkos::ALL, 0));
-      if constexpr (dim > 1)
-        eval.template co_gradients<1, true, false, false>(
-          values, Kokkos::subview(gradients, Kokkos::ALL, 1));
-      if constexpr (dim > 2)
-        eval.template co_gradients<2, true, false, false>(
-          values, Kokkos::subview(gradients, Kokkos::ALL, 2));
-
-      team_member.team_barrier();
-    }
-
-
-    // std::cout << "dealii kernel cell_id = " << cell_id << ": " << std::endl
-    //           << std::endl;
-    // for (unsigned int i = 0; i < n_local_dofs; ++i)
-    //   {
-    //     std::cout << gradients(i, 0) << " " << gradients(i, 1) << " "
-    //               << gradients(i, 2) << " ";
-    //     std::cout << std::endl << std::endl;
-    //   }
-
-
-
-    // 5.compute Laplace kernel at each quadrature point
-    {
-      Kokkos::parallel_for(
-        Kokkos::TeamThreadRange(team_member, n_q_points),
-        [&](const int &q_point)
-          {
-            // 5a. get gradient
-            Tensor<1, dim, number> grad;
-            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-              {
-                number tmp = 0.;
-                for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                  tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
-                         gradients(q_point, d_2);
-                grad[d_1] = tmp;
-              }
-
-            // 5b. submit gradient
-            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-              {
-                number tmp = 0.;
-                for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                  tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) * grad[d_2];
-                gradients(q_point, d_1) = tmp * precomputed_data.JxW(q_point, cell_id);
-              }
-          });
-
-      team_member.team_barrier();
-    }
-
-
-    // std::cout << "dealii kernel cell_id = " << cell_id << ": " << std::endl
-    //           << std::endl;
-    // for (unsigned int i = 0; i < n_local_dofs; ++i)
-    //   {
-    //     std::cout << gradients(i, 0) << " " << gradients(i, 1) << " "
-    //               << gradients(i, 2) << " ";
-    //     std::cout << std::endl << std::endl;
-    //   }
-
-
-    // 6. integrate using time factorization
-    {
-      // 6a. apply derivatives in collocation space
-      if constexpr (dim == 1)
-        eval.template co_gradients<0, false, false, false>(
-          Kokkos::subview(gradients, Kokkos::ALL, 2), values);
-      else if constexpr (dim == 2)
-        {
-          eval.template co_gradients<1, false, false, false>(
-            Kokkos::subview(gradients, Kokkos::ALL, 1), values);
-          eval.template co_gradients<0, false, true, false>(
-            Kokkos::subview(gradients, Kokkos::ALL, 0), values);
-        }
-      else if constexpr (dim == 3)
-        {
-          eval.template co_gradients<2, false, false, false>(
-            Kokkos::subview(gradients, Kokkos::ALL, 2), values);
-          eval.template co_gradients<1, false, true, false>(
-            Kokkos::subview(gradients, Kokkos::ALL, 1), values);
-          eval.template co_gradients<0, false, true, false>(
-            Kokkos::subview(gradients, Kokkos::ALL, 0), values);
-        }
-
-
-      // std::cout << "dealii kernel cell_id = " << cell_id << ": ";
-      // for (unsigned int i = 0; i < n_local_dofs; ++i)
-      //   std::cout << values(i) << " ";
-      // std::cout << std::endl << std::endl;
-
-      // 6b. transform back to the original space
-      if constexpr (dim > 2)
-        eval.template values<2, false, false, true>(values, values);
-      if constexpr (dim > 1)
-        eval.template values<1, false, false, true>(values, values);
-      eval.template values<0, false, false, true>(values, values);
-
-      team_member.team_barrier();
-    }
-
-    // 7.distribute dofs
-    {
-      if (precomputed_data.use_coloring)
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
-                             [&](const int &i)
-                               {
-                                 if (data->dof_indices(i, cell_id) != numbers::invalid_unsigned_int)
-                                   dst[data->dof_indices(i, cell_id)] += values(i);
-                               });
-      else
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
-                             [&](const int &i)
-                               {
-                                 if (data->dof_indices(i, cell_id) != numbers::invalid_unsigned_int)
-                                   Kokkos::atomic_add(&dst[data->dof_indices(i, cell_id)],
-                                                      values(i));
-                               });
-    }
+    team_member.team_barrier();
   }
+
+
+  // std::cout << "dealii kernel cell_id = " << cell_id << ": " << std::endl
+  //           << std::endl;
+  // for (unsigned int i = 0; i < n_local_dofs; ++i)
+  //   {
+  //     std::cout << gradients(i, 0) << " " << gradients(i, 1) << " "
+  //               << gradients(i, 2) << " ";
+  //     std::cout << std::endl << std::endl;
+  //   }
+
+
+
+  // 5.compute Laplace kernel at each quadrature point
+  {
+    Kokkos::parallel_for(
+      Kokkos::TeamThreadRange(team_member, n_q_points),
+      [&](const int &q_point)
+        {
+          // 5a. get gradient
+          Tensor<1, dim, number> grad;
+          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+            {
+              number tmp = 0.;
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
+                       gradients(q_point, d_2);
+              grad[d_1] = tmp;
+            }
+
+          // 5b. submit gradient
+          for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+            {
+              number tmp = 0.;
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) * grad[d_2];
+              gradients(q_point, d_1) = tmp * precomputed_data.JxW(q_point, cell_id);
+            }
+        });
+
+    team_member.team_barrier();
+  }
+
+
+  // std::cout << "dealii kernel cell_id = " << cell_id << ": " << std::endl
+  //           << std::endl;
+  // for (unsigned int i = 0; i < n_local_dofs; ++i)
+  //   {
+  //     std::cout << gradients(i, 0) << " " << gradients(i, 1) << " "
+  //               << gradients(i, 2) << " ";
+  //     std::cout << std::endl << std::endl;
+  //   }
+
+
+  // 6. integrate using time factorization
+  {
+    // 6a. apply derivatives in collocation space
+    if constexpr (dim == 1)
+      eval.template co_gradients<0, false, false, false>(Kokkos::subview(gradients, Kokkos::ALL, 2),
+                                                         values);
+    else if constexpr (dim == 2)
+      {
+        eval.template co_gradients<1, false, false, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 1), values);
+        eval.template co_gradients<0, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 0), values);
+      }
+    else if constexpr (dim == 3)
+      {
+        eval.template co_gradients<2, false, false, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 2), values);
+        eval.template co_gradients<1, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 1), values);
+        eval.template co_gradients<0, false, true, false>(
+          Kokkos::subview(gradients, Kokkos::ALL, 0), values);
+      }
+
+
+    // std::cout << "dealii kernel cell_id = " << cell_id << ": ";
+    // for (unsigned int i = 0; i < n_local_dofs; ++i)
+    //   std::cout << values(i) << " ";
+    // std::cout << std::endl << std::endl;
+
+    // 6b. transform back to the original space
+    if constexpr (dim > 2)
+      eval.template values<2, false, false, true>(values, values);
+    if constexpr (dim > 1)
+      eval.template values<1, false, false, true>(values, values);
+    eval.template values<0, false, false, true>(values, values);
+
+    team_member.team_barrier();
+  }
+
+  // 7.distribute dofs
+  {
+    if (precomputed_data.use_coloring)
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
+                           [&](const int &i)
+                             {
+                               if (data->dof_indices(i, cell_id) != numbers::invalid_unsigned_int)
+                                 dst[data->dof_indices(i, cell_id)] += values(i);
+                             });
+    else
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_local_dofs),
+                           [&](const int &i)
+                             {
+                               if (data->dof_indices(i, cell_id) != numbers::invalid_unsigned_int)
+                                 Kokkos::atomic_add(&dst[data->dof_indices(i, cell_id)], values(i));
+                             });
+  }
+}
 
 } // namespace Portable
 
