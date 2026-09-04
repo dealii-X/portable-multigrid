@@ -1369,8 +1369,6 @@ namespace Portable
 
         if (is_serial)
           {
-            n_cells_per_batch = 1u;
-            n_blocks          = 1u;
             threads_per_block = 1u;
           }
 
@@ -1587,6 +1585,21 @@ namespace Portable
                   const Number factor_laplace       = Number(1),
                   const bool   interpolate_to_faces = false)
       {
+        // Batch/block/thread-count launch parameters: numbers::invalid_unsigned_int
+        // lets every kernel fall back to its own internal (shared-memory-budget
+        // based) heuristic, which is what actually uses the GPU -- pinning these
+        // to 1u,1u,1u (as this used to do) forces every kernel down to a single
+        // thread block, serializing the whole matvec. On the serial backend, only
+        // threads_per_block must be 1 (Kokkos::Serial's TeamPolicy always has
+        // team_size == 1); the batch size and number of leagues are just host-side
+        // loop bounds and are safe (and worth exercising) at any value there too.
+        constexpr bool is_serial =
+          std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+        unsigned int n_elements_per_batch = numbers::invalid_unsigned_int;
+        unsigned int n_blocks             = numbers::invalid_unsigned_int;
+        unsigned int threads_per_block    = is_serial ? 1u : numbers::invalid_unsigned_int;
+
         Kokkos::Array<DeviceVector<Number>, 2> shape_values;
         shape_values[0] = shape_info[0].shape_values;
         shape_values[1] = shape_info[1].shape_values;
@@ -1715,9 +1728,9 @@ namespace Portable
               interpolate_to_faces,
               factor_mass,
               factor_laplace,
-              1u,
-              1u,
-              1u);
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
 
             if (interpolate_to_faces)
               {
@@ -1732,9 +1745,9 @@ namespace Portable
                   face_info[0],
                   face_info_cpu[0].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
                   shape_info[0].shape_gradients_collocation,
@@ -1747,9 +1760,9 @@ namespace Portable
                   face_info[1],
                   face_info_cpu[1].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
@@ -1760,9 +1773,9 @@ namespace Portable
                   neighbor_cells,
                   dst_device,
                   n_cells,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
               }
 
             // test_cpu<n_t, n_q>(in0.data(), temp1.data(), src_device, dst_device);
@@ -1834,9 +1847,9 @@ namespace Portable
               interpolate_to_faces,
               factor_mass,
               factor_laplace,
-              1u,
-              1u,
-              1u);
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
 
             if (interpolate_to_faces)
               {
@@ -1851,9 +1864,9 @@ namespace Portable
                   face_info[0],
                   face_info_cpu[0].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
                   shape_info[0].shape_gradients_collocation,
@@ -1866,9 +1879,9 @@ namespace Portable
                   face_info[1],
                   face_info_cpu[1].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
@@ -1879,9 +1892,9 @@ namespace Portable
                   neighbor_cells,
                   dst_device,
                   n_cells,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
               }
           }
         else if (shape_info[0].fe_degree == 4)
@@ -1948,9 +1961,9 @@ namespace Portable
               interpolate_to_faces,
               factor_mass,
               factor_laplace,
-              1u,
-              1u,
-              1u);
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
 
             if (interpolate_to_faces)
               {
@@ -1965,9 +1978,9 @@ namespace Portable
                   face_info[0],
                   face_info_cpu[0].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
                   shape_info[0].shape_gradients_collocation,
@@ -1980,9 +1993,9 @@ namespace Portable
                   face_info[1],
                   face_info_cpu[1].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
@@ -1993,9 +2006,9 @@ namespace Portable
                   neighbor_cells,
                   dst_device,
                   n_cells,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
               }
           }
         else if (shape_info[0].fe_degree == 5)
@@ -2062,9 +2075,9 @@ namespace Portable
               interpolate_to_faces,
               factor_mass,
               factor_laplace,
-              1u,
-              1u,
-              1u);
+              n_elements_per_batch,
+              n_blocks,
+              threads_per_block);
 
             if (interpolate_to_faces)
               {
@@ -2079,9 +2092,9 @@ namespace Portable
                   face_info[0],
                   face_info_cpu[0].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::compute_boundary_faces<dim, n_t, n_q, Number>(
                   shape_info[0].shape_gradients_collocation,
@@ -2094,9 +2107,9 @@ namespace Portable
                   face_info[1],
                   face_info_cpu[1].size(),
                   factor_laplace,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
 
                 Portable::RT::distribute_face_to_global<dim, n_t, n_q, Number>(
                   shape_values,
@@ -2107,9 +2120,9 @@ namespace Portable
                   neighbor_cells,
                   dst_device,
                   n_cells,
-                  1u,
-                  1u,
-                  1u);
+                  n_elements_per_batch,
+                  n_blocks,
+                  threads_per_block);
               }
           }
       }

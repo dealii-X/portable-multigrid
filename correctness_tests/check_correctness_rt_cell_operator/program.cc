@@ -48,6 +48,7 @@
 #include <deal.II/matrix_free/matrix_free.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 
@@ -476,5 +477,12 @@ main(int argc, char *argv[])
 
   std::cout << (all_passed ? "ALL PASS" : "SOME FAILED") << std::endl;
 
-  return all_passed ? 0 : 1;
+  // On some CUDA 13 / aarch64 setups, libcudart's own exit-time static
+  // destructor chain corrupts glibc's heap during __cxa_finalize (verified
+  // with MALLOC_CHECK_=3: the abort happens entirely inside libcudart's
+  // internal calloc, after ALL PASS has already printed -- not from anything
+  // in this program). Skip that teardown path entirely rather than chase a
+  // bug in someone else's atexit handler.
+  std::cout.flush();
+  std::_Exit(all_passed ? 0 : 1);
 }

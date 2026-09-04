@@ -1018,7 +1018,12 @@ namespace Portable
 
       const int nelmtPerBatch =
         (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          (shmemPerBlock / (n_components * (dim + 1) * n_q_total) / sizeof(Number)) :
+          // at least 1: for large degree/dim the per-cell scratch footprint can
+          // exceed the shmemPerBlock budget on its own, flooring this to 0
+          // otherwise and dividing by zero below.
+          std::max(1,
+                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                    static_cast<int>(sizeof(Number))) :
           n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
@@ -2319,7 +2324,12 @@ namespace Portable
 
       const int nelmtPerBatch =
         (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          (shmemPerBlock / (n_components * (dim + 1) * n_q_total) / sizeof(Number)) :
+          // at least 1: for large degree/dim the per-cell scratch footprint can
+          // exceed the shmemPerBlock budget on its own, flooring this to 0
+          // otherwise and dividing by zero below.
+          std::max(1,
+                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                    static_cast<int>(sizeof(Number))) :
           n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
@@ -3624,6 +3634,47 @@ namespace Portable
     }
 
 
+    // Buffer index of the (face_in_batch, side, component) trace used by
+    // compute_inner_faces, one n_q_face-sized block per (side, component) pair.
+    // A plain DEAL_II_HOST_DEVICE function rather than a local lambda: nvcc
+    // does not allow defining an extended __host__ __device__ lambda inside
+    // another one, which a KOKKOS_LAMBDA-captured local lambda would be.
+    template <int dim>
+    DEAL_II_HOST_DEVICE inline int
+    inner_face_slot_index(int face_in_batch, int side, int component)
+    {
+      return (face_in_batch * 2 + side) * dim + component;
+    }
+
+    // Same, single-sided (no `side`) -- used by compute_boundary_faces.
+    template <int dim>
+    DEAL_II_HOST_DEVICE inline int
+    boundary_face_slot_index(int face_in_batch, int component)
+    {
+      return face_in_batch * dim + component;
+    }
+
+    // tangent_index-th axis that is not normal_dir; dim == 2 has a single
+    // tangent axis, dim == 3 looks it up in a lookup table. Shared by
+    // compute_inner_faces and compute_boundary_faces.
+    template <int dim>
+    DEAL_II_HOST_DEVICE inline int
+    face_tangent_direction(int normal_dir, int tang_index)
+    {
+      if constexpr (dim == 2)
+        return 1 - normal_dir;
+      else
+        {
+          constexpr int lookup_tangents_3d[3][2] = {
+            {1, 2}, // normal_dir == 0
+            {0, 2}, // normal_dir == 1
+            {0, 1}  // normal_dir == 2
+          };
+          return lookup_tangents_3d[normal_dir][tang_index];
+        }
+    }
+
+
     template <int dim, int n_t, int n_q, typename Number>
     void
     compute_cell(
@@ -3681,7 +3732,12 @@ namespace Portable
 
       const int nelmtPerBatch =
         (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-          (shmemPerBlock / (n_components * (dim + 1) * n_q_total) / sizeof(Number)) :
+          // at least 1: for large degree/dim the per-cell scratch footprint can
+          // exceed the shmemPerBlock budget on its own, flooring this to 0
+          // otherwise and dividing by zero below.
+          std::max(1,
+                  shmemPerBlock / (n_components * (dim + 1) * n_q_total) /
+                    static_cast<int>(sizeof(Number))) :
           n_cells_per_batch;
 
       const int numBlocks = (n_blocks == numbers::invalid_unsigned_int) ?
@@ -3759,7 +3815,7 @@ namespace Portable
           while (eb < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
             {
               // current nelmtPerBatch (edge case, last batch size can be less)
-              const int c_nelmtPerBatch = std::min(nelmtPerBatch, nelmt - eb * nelmtPerBatch);
+              const int c_nelmtPerBatch = Kokkos::min(nelmtPerBatch, nelmt - eb * nelmtPerBatch);
 
               // ====================================================
               // PHASE 1: Read from global L vector per component
@@ -4277,9 +4333,17 @@ namespace Portable
 
       const int nelmt = n_inner_faces;
 
-      const int nelmtPerBatch   = (n_faces_per_batch == numbers::invalid_unsigned_int) ?
-                                    1 :
-                                    static_cast<int>(n_faces_per_batch);
+      // per team scratch is n_q*n_q (fixed) + (2 + dim) * nelmtPerBatch * n_face_dofs *
+      // n_q_face (see shmem_size below) -- size nelmtPerBatch off of that per-face term
+      // against a shared-memory budget, same idea as compute_cell.
+      const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
+
+      const int nelmtPerBatch =
+        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+          std::max(1,
+                  shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
+                    static_cast<int>(sizeof(Number))) :
+          static_cast<int>(n_faces_per_batch);
       const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
                                     std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
                                     static_cast<int>(n_blocks);
@@ -4313,28 +4377,6 @@ namespace Portable
           Number *s_temp               = s_face_values + buffer_size;
           Number *s_face_gradients     = s_temp + buffer_size;
 
-          // buffer index of the (face_in_batch, side, component) trace, one
-          // n_q_face-sized block per (side, component) pair, `n_face_dofs` of
-          // those per face -- this is what lets apply() batch over all of
-          // them (and both sides) in a single sum-factorization call.
-          const auto slot_index = KOKKOS_LAMBDA(int face_in_batch, int side, int component)
-            { return (face_in_batch * 2 + side) * n_components + component; };
-
-          // tangent_index-th axis that is not normal_dir; dim == 2 has a
-          // single tangent axis, dim == 3 looks it up in this table.
-          constexpr int lookup_tangents_3d[3][2] = {
-            {1, 2}, // normal_dir == 0
-            {0, 2}, // normal_dir == 1
-            {0, 1}  // normal_dir == 2
-          };
-          const auto tangent_direction = KOKKOS_LAMBDA(int normal_dir, int tang_index)
-            {
-              if constexpr (dim == 2)
-                return 1 - normal_dir;
-              else
-                return lookup_tangents_3d[normal_dir][tang_index];
-            };
-
           const int threadIdx = team_member.team_rank();
           const int blockSize = team_member.team_size();
 
@@ -4346,7 +4388,7 @@ namespace Portable
           while (face_batch < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
             {
               const int n_faces_this_batch =
-                std::min(nelmtPerBatch, nelmt - face_batch * nelmtPerBatch);
+                Kokkos::min(nelmtPerBatch, nelmt - face_batch * nelmtPerBatch);
 
               // ---- step 1: read the face trace values and the normal reference derivative ----
               for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
@@ -4363,7 +4405,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, side == 0 ? 0 : 1);
                   const unsigned int local_face = face_info(face, side == 0 ? 2 : 3);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = slot_index(face_in_batch, side, component);
+                  const int          slot       = inner_face_slot_index<dim>(face_in_batch, side, component);
 
                   // m = J^{-1} n, component along the normal reference axis
                   const Number m_normal =
@@ -4412,9 +4454,9 @@ namespace Portable
 
                       const int face        = face_batch * nelmtPerBatch + face_in_batch;
                       const int normal_dir  = face_info(face, 2) / 2;
-                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+                      const int tangent_dir = face_tangent_direction<dim>(normal_dir, tang_index);
 
-                      const int slot = slot_index(face_in_batch, side, component);
+                      const int slot = inner_face_slot_index<dim>(face_in_batch, side, component);
 
                       const Number m_tangent = jacobians_times_normal(
                         face * dim * n_q_face + tangent_dir * n_q_face + q_face, side);
@@ -4463,8 +4505,8 @@ namespace Portable
 
                   for (int component = 0; component < n_components; ++component)
                     {
-                      const int slot_minus   = slot_index(face_in_batch, 0, component);
-                      const int slot_plus    = slot_index(face_in_batch, 1, component);
+                      const int slot_minus   = inner_face_slot_index<dim>(face_in_batch, 0, component);
+                      const int slot_plus    = inner_face_slot_index<dim>(face_in_batch, 1, component);
                       u_ref_minus[component] = s_face_values[slot_minus * n_q_face + q_face];
                       u_ref_plus[component]  = s_face_values[slot_plus * n_q_face + q_face];
                       // (grad_xi u_ref) . m, summed over reference axes already
@@ -4515,8 +4557,8 @@ namespace Portable
                           pt_grad_minus += piola_minus[k][component] * grad_flux[k];
                           pt_grad_plus += piola_plus[k][component] * grad_flux[k];
                         }
-                      const int slot_minus = slot_index(face_in_batch, 0, component);
-                      const int slot_plus  = slot_index(face_in_batch, 1, component);
+                      const int slot_minus = inner_face_slot_index<dim>(face_in_batch, 0, component);
+                      const int slot_plus  = inner_face_slot_index<dim>(face_in_batch, 1, component);
                       s_face_values[slot_minus * n_q_face + q_face] =
                         pt_value_minus; // [[v]]: minus +
                       s_face_values[slot_plus * n_q_face + q_face] =
@@ -4547,10 +4589,10 @@ namespace Portable
 
                       const int face        = face_batch * nelmtPerBatch + face_in_batch;
                       const int normal_dir  = face_info(face, 2) / 2;
-                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+                      const int tangent_dir = face_tangent_direction<dim>(normal_dir, tang_index);
 
                       // move the tangential test-gradient slab into s_temp for apply()
-                      const int slot = slot_index(face_in_batch, side, component);
+                      const int slot = inner_face_slot_index<dim>(face_in_batch, side, component);
                       s_temp[slot * n_q_face + q_face] =
                         s_face_gradients[tangent_dir * buffer_size + slot * n_q_face + q_face];
                     }
@@ -4589,7 +4631,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, side == 0 ? 0 : 1);
                   const unsigned int local_face = face_info(face, side == 0 ? 2 : 3);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = slot_index(face_in_batch, side, component);
+                  const int          slot       = inner_face_slot_index<dim>(face_in_batch, side, component);
 
                   face_values_at_quads(q_face, local_face, component, cell) =
                     s_face_values[slot * n_q_face + q_face];
@@ -4654,9 +4696,17 @@ namespace Portable
 
       const int nelmt = n_boundary_faces;
 
-      const int nelmtPerBatch   = (n_faces_per_batch == numbers::invalid_unsigned_int) ?
-                                    1 :
-                                    static_cast<int>(n_faces_per_batch);
+      // per team scratch is n_q*n_q (fixed) + (2 + dim) * nelmtPerBatch * n_face_dofs *
+      // n_q_face (see shmem_size below) -- size nelmtPerBatch off of that per-face term
+      // against a shared-memory budget, same idea as compute_cell.
+      const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
+
+      const int nelmtPerBatch =
+        (n_faces_per_batch == numbers::invalid_unsigned_int) ?
+          std::max(1,
+                  shmemPerBlock / (n_face_dofs * n_q_face * (2 + dim)) /
+                    static_cast<int>(sizeof(Number))) :
+          static_cast<int>(n_faces_per_batch);
       const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
                                     std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
                                     static_cast<int>(n_blocks);
@@ -4685,26 +4735,6 @@ namespace Portable
           Number *s_temp               = s_face_values + buffer_size;
           Number *s_face_gradients     = s_temp + buffer_size;
 
-          // buffer index of the (face_in_batch, component) trace, one n_q_face-sized
-          // block per component, `n_face_dofs` of those per face.
-          const auto slot_index = KOKKOS_LAMBDA(int face_in_batch, int component) {
-            return face_in_batch * n_components + component;
-          };
-
-          // tangent_index-th axis that is not normal_dir; dim == 2 has a single
-          // tangent axis, dim == 3 looks it up in this table.
-          constexpr int lookup_tangents_3d[3][2] = {
-            {1, 2}, // normal_dir == 0
-            {0, 2}, // normal_dir == 1
-            {0, 1}  // normal_dir == 2
-          };
-          const auto tangent_direction = KOKKOS_LAMBDA(int normal_dir, int tang_index) {
-            if constexpr (dim == 2)
-              return 1 - normal_dir;
-            else
-              return lookup_tangents_3d[normal_dir][tang_index];
-          };
-
           const int threadIdx = team_member.team_rank();
           const int blockSize = team_member.team_size();
 
@@ -4716,7 +4746,7 @@ namespace Portable
           while (face_batch < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
             {
               const int n_faces_this_batch =
-                std::min(nelmtPerBatch, nelmt - face_batch * nelmtPerBatch);
+                Kokkos::min(nelmtPerBatch, nelmt - face_batch * nelmtPerBatch);
 
               // ---- step 1: read the interior trace value and normal reference derivative ----
               for (int tid = threadIdx; tid < n_faces_this_batch * n_face_dofs * n_q_face;
@@ -4731,7 +4761,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, 0);
                   const unsigned int local_face = face_info(face, 2);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = slot_index(face_in_batch, component);
+                  const int          slot       = boundary_face_slot_index<dim>(face_in_batch, component);
 
                   // m = J^{-1} n, component along the normal reference axis
                   const Number m_normal = jacobians_times_normal_boundary_face(
@@ -4777,9 +4807,9 @@ namespace Portable
 
                       const int face        = face_batch * nelmtPerBatch + face_in_batch;
                       const int normal_dir  = face_info(face, 2) / 2;
-                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+                      const int tangent_dir = face_tangent_direction<dim>(normal_dir, tang_index);
 
-                      const int    slot      = slot_index(face_in_batch, component);
+                      const int    slot      = boundary_face_slot_index<dim>(face_in_batch, component);
                       const Number m_tangent = jacobians_times_normal_boundary_face(
                         face * dim * n_q_face + tangent_dir * n_q_face + q_face);
                       s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face] +=
@@ -4815,7 +4845,7 @@ namespace Portable
                   Number u_ref[n_components], dn_ref[n_components];
                   for (int component = 0; component < n_components; ++component)
                     {
-                      const int slot   = slot_index(face_in_batch, component);
+                      const int slot   = boundary_face_slot_index<dim>(face_in_batch, component);
                       u_ref[component] = s_face_values[slot * n_q_face + q_face];
                       dn_ref[component] =
                         s_face_gradients[normal_dir * buffer_size + slot * n_q_face + q_face];
@@ -4853,7 +4883,7 @@ namespace Portable
                           pt_value += piola[k][component] * value_flux[k];
                           pt_grad += piola[k][component] * grad_flux[k];
                         }
-                      const int slot = slot_index(face_in_batch, component);
+                      const int slot = boundary_face_slot_index<dim>(face_in_batch, component);
                       s_face_values[slot * n_q_face + q_face] = pt_value;
                       for (int axis = 0; axis < dim; ++axis)
                         s_face_gradients[axis * buffer_size + slot * n_q_face + q_face] =
@@ -4876,10 +4906,10 @@ namespace Portable
 
                       const int face        = face_batch * nelmtPerBatch + face_in_batch;
                       const int normal_dir  = face_info(face, 2) / 2;
-                      const int tangent_dir = tangent_direction(normal_dir, tang_index);
+                      const int tangent_dir = face_tangent_direction<dim>(normal_dir, tang_index);
 
                       // move the tangential test-gradient slab into s_temp for apply()
-                      const int slot = slot_index(face_in_batch, component);
+                      const int slot = boundary_face_slot_index<dim>(face_in_batch, component);
                       s_temp[slot * n_q_face + q_face] =
                         s_face_gradients[tangent_dir * buffer_size + slot * n_q_face + q_face];
                     }
@@ -4917,7 +4947,7 @@ namespace Portable
                   const unsigned int cell       = face_info(face, 0);
                   const unsigned int local_face = face_info(face, 2);
                   const int          normal_dir = face_info(face, 2) / 2;
-                  const int          slot       = slot_index(face_in_batch, component);
+                  const int          slot       = boundary_face_slot_index<dim>(face_in_batch, component);
 
                   face_values_at_quads(q_face, local_face, component, cell) =
                     s_face_values[slot * n_q_face + q_face];
@@ -4964,9 +4994,17 @@ namespace Portable
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch   = (n_cells_per_batch == numbers::invalid_unsigned_int) ?
-                                    1 :
-                                    static_cast<int>(n_cells_per_batch);
+      // per team scratch is (fixed shape-value terms) + (n_components + 2*dim) *
+      // nelmtPerBatch * n_q_total (see ssize below) -- size nelmtPerBatch off of that
+      // per-cell term against a shared-memory budget, same idea as compute_cell.
+      const int shmemPerBlock = 10800; // total shared memory used per block (bytes)
+
+      const int nelmtPerBatch =
+        (n_cells_per_batch == numbers::invalid_unsigned_int) ?
+          std::max(1,
+                  shmemPerBlock / ((n_components + 2 * dim) * n_q_total) /
+                    static_cast<int>(sizeof(Number))) :
+          static_cast<int>(n_cells_per_batch);
       const int numBlocks       = (n_blocks == numbers::invalid_unsigned_int) ?
                                     std::max(1, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch) :
                                     static_cast<int>(n_blocks);
@@ -5028,7 +5066,7 @@ namespace Portable
           int eb = team_member.league_rank();
           while (eb < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
             {
-              const int c_nelmtPerBatch = std::min(nelmtPerBatch, nelmt - eb * nelmtPerBatch);
+              const int c_nelmtPerBatch = Kokkos::min(nelmtPerBatch, nelmt - eb * nelmtPerBatch);
 
               // -- step 1: interpolate the 2*dim faces back to the cell quad points --
               // Adjoint of compute_cell's interpolate-to-faces step: there, each cell
