@@ -415,7 +415,7 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
       Kokkos::fence();
       time.restart();
       for (unsigned int i = 0; i < n_mv; ++i)
-        rt_operator_double.test_full_operator(dst_double, src_double);
+        rt_operator_double.test_full_operator(dst_double, src_double, 1., 1., true);
       Kokkos::fence();
 
       Utilities::MPI::MinMaxAvg stat =
@@ -438,7 +438,7 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
       Kokkos::fence();
       time.restart();
       for (unsigned int i = 0; i < n_mv; ++i)
-        rt_operator_float.test_full_operator(dst_float, src_float);
+        rt_operator_float.test_full_operator(dst_float, src_float, 1., 1., true);
       Kokkos::fence();
 
       Utilities::MPI::MinMaxAvg stat =
@@ -447,8 +447,8 @@ RaviartThomasOperator<dim, fe_degree>::test_cell_operator()
       best_mv_full_float = std::min(best_mv_full_float, stat.max);
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        std::cout << "matvec time float (cell+face) " << stat.min << " [p" << stat.min_index
-                  << "] " << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
+        std::cout << "matvec time float (cell+face) " << stat.min << " [p" << stat.min_index << "] "
+                  << stat.avg << " " << stat.max << " [p" << stat.max_index << "]"
                   << " DoFs/s: " << dof_handler.n_dofs() / stat.max << std::endl;
     }
 
