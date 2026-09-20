@@ -11,6 +11,7 @@
 
 #include <array>
 #include <memory>
+#include <utility>
 
 #include "base/portable_laplace_operator_base.h"
 #include "kernels/bk4_cuda_kernels.cuh"
@@ -627,7 +628,15 @@ namespace Portable
                 n_dofs_per_component,
                 mf_data.n_cells);
 
-            std::array<typename DoFIndicesView::HostMirror, n_components> dof_indices_host;
+            // Kokkos::View::HostMirror isn't available in every Kokkos
+            // version (it tripped up a build on a cluster with a newer
+            // Kokkos) -- deduce the mirror type from
+            // Kokkos::create_mirror_view() itself instead, exactly like the
+            // scalar LaplaceOperator::setup_dof_indices_per_color() (which
+            // just uses `auto`, no array of them) already does.
+            using DoFIndicesHostView =
+              decltype(Kokkos::create_mirror_view(std::declval<DoFIndicesView>()));
+            std::array<DoFIndicesHostView, n_components> dof_indices_host;
             for (unsigned int c = 0; c < n_components; ++c)
               dof_indices_host[c] =
                 Kokkos::create_mirror_view(this->dof_indices_per_color[color][c]);

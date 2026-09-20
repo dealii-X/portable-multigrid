@@ -15,14 +15,22 @@
 // vs. vmult_dealii() sanity check runs, so this program still compiles and
 // gives a meaningful (if partial) result anywhere.
 //
-// *** Known open question this test exists to settle ***: bk4_cuda_kernels.
-// cuh's gather/scatter includes a local-dof "digit reversal" (to_lex_index())
-// derived by static tracing of the kernel's own index bookkeeping against
-// this project's lexicographic dof_indices convention, not verified by
-// running anything. If rel_err(tensor_core vs dealii) below is *not* at
-// machine precision, the first thing to try is deleting that reversal in
-// bk4_cuda_kernels.cuh (i.e. have to_lex_index() return n_kernel unchanged)
-// and rerunning.
+// *** Status ***: a real bug was found and fixed in bk4_cuda_kernels.cuh's
+// Phase 3 (qr/qs/qt were paired with the wrong Grr/Grs/.../Gtt terms -- an
+// unconditional R/T swap, wrong even for an isotropic G) by building a
+// standalone (no-deal.II) harness with a hand-written CPU reference and
+// running the actual kernel on real GPU hardware (an environment that
+// happened to have both nvcc and GPU access, separate from this project's
+// own deal.II/Kokkos build). With that one-line fix, the standalone harness
+// matches the CPU reference to machine precision on both an isotropic and
+// an anisotropic hand-built mesh. This project test itself has *not* been
+// rerun yet against the fix (it needs an actual CUDA-enabled deal.II
+// build, which only exists on the cluster) -- do that next. Also open: a
+// separate "malloc_consolidate(): unaligned fastbin chunk detected" crash
+// during process teardown was observed on a prior (pre-fix) cluster run,
+// after this program had already printed FAILED and returned -- unclear
+// yet whether that's related to this code or a pre-existing MPI/Kokkos/
+// CUDA-runtime finalize-order issue; worth checking it's gone too.
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/function.h>

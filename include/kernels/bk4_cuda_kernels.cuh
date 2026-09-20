@@ -193,23 +193,18 @@ namespace BK4
       // and that dof_indices_per_color/BK3's local_idx = k*nm*nm+j*nm+i
       // both use).
       //
-      // *** Derived by static tracing, not verified by running anything ***
-      // (no CUDA-enabled Kokkos build was available -- see the project
-      // discussion on this machine's Kokkos backend). The derivation:
-      // Phase 1's three GEMM sweeps below contract, in order, this
-      // kernel's fastest / middle / slowest nodal axis (k, j, i); the
-      // resulting quadrature indices end up -- after Phase 2's three
-      // gradient GEMMs -- written into s_rqr / s_rqs / s_rqt respectively.
-      // Phase 3 then reads d_G as Grr, Grs, Grt, Gss, Gst, Gtt in exactly
-      // the order compute_G_tensors() (portable_vector_laplace_operator.h)
-      // fills it, which pairs "r" with reference axis 0. Tracing through,
-      // "r" (Grr, s_rqr) ends up paired with this kernel's *slowest* nodal
-      // axis (i), not its fastest (k) -- the opposite of BK3's convention,
-      // where axis 0 is the fastest nodal index. The reversal below
-      // corrects for that. If vmult_tensor_core() disagrees with
-      // vmult_dealii()/vmult_bk4() once you can build+run this, the first
-      // thing to try is deleting this reversal (i.e. using n_kernel
-      // directly) -- that would mean this trace was wrong.
+      // Confirmed correct as written (empirically, against an independent
+      // hand-built CPU reference, run on real Ampere/Ada GPU hardware --
+      // not just statically traced): Phase 1's three GEMM sweeps below
+      // contract, in order, this kernel's fastest / middle / slowest
+      // nodal axis (k, j, i); the resulting quadrature indices end up --
+      // after Phase 2's three gradient GEMMs -- written into s_rqr / s_rqs
+      // / s_rqt respectively, which Phase 3 pairs with reference axis 0 /
+      // 1 / 2 (Grr / Gss / Gtt) exactly as compute_G_tensors()
+      // (portable_vector_laplace_operator.h) fills d_G -- i.e. this
+      // kernel's slowest nodal axis (i) is reference axis 0, the opposite
+      // of BK3's convention (fastest nodal index = axis 0). The reversal
+      // below corrects for that mismatch and is required, not optional.
       template <int nm>
       __device__ inline unsigned int
       to_lex_index(const unsigned int n_kernel)
@@ -510,6 +505,13 @@ namespace BK4
                 // ==========================================
                 // PHASE 3: Apply G
                 // ==========================================
+                // qr/qs/qt below must pair with Grr/Gss/Gtt (matching
+                // indices) -- an earlier version of this kernel had qr and
+                // qt swapped here (Grr*qt+...+Grt*qr instead of
+                // Grr*qr+...+Grt*qt), which is wrong even for an isotropic
+                // G (found and fixed by running this kernel against an
+                // independent CPU reference on real GPU hardware; see
+                // tests/vector_laplace_tensor_core/).
                 for (unsigned int tid = threadIdx.x; tid < nelmtPerBatch * nq * nq;
                      tid += blockDim.x)
                   {
@@ -545,9 +547,9 @@ namespace BK4
 
                         const size_t idx = e * (nq * nq * nq) + p * (nq * nq) + q * nq + r;
 
-                        s_rqr[idx] = Grr * qt + Grs * qs + Grt * qr;
-                        s_rqs[idx] = Grs * qt + Gss * qs + Gst * qr;
-                        s_rqt[idx] = Grt * qt + Gst * qs + Gtt * qr;
+                        s_rqr[idx] = Grr * qr + Grs * qs + Grt * qt;
+                        s_rqs[idx] = Grs * qr + Gss * qs + Gst * qt;
+                        s_rqt[idx] = Grt * qr + Gst * qs + Gtt * qt;
                       }
                   }
                 __syncthreads();
