@@ -9,7 +9,9 @@
 #include <deal.II/matrix_free/portable_fe_evaluation.h>
 #include <deal.II/matrix_free/tools.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -89,9 +91,12 @@ namespace Portable
     // for dim == 3 and number == double (static_assert()s otherwise), and
     // requires this translation unit to actually be compiled by nvcc
     // (Assert()s out at runtime otherwise -- see the __CUDACC__ guard in
-    // the .cuh). nelmtPerBatch is a compile-time shared-memory tuning
-    // knob, deliberately left to the caller to choose.
-    template <unsigned int nelmtPerBatch>
+    // the .cuh). No nelmtPerBatch template parameter to choose here --
+    // tensor_core_nelmt_per_batch below derives it the same way this
+    // kernel's own benchmark repo does at its call site (run_test<T, nq,
+    // nm, shmemPerBlock/(4*nq^3)/sizeof(T)> picked per nq in a switch), just
+    // evaluated at compile time here from fe_degree/number instead of
+    // picked by hand per case.
     void
     vmult_tensor_core(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -144,6 +149,25 @@ namespace Portable
     static constexpr unsigned int n_dofs_per_component = Utilities::pow(fe_degree + 1, dim);
     static constexpr unsigned int n_local_dofs          = n_components * n_dofs_per_component;
     static constexpr unsigned int n_q_points            = Utilities::pow(fe_degree + 1, dim);
+
+    // vmult_tensor_core()'s nelmtPerBatch: the same "how many cells' worth
+    // of quadrature-point scratch fits in one CUDA team's shared-memory
+    // budget" formula bk4_cuda_kernels.cuh's own benchmark repo picks by
+    // hand per nq in its dispatch switch (shmemPerBlock / (4 * nq^3) /
+    // sizeof(T)), evaluated here at compile time from fe_degree/number
+    // instead -- this project always uses n_q_points_1d == fe_degree + 1
+    // (nq == nm, unlike that benchmark's nq == nm + 1), matching every
+    // other vmult_*() on this class and the matrix_free/G_tensors this
+    // kernel reads. shmemPerBlock = 10'000 bytes matches that dispatch
+    // table's own constant (not BK3's own 10'800 -- a different kernel,
+    // different shared-memory layout).
+    // static constexpr unsigned int tensor_core_nq = fe_degree + 1;
+    static constexpr std::size_t  tensor_core_shmem_per_block = 10'000;
+    static constexpr unsigned int tensor_core_nelmt_per_batch =
+      std::max<std::size_t>(1,
+                            tensor_core_shmem_per_block /
+                              (4 * n_q_points) /
+                              sizeof(number));
 
     MatrixFree<dim, number> matrix_free;
 
@@ -315,7 +339,6 @@ namespace Portable
   }
 
   template <int dim, int fe_degree, int n_components, typename number>
-  template <unsigned int nelmtPerBatch>
   void
   VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult_tensor_core(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -330,7 +353,6 @@ namespace Portable
 #ifndef __CUDACC__
     (void)dst;
     (void)src;
-    (void)nelmtPerBatch;
     Assert(false,
            ExcMessage("vmult_tensor_core() requires this translation unit to be compiled "
                       "by nvcc (a CUDA-enabled Kokkos build) -- it was not."));
@@ -349,22 +371,26 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::TensorCore::
-              launch_f64_m8n8k4_mma<fe_degree + 1, fe_degree + 1, nelmtPerBatch, n_components>(
-                n_cells,
-                precomputed_data.shape_values.data(),
-                precomputed_data.co_shape_gradients.data(),
-                G_tensors[color].data(),
-                src.get_values(),
-                dst.get_values(),
-                dof_indices_per_color[color]);
+            BK4::Parallel::TensorCore::launch_f64_m8n8k4_mma<fe_degree + 1,
+                                                              fe_degree + 1,
+                                                              tensor_core_nelmt_per_batch,
+                                                              n_components>(
+              n_cells,
+              precomputed_data.shape_values.data(),
+              precomputed_data.co_shape_gradients.data(),
+              G_tensors[color].data(),
+              src.get_values(),
+              dst.get_values(),
+              dof_indices_per_color[color]);
           }
       };
 
     // No overlap_communication_computation staging here (unlike vmult_bk4())
-    // -- this path is new/unverified (see bk4_cuda_kernels.cuh's caveats),
-    // keep it to the simple ghost-exchange-then-compute-everything shape
-    // until it's been validated numerically.
+    // -- numerically validated against vmult_dealii() (machine precision,
+    // see tests/vector_laplace_tensor_core/), but the simple ghost-
+    // exchange-then-compute-everything shape hasn't been revisited since;
+    // worth adding the same overlap staging vmult_bk4() has once this path
+    // is performance-tuned, not just correctness-checked.
     src.update_ghost_values();
 
     for (unsigned int color = 0; color < n_colors; ++color)

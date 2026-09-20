@@ -20,6 +20,7 @@
 #  include <cuda_runtime.h>
 
 #  include <algorithm>
+#  include <string>
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -769,14 +770,26 @@ namespace BK4
 
 
       // Host-side launcher: computes the dynamic shared-memory footprint
-      // and grid/block dimensions, mirroring BK3/BK4's Kokkos kernels'
-      // numBlocks/threadsPerBlock defaults (numbers::invalid_unsigned_int
-      // -> auto-computed).
+      // and grid/block dimensions.
       //
-      // *** threadsPerBlock's default (128) is an untuned guess ***: only
-      // the kernel itself was copied over, not the launcher from the
-      // benchmark repo it came from -- pick whatever block size that
-      // benchmark used if you have it, and tune from there.
+      // numBlocks/threadsPerBlock/the shared-memory ceiling below match
+      // this kernel's own benchmark repo launcher exactly (one block per
+      // cell-batch, threadsPerBlock sized in whole warps to cover Phase 1/
+      // 5's nelmtPerBatch*nm*nm M-dimension in 8-row tiles, and a fixed
+      // 99000-byte dynamic-shared-memory opt-in ceiling) rather than the
+      // untuned guesses used here before -- see the numBlocks/
+      // threadsPerBlock parameters below if you need to override them
+      // (e.g. to reproduce a different benchmark run).
+      //
+      // padded_nelmt in the original launcher (rounding nelmt up to a
+      // multiple of nelmtPerBatch, then over-allocating d_in/d_out/d_G to
+      // that size) doesn't apply here: this kernel reads/writes through
+      // dof_indices (sized to the real, unpadded nelmt) instead of a dense
+      // per-element buffer, and already clamps the last (possibly partial)
+      // batch internally against the real nelmt -- so nelmt is passed
+      // through unpadded, and numBlocks is computed from it directly
+      // (ceil(nelmt / nelmtPerBatch), equal to padded_nelmt / nelmtPerBatch
+      // for the padded_nelmt the original launcher would have computed).
       template <const unsigned int nq,
                const unsigned int nm,
                const unsigned int nelmtPerBatch,
@@ -798,11 +811,14 @@ namespace BK4
           return;
 
         if (numBlocks == numbers::invalid_unsigned_int)
-          numBlocks =
-            std::max(1u, ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch) / 2);
+          numBlocks = std::max(1u, (nelmt + nelmtPerBatch - 1) / nelmtPerBatch);
 
         if (threadsPerBlock == numbers::invalid_unsigned_int)
-          threadsPerBlock = 128u;
+          {
+            const unsigned int total_m_tiles = (nelmtPerBatch * nm * nm + 7u) / 8u;
+            const unsigned int num_warps     = std::min(32u, std::max(1u, total_m_tiles));
+            threadsPerBlock                  = num_warps * 32u;
+          }
 
         // s_basis + s_dbasis + s_wsp0 + s_wsp1 + s_rqr + s_rqs
         // (s_rqt aliases s_wsp1, no extra space)
@@ -815,11 +831,29 @@ namespace BK4
         // kernel's footprint routinely exceeds that (it's all dynamic
         // shared memory already, via `extern __shared__`), so the opt-in
         // above 48KB must be requested explicitly per the CUDA dynamic
-        // shared memory API, or the launch below silently fails.
-        cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
+        // shared memory API, or the launch below silently fails. Opt in to
+        // a fixed, generous ceiling once (matching the benchmark's own
+        // constant 99000-byte request) rather than the exact shmem_size,
+        // so the same attribute call works across different nelmtPerBatch/
+        // nq choices without re-registering it each time; the launch
+        // itself still requests the precise shmem_size below.
+        constexpr unsigned int shmem_ceiling = 99'000;
+        const cudaError_t      attr_err      = cudaFuncSetAttribute(
+          kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_ceiling);
+        AssertThrow(attr_err == cudaSuccess,
+                    ExcMessage("cudaFuncSetAttribute() failed for f64_m8n8k4_mma "
+                              "(shmem_ceiling = " +
+                              std::to_string(shmem_ceiling) +
+                              " bytes, requested shmem_size = " + std::to_string(shmem_size) +
+                              " bytes): " + cudaGetErrorString(attr_err)));
 
         kernel<<<numBlocks, threadsPerBlock, shmem_size>>>(
           nelmt, d_basis, d_dbasis, d_G, d_in, d_out, dof_indices_per_component);
+
+        const cudaError_t launch_err = cudaGetLastError();
+        AssertThrow(launch_err == cudaSuccess,
+                    ExcMessage("f64_m8n8k4_mma launch failed: " +
+                              std::string(cudaGetErrorString(launch_err))));
       }
 
     } // namespace TensorCore

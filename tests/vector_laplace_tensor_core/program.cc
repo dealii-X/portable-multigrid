@@ -15,22 +15,16 @@
 // vs. vmult_dealii() sanity check runs, so this program still compiles and
 // gives a meaningful (if partial) result anywhere.
 //
-// *** Status ***: a real bug was found and fixed in bk4_cuda_kernels.cuh's
-// Phase 3 (qr/qs/qt were paired with the wrong Grr/Grs/.../Gtt terms -- an
-// unconditional R/T swap, wrong even for an isotropic G) by building a
-// standalone (no-deal.II) harness with a hand-written CPU reference and
-// running the actual kernel on real GPU hardware (an environment that
-// happened to have both nvcc and GPU access, separate from this project's
-// own deal.II/Kokkos build). With that one-line fix, the standalone harness
-// matches the CPU reference to machine precision on both an isotropic and
-// an anisotropic hand-built mesh. This project test itself has *not* been
-// rerun yet against the fix (it needs an actual CUDA-enabled deal.II
-// build, which only exists on the cluster) -- do that next. Also open: a
-// separate "malloc_consolidate(): unaligned fastbin chunk detected" crash
-// during process teardown was observed on a prior (pre-fix) cluster run,
-// after this program had already printed FAILED and returned -- unclear
-// yet whether that's related to this code or a pre-existing MPI/Kokkos/
-// CUDA-runtime finalize-order issue; worth checking it's gone too.
+// *** Status ***: PASSING on a real CUDA-enabled deal.II build (cluster),
+// all three configs at machine precision, after fixing a real bug in
+// bk4_cuda_kernels.cuh's Phase 3 (qr/qs/qt were paired with the wrong
+// Grr/Grs/.../Gtt terms -- an unconditional R/T swap, wrong even for an
+// isotropic G). Still open: a "malloc_consolidate(): unaligned fastbin
+// chunk detected" crash during process teardown, after this program has
+// already printed PASSED/FAILED and returned -- identical before and after
+// the Phase 3 fix, so unrelated to it; likely an MPI/Kokkos/CUDA-runtime
+// finalize-order issue or a deal.II-vs-this-CUDA-version compatibility
+// issue rather than anything in this kernel, but unconfirmed.
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/function.h>
@@ -65,18 +59,19 @@ namespace multigrid
   constexpr int dim = 3; // bk4_cuda_kernels.cuh only implements dim == 3
 
   // Runs the comparison for one (fe_degree, n_components) combination on a
-  // small hyper-cube mesh, using nelmtPerBatch cells per shared-memory
-  // batch in the tensor-core kernel. Returns the max relative error over
-  // whichever checks actually ran (rel_err(bk4 vs dealii) always; rel_err
-  // (tensor_core vs dealii) only when built with nvcc against a
-  // CUDA-enabled Kokkos) -- all of which should be at machine precision.
-  template <int fe_degree, int n_components, unsigned int nelmtPerBatch>
+  // small hyper-cube mesh. vmult_tensor_core() derives its own
+  // nelmtPerBatch internally from fe_degree (see tensor_core_nelmt_per_batch
+  // in portable_vector_laplace_operator.h) -- no need to pick one here.
+  // Returns the max relative error over whichever checks actually ran
+  // (rel_err(bk4 vs dealii) always; rel_err(tensor_core vs dealii) only
+  // when built with nvcc against a CUDA-enabled Kokkos) -- all of which
+  // should be at machine precision.
+  template <int fe_degree, int n_components>
   double
   run_test(const MPI_Comm mpi_communicator, ConditionalOStream &pcout)
   {
     pcout << "dim = " << dim << ", fe_degree = " << fe_degree
-          << ", n_components = " << n_components << ", nelmtPerBatch = " << nelmtPerBatch
-          << std::endl;
+          << ", n_components = " << n_components << std::endl;
 
     parallel::distributed::Triangulation<dim> triangulation(mpi_communicator);
     GridGenerator::hyper_cube(triangulation, -1., 1.);
@@ -149,7 +144,7 @@ namespace multigrid
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> dst_tensor_core;
     op.initialize_dof_vector(dst_tensor_core);
 
-    op.template vmult_tensor_core<nelmtPerBatch>(dst_tensor_core, src);
+    op.vmult_tensor_core(dst_tensor_core, src);
     op.get_matrix_free().set_constrained_values(0., dst_tensor_core);
 
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> diff_tc = dst_tensor_core;
@@ -205,9 +200,9 @@ main(int argc, char *argv[])
 
   try
     {
-      max_rel_err = std::max(max_rel_err, run_test<2, 3, 2>(MPI_COMM_WORLD, pcout));
-      max_rel_err = std::max(max_rel_err, run_test<3, 2, 2>(MPI_COMM_WORLD, pcout));
-      max_rel_err = std::max(max_rel_err, run_test<2, 2, 4>(MPI_COMM_WORLD, pcout));
+      max_rel_err = std::max(max_rel_err, run_test<2, 3>(MPI_COMM_WORLD, pcout));
+      max_rel_err = std::max(max_rel_err, run_test<3, 2>(MPI_COMM_WORLD, pcout));
+      max_rel_err = std::max(max_rel_err, run_test<4, 2>(MPI_COMM_WORLD, pcout));
     }
   catch (std::exception &exc)
     {

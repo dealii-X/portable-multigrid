@@ -108,7 +108,7 @@ namespace multigrid
     // branch (the Assert(false, ...) path) as part of this compile check.
     if constexpr (dim == 3)
       if (false)
-        op.template vmult_tensor_core<2>(dst_bk4, src);
+        op.vmult_tensor_core(dst_bk4, src);
 
     op.get_matrix_free().set_constrained_values(0., dst_dealii);
     op.get_matrix_free().set_constrained_values(0., dst_bk4);
