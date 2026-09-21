@@ -14,9 +14,6 @@ namespace Portable
 {
   namespace internal
   {
-    // Same as LaplaceOperatorQuad (portable_laplace_operator_quad.h), but
-    // for n_components-many decoupled fields -- needed for
-    // MatrixFreeTools::compute_diagonal() of VectorLaplaceOperator.
     template <int dim, int fe_degree, int n_q_points_1d, int n_components, typename number>
     class VectorLaplaceOperatorQuad
     {

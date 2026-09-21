@@ -7,14 +7,6 @@
 #include <Kokkos_Array.hpp>
 #include <Kokkos_Core.hpp>
 
-// Everything below is raw CUDA (__global__/__device__ + inline PTX asm),
-// unlike the rest of this project which only ever uses Kokkos::parallel_for
-// and is backend-agnostic. It can only be parsed/compiled by nvcc (i.e.
-// when Kokkos itself was built with KOKKOS_ENABLE_CUDA), so the whole file
-// is guarded by __CUDACC__ and becomes a harmless empty header otherwise --
-// that's what lets portable_vector_laplace_operator.h #include it
-// unconditionally even on a Serial/OpenMP-only build (such as the one
-// currently wired into this project).
 #ifdef __CUDACC__
 
 #  include <cuda_runtime.h>
@@ -28,20 +20,6 @@ namespace BK4
 {
   namespace Parallel
   {
-    // FP64 Tensor Core (mma.sync.aligned.m8n8k4.f64, needs compute
-    // capability >= 8.0) sum-factorization kernel for the dim == 3 vector
-    // Laplacian -- ported from a standalone benchmark kernel. Every 1D
-    // tensor-product contraction (interpolation, gradient, integration) is
-    // expressed as a warp-tiled GEMM run through the f64 tensor core MMA
-    // instruction instead of the per-thread loops BK3/BK4's Kokkos kernels
-    // use.
-    //
-    // NOTE ON HARDWARE: the mma.m8n8k4.f64 instruction is only defined from
-    // sm_80 (Ampere) onward. It *is* available on consumer Ada cards like
-    // an RTX 4050 (sm_89), but FP64 tensor throughput on GeForce/consumer
-    // silicon is drastically cut down relative to datacenter parts (A100/
-    // H100) -- benchmark before assuming this path is actually faster than
-    // vmult_bk4() on such a card.
     namespace TensorCore
     {
       template <int num_tiles_k, int num_tiles_n>
@@ -187,24 +165,6 @@ namespace BK4
 
 
 
-      // =========================================================================
-      // MAIN KERNEL
-      // =========================================================================
-      //
-      // Vector Laplacian (n_components decoupled scalar fields, block-
-      // diagonal -- not elasticity) on a dim == 3 FESystem(FE_Q(fe_degree),
-      // n_components) space. Same semantics as BK4::Parallel::
-      // KokkosKernelAbstracted() (bk4_kokkos_kernels.h): reads/writes
-      // through per-component dof_indices maps against the real, shared/
-      // assembled global vector (gather in Phase 0, atomic scatter-add in
-      // Phase 6) -- not a dense per-element-private buffer -- and, like
-      // that kernel, loops all n_components *inside* this single launch
-      // rather than issuing n_components separate kernel launches.
-      //
-      // dof_indices_per_component[c](i, cell) must be laid out exactly
-      // like BK3/BK4's dof_indices: the global dof of lexicographic local
-      // dof i of component c on cell `cell`, or numbers::invalid_unsigned_int
-      // if constrained -- see VectorLaplaceOperator::setup_dof_indices_per_color().
       template <const unsigned int nq,
                 const unsigned int nm,
                 const unsigned int nelmtPerBatch,
@@ -254,14 +214,6 @@ namespace BK4
 
         while (eb < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
           {
-            // Current batch size -- the last batch may hold fewer than
-            // nelmtPerBatch real cells if nelmtPerBatch does not divide
-            // nelmt evenly. The original (dense E-vector) version of this
-            // kernel did not guard against this at all; now that Phase 0/6
-            // index into dof_indices (a View sized exactly n_cells for
-            // this color), an out-of-range global_cell_index there would
-            // be a genuine out-of-bounds access, not just harmless
-            // padding, so this clamp is required, not optional.
             const unsigned int c_nelmtPerBatch = (eb * nelmtPerBatch + nelmtPerBatch > nelmt) ?
                                                    (nelmt - eb * nelmtPerBatch) :
                                                    nelmtPerBatch;
@@ -270,13 +222,7 @@ namespace BK4
               {
                 const auto &dof_indices = dof_indices_per_component[c];
 
-                // 1. gather dof values from the global (shared/assembled)
-                // vector into shared memory -- replaces the old dense,
-                // per-element-private read. Ghost ("phantom") elements
-                // past c_nelmtPerBatch are zero-filled so Phases 1-5 below
-                // (which always sweep the full compile-time nelmtPerBatch)
-                // stay well-defined; their results are simply never
-                // scattered out in Phase 6.
+                // 1. gather dof values from the global
                 for (unsigned int tid = threadIdx.x; tid < nelmtPerBatch * ndof_1D;
                      tid += blockDim.x)
                   {
@@ -502,13 +448,6 @@ namespace BK4
                 // ==========================================
                 // PHASE 3: Apply G
                 // ==========================================
-                // qr/qs/qt below must pair with Grr/Gss/Gtt (matching
-                // indices) -- an earlier version of this kernel had qr and
-                // qt swapped here (Grr*qt+...+Grt*qr instead of
-                // Grr*qr+...+Grt*qt), which is wrong even for an isotropic
-                // G (found and fixed by running this kernel against an
-                // independent CPU reference on real GPU hardware; see
-                // tests/vector_laplace_tensor_core/).
                 for (unsigned int tid = threadIdx.x; tid < nelmtPerBatch * nq * nq;
                      tid += blockDim.x)
                   {
@@ -757,10 +696,6 @@ namespace BK4
                 // ==========================================
                 // PHASE 6: scatter-add to the global vector
                 // ==========================================
-                // Replaces the old dense, per-element-private write.
-                // atomicAdd because elements share nodes -- same as
-                // Custom::Parallel::distribute_local_to_global()'s
-                // Kokkos::atomic_add(), and BK3's own d_out atomic_add.
                 for (unsigned int tid = threadIdx.x; tid < nelmtPerBatch * ndof_1D;
                      tid += blockDim.x)
                   {
@@ -789,24 +724,6 @@ namespace BK4
       // Host-side launcher: computes the dynamic shared-memory footprint
       // and grid/block dimensions.
       //
-      // numBlocks/threadsPerBlock/the shared-memory ceiling below match
-      // this kernel's own benchmark repo launcher exactly (one block per
-      // cell-batch, threadsPerBlock sized in whole warps to cover Phase 1/
-      // 5's nelmtPerBatch*nm*nm M-dimension in 8-row tiles, and a fixed
-      // 99000-byte dynamic-shared-memory opt-in ceiling) rather than the
-      // untuned guesses used here before -- see the numBlocks/
-      // threadsPerBlock parameters below if you need to override them
-      // (e.g. to reproduce a different benchmark run).
-      //
-      // padded_nelmt in the original launcher (rounding nelmt up to a
-      // multiple of nelmtPerBatch, then over-allocating d_in/d_out/d_G to
-      // that size) doesn't apply here: this kernel reads/writes through
-      // dof_indices (sized to the real, unpadded nelmt) instead of a dense
-      // per-element buffer, and already clamps the last (possibly partial)
-      // batch internally against the real nelmt -- so nelmt is passed
-      // through unpadded, and numBlocks is computed from it directly
-      // (ceil(nelmt / nelmtPerBatch), equal to padded_nelmt / nelmtPerBatch
-      // for the padded_nelmt the original launcher would have computed).
       template <const unsigned int nq,
                 const unsigned int nm,
                 const unsigned int nelmtPerBatch,
@@ -821,9 +738,11 @@ namespace BK4
         double                            *d_out,
         const Kokkos::Array<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>,
                             n_components> &dof_indices_per_component)
-      // unsigned int                       numBlocks       = numbers::invalid_unsigned_int,
-      // unsigned int                       threadsPerBlock = numbers::invalid_unsigned_int)
       {
+        static_assert(nq >= nm,
+                      "f64_m8n8k4_mma's shared-memory buffers are sized from nq (see ssize "
+                      "below) and are too small for nm > nq (under-integration).");
+
         if (nelmt == 0)
           return;
 
@@ -833,31 +752,16 @@ namespace BK4
         const unsigned int numBlocks = std::max(1U, (padded_nelmt / nelmtPerBatch));
 
 
-        // if (threadsPerBlock == numbers::invalid_unsigned_int)
-        //   {
-        const unsigned int total_m_tiles   = (nelmtPerBatch * nm * nm + 7u) / 8u;
+        const unsigned int total_m_tiles   = (nelmtPerBatch * nq * nq + 7u) / 8u;
         const unsigned int num_warps       = std::min(32u, std::max(1u, total_m_tiles));
         const unsigned int threadsPerBlock = num_warps * 32u;
-        // }
 
-        // s_basis + s_dbasis + s_wsp0 + s_wsp1 + s_rqr + s_rqs
-        // (s_rqt aliases s_wsp1, no extra space)
         const unsigned int ssize      = nq * nm + nq * nq + 4u * nelmtPerBatch * nq * nq * nq;
         const unsigned int shmem_size = ssize * sizeof(double);
 
         auto *kernel = &f64_m8n8k4_mma<nq, nm, nelmtPerBatch, n_components>;
 
-        // Static shared memory is capped at 48KB on all CUDA GPUs -- this
-        // kernel's footprint routinely exceeds that (it's all dynamic
-        // shared memory already, via `extern __shared__`), so the opt-in
-        // above 48KB must be requested explicitly per the CUDA dynamic
-        // shared memory API, or the launch below silently fails. Opt in to
-        // a fixed, generous ceiling once (matching the benchmark's own
-        // constant 99000-byte request) rather than the exact shmem_size,
-        // so the same attribute call works across different nelmtPerBatch/
-        // nq choices without re-registering it each time; the launch
-        // itself still requests the precise shmem_size below.
-        constexpr unsigned int shmem_ceiling = 99'000;
+        constexpr unsigned int shmem_ceiling = 225'000;
         const cudaError_t      attr_err =
           cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_ceiling);
         AssertThrow(attr_err == cudaSuccess,

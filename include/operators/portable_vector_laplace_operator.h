@@ -26,14 +26,6 @@ DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-  // Vector-valued counterpart of LocalLaplaceOperatorStep64
-  // (portable_laplace_operator.h): applies the scalar Laplacian
-  // independently to each of the n_components solution components of an
-  // FESystem(FE_Q(fe_degree), n_components) space -- i.e. a genuine vector
-  // Laplacian (block-diagonal), not linear elasticity. real deal.II's own
-  // Portable::FEEvaluation already loops evaluate()/integrate() and
-  // get_gradient()/submit_gradient() over all components, so this is
-  // identical to the scalar kernel with n_components generalized.
   template <int dim, int fe_degree, int n_q_points_1d, int n_components, typename number>
   class LocalVectorLaplaceOperatorStep64
   {
@@ -90,16 +82,6 @@ namespace Portable
     vmult_bk4(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
               const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
-    // FP64 Tensor Core path -- see bk4_cuda_kernels.cuh. Only implemented
-    // for dim == 3 and number == double (static_assert()s otherwise), and
-    // requires this translation unit to actually be compiled by nvcc
-    // (Assert()s out at runtime otherwise -- see the __CUDACC__ guard in
-    // the .cuh). No nelmtPerBatch template parameter to choose here --
-    // tensor_core_nelmt_per_batch below derives it the same way this
-    // kernel's own benchmark repo does at its call site (run_test<T, nq,
-    // nm, shmemPerBlock/(4*nq^3)/sizeof(T)> picked per nq in a switch), just
-    // evaluated at compile time here from n_q_points_1d/number instead of
-    // picked by hand per case.
     void
     vmult_tensor_core(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -153,15 +135,6 @@ namespace Portable
     static constexpr unsigned int n_local_dofs         = n_components * n_dofs_per_component;
     static constexpr unsigned int n_q_points           = Utilities::pow(n_q_points_1d, dim);
 
-    // vmult_tensor_core()'s nelmtPerBatch: the same "how many cells' worth
-    // of quadrature-point scratch fits in one CUDA team's shared-memory
-    // budget" formula bk4_cuda_kernels.cuh's own benchmark repo picks by
-    // hand per nq in its dispatch switch (shmemPerBlock / (4 * nq^3) /
-    // sizeof(T)), evaluated here at compile time from n_q_points_1d/number
-    // instead, matching every other vmult_*() on this class and the
-    // matrix_free/G_tensors this kernel reads. shmemPerBlock = 10'000
-    // bytes matches that dispatch table's own constant (not BK3's own
-    // 10'800 -- a different kernel, different shared-memory layout).
     static constexpr std::size_t  tensor_core_shmem_per_block = 10'000;
     static constexpr unsigned int tensor_core_nelmt_per_batch =
       std::max<std::size_t>(1, tensor_core_shmem_per_block / (4 * n_q_points) / sizeof(number));
@@ -174,18 +147,10 @@ namespace Portable
       DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
       inverse_diagonal_entries;
 
-    // dof_indices_per_color[color][c] holds, for component c, the same
-    // (n_dofs_per_component x n_cells) local-to-global map that the scalar
-    // LaplaceOperator keeps for its single component -- see
-    // BK4::Parallel::KokkosKernelAbstracted(). Kokkos::Array (not
-    // std::array) so the whole per-color set of views can be captured by
-    // value into that function's KOKKOS_LAMBDA.
     std::vector<Kokkos::Array<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>,
                               n_components>>
       dof_indices_per_color;
 
-    // Geometric factors: shared by all components (same mesh, same
-    // quadrature), exactly as in the scalar operator.
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> G_tensors;
   };
 
@@ -381,12 +346,6 @@ namespace Portable
           }
       };
 
-    // No overlap_communication_computation staging here (unlike vmult_bk4())
-    // -- numerically validated against vmult_dealii() (machine precision,
-    // see tests/vector_laplace_tensor_core/), but the simple ghost-
-    // exchange-then-compute-everything shape hasn't been revisited since;
-    // worth adding the same overlap staging vmult_bk4() has once this path
-    // is performance-tuned, not just correctness-checked.
     src.update_ghost_values();
 
     for (unsigned int color = 0; color < n_colors; ++color)
@@ -653,12 +612,6 @@ namespace Portable
                                n_dofs_per_component,
                                mf_data.n_cells);
 
-            // Kokkos::View::HostMirror isn't available in every Kokkos
-            // version (it tripped up a build on a cluster with a newer
-            // Kokkos) -- deduce the mirror type from
-            // Kokkos::create_mirror_view() itself instead, exactly like the
-            // scalar LaplaceOperator::setup_dof_indices_per_color() (which
-            // just uses `auto`, no array of them) already does.
             using DoFIndicesHostView =
               decltype(Kokkos::create_mirror_view(std::declval<DoFIndicesView>()));
             std::array<DoFIndicesHostView, n_components> dof_indices_host;

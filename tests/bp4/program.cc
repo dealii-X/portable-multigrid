@@ -1,28 +1,3 @@
-// BP4-style benchmark (vector Poisson, n_components == dim -- the vector
-// counterpart of tests/bp_35's scalar BP3-style benchmark): same overall
-// structure as bp_35/program.cc (doubling-mesh refinement cycles, one
-// accumulating convergence_table re-printed after every cycle), but for
-// Portable::VectorLaplaceOperator, and reporting *two* backends side by
-// side in that same table each cycle:
-//   - "bk4"          -- vmult_bk4(), the custom Kokkos kernel (bk4_kokkos_
-//                       kernels.h), portable to any Kokkos backend.
-//   - "tensor_core"  -- vmult_tensor_core(), the FP64 Tensor Core kernel
-//                       (bk4_cuda_kernels.cuh), dim == 3 + double only,
-//                       and only actually runs when this translation unit
-//                       is compiled by nvcc against a CUDA-enabled Kokkos
-//                       -- see tests/vector_laplace_tensor_core/ for the
-//                       same graceful-degradation pattern. On a Serial/
-//                       OpenMP-only Kokkos build (such as this project's
-//                       own dev box), the tensor_core columns are simply
-//                       left out of the table, not filled with
-//                       placeholders.
-//
-// Both backends solve the exact same linear system with unpreconditioned
-// CG, so cg_its/cg_reduction agreeing between them each cycle is itself a
-// running correctness check, not just a timing comparison -- see tests/
-// vector_laplace_bk4/ and tests/vector_laplace_tensor_core/ for the
-// dedicated (non-benchmark) correctness checks this reuses.
-
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/quadrature_lib.h>
@@ -56,10 +31,7 @@ namespace BP4
 {
   using namespace dealii;
 
-  // Same "precompile a degree range, pick one at runtime" scheme as
-  // bp_35 -- the degree can't be a plain runtime variable because it's a
-  // template parameter of LaplaceProblem/VectorLaplaceOperator.
-  const unsigned int dimension      = 3; // bk4_cuda_kernels.cuh: dim == 3 only
+  const unsigned int dimension      = 3;
   const unsigned int minimal_degree = 1;
   const unsigned int maximal_degree = 8;
 
@@ -91,11 +63,6 @@ namespace BP4
     void
     compute_rhs();
 
-    // Runs CG + a separate matvec-only timing loop for one backend
-    // ("bk4" or "tensor_core"), appending "cg_time_" + name / "cg_its_" +
-    // name / "cg_reduction_" + name / "matvec_" + name columns to
-    // convergence_table for this cycle. vmult must be one of
-    // &OperatorType::vmult_bk4 / &OperatorType::vmult_tensor_core.
     void
     solve_and_time(const std::string &name,
                    void (OperatorType::*vmult)(VectorType &, const VectorType &) const);
@@ -216,8 +183,6 @@ namespace BP4
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-    // Constant unit load on every component -- same "1.0" RHS bp_35 uses,
-    // just assembled component-wise for the vector-valued FESystem.
     for (const auto &cell : dof_handler.active_cell_iterators())
       {
         if (cell->is_locally_owned())
@@ -256,10 +221,6 @@ namespace BP4
                                                                              const VectorType &)
                                                    const)
   {
-    // helper: an operator that duck-types as SolverCG's MatrixType by
-    // forwarding vmult() to whichever backend member function pointer was
-    // passed in -- lets solve_and_time() reuse the exact same CG loop for
-    // vmult_bk4() and vmult_tensor_core() instead of duplicating it.
     struct BackendOperator
     {
       const OperatorType &op;
@@ -276,7 +237,7 @@ namespace BP4
     double                          time_cg = 1e10;
     std::pair<unsigned int, double> cg_details;
 
-    for (unsigned int i = 0; i < 10; ++i)
+    for (unsigned int i = 0; i < 5; ++i)
       {
         Timer                time;
         ReductionControl     solver_control(dof_handler.n_dofs(), 1e-16, 1e-9);
@@ -418,12 +379,6 @@ namespace BP4
         solve_and_time("bk4", &OperatorType::vmult_bk4);
 
 #ifdef __CUDACC__
-        // if constexpr (not just #ifdef): &OperatorType::vmult_tensor_core
-        // below requires instantiating that member function to take its
-        // address, which trips its static_assert(dim == 3, ...) for any
-        // other dim -- dead-branch-discarding via if constexpr (dim ==
-        // dimension is always 3 in this file, but the class template
-        // itself is generic) keeps that from ever actually firing.
         if constexpr (dim == 3)
           solve_and_time("tensor_core", &OperatorType::vmult_tensor_core);
 #else

@@ -22,45 +22,20 @@ namespace BK4
     using DoFIndicesView  = BK3::Parallel::DoFIndicesView;
     using CellRangeIdView = BK3::Parallel::CellRangeIdView;
 
-    // Vector Laplacian on an FESystem(FE_Q(fe_degree), n_components) space
-    // (n_components independent scalar fields, no coupling between them --
-    // this is *not* linear elasticity). The operator is block-diagonal in
-    // the components and all components share the same tensor-product shape
-    // functions and geometry, so this is built directly on top of BK3's
-    // *abstracted* per-cell-batch building blocks (read_dof_values,
-    // evaluate_values, evaluate_gradients_and_multiply_symmetric_tensor,
-    // integrate_gradients, integrate_values, distribute_local_to_global --
-    // see KokkosKernelAbstracted() in bk3_kokkos_kernels.h) rather than on
-    // the hand-unrolled register-blocked scalar kernel.
-    //
-    // Crucially, the loop over components lives *inside* the single
-    // Kokkos::parallel_for below, not as n_components separate kernel
-    // launches: launching many small kernels back-to-back is expensive on
-    // GPUs (launch overhead, no work to hide it behind), so each team
-    // processes its cell-batch once (shape data staged into shared memory
-    // once) and then walks all components of that same batch sequentially,
-    // reusing the same s_values/s_gradients scratch and re-reading/
-    // re-distributing dofs per component via its own dof_indices map.
-    //
-    // dof_indices_per_component[c] must be laid out exactly like the
-    // dof_indices argument BK3::Parallel::KokkosKernelAbstracted() expects
-    // for a scalar problem, i.e. dof_indices_per_component[c](i, cell) is
-    // the global dof of local (lexicographic) dof i of component c on cell
-    // `cell`, or numbers::invalid_unsigned_int if constrained.
     template <int dim, int fe_degree, int n_q_points_1d, int n_components, typename Number>
     void
     KokkosKernelAbstracted(
-      const DeviceView<Number>                                    d_shape_values,
-      const DeviceView<Number>                                    d_co_shape_gradients,
-      const DeviceView<Number>                                    d_G,
-      const DeviceView<Number>                                    d_in,
-      DeviceView<Number>                                          d_out,
-      const Kokkos::Array<DoFIndicesView, n_components>          &dof_indices_per_component,
-      const unsigned int    n_cells,
-      const unsigned int    n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
-      const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
-      const CellRangeIdView cell_range_ids    = CellRangeIdView())
+      const DeviceView<Number>                           d_shape_values,
+      const DeviceView<Number>                           d_co_shape_gradients,
+      const DeviceView<Number>                           d_G,
+      const DeviceView<Number>                           d_in,
+      DeviceView<Number>                                 d_out,
+      const Kokkos::Array<DoFIndicesView, n_components> &dof_indices_per_component,
+      const unsigned int                                 n_cells,
+      const unsigned int                                 n_blocks = numbers::invalid_unsigned_int,
+      const unsigned int    threads_per_block                     = numbers::invalid_unsigned_int,
+      const unsigned int    n_cells_per_batch                     = numbers::invalid_unsigned_int,
+      const CellRangeIdView cell_range_ids                        = CellRangeIdView())
     {
       if (n_cells == 0)
         return;
@@ -96,10 +71,6 @@ namespace BK4
                     (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
                     static_cast<int>(threads_per_block)));
 
-      // Shared memory footprint is identical to the scalar
-      // KokkosKernelAbstracted() -- components are processed one at a time
-      // (sequentially, per batch), reusing the same s_values/s_gradients
-      // slots, so there is no per-component multiplier here.
       {
         const int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
                           n_q_points_1d * n_q_points_1d +   // co-shape gradients
