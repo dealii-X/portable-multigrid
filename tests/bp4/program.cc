@@ -98,7 +98,7 @@ namespace BP4
     // &OperatorType::vmult_bk4 / &OperatorType::vmult_tensor_core.
     void
     solve_and_time(const std::string &name,
-                  void (OperatorType::*vmult)(VectorType &, const VectorType &) const);
+                   void (OperatorType::*vmult)(VectorType &, const VectorType &) const);
 
     MPI_Comm mpi_communicator;
 
@@ -153,8 +153,8 @@ namespace BP4
     dof_handler.reinit(triangulation);
     dof_handler.distribute_dofs(fe);
 
-    pcout << "Number of degrees of freedom: " << dof_handler.n_dofs() << " = "
-          << n_components << " x (" << fe.degree << " + 1)^" << dim << std::endl;
+    pcout << "Number of degrees of freedom: " << dof_handler.n_dofs() << " = " << n_components
+          << " x (" << fe.degree << " + 1)^" << dim << std::endl;
 
     locally_owned_dofs    = dof_handler.locally_owned_dofs();
     locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
@@ -251,9 +251,10 @@ namespace BP4
 
   template <int dim, int fe_degree>
   void
-  LaplaceProblem<dim, fe_degree>::solve_and_time(
-    const std::string &name,
-    void (OperatorType::*vmult)(VectorType &, const VectorType &) const)
+  LaplaceProblem<dim, fe_degree>::solve_and_time(const std::string &name,
+                                                 void (OperatorType::*vmult)(VectorType &,
+                                                                             const VectorType &)
+                                                   const)
   {
     // helper: an operator that duck-types as SolverCG's MatrixType by
     // forwarding vmult() to whichever backend member function pointer was
@@ -277,14 +278,17 @@ namespace BP4
 
     for (unsigned int i = 0; i < 10; ++i)
       {
-        Timer                     time;
-        ReductionControl          solver_control(dof_handler.n_dofs(), 1e-16, 1e-9);
-        SolverCG<VectorType>      solver_cg(solver_control);
+        Timer                time;
+        ReductionControl     solver_control(dof_handler.n_dofs(), 1e-16, 1e-9);
+        SolverCG<VectorType> solver_cg(solver_control);
 
         Kokkos::fence();
         time.restart();
         solution_device = 0;
-        solver_cg.solve(backend_operator, solution_device, system_rhs_device, PreconditionIdentity());
+        solver_cg.solve(backend_operator,
+                        solution_device,
+                        system_rhs_device,
+                        PreconditionIdentity());
         Kokkos::fence();
 
         if (time.wall_time() < time_cg)
@@ -329,12 +333,15 @@ namespace BP4
                                       const std::size_t max_size,
                                       const bool        use_doubling_mesh)
   {
-    (void)use_doubling_mesh; // only the doubling mesh is implemented below
+    pcout << "Testing " << fe.get_name() << " (n_components = " << n_components << ")" << std::endl;
 
-    pcout << "Testing " << fe.get_name() << " (n_components = " << n_components << ")"
-          << std::endl;
+    const unsigned int sizes[] = {1,   2,   3,   4,   5,   6,   7,   8,   10,  12,   14,   16,  20,
+                                  24,  28,  32,  40,  48,  56,  64,  80,  96,  112,  128,  160, 192,
+                                  224, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1280, 1536};
 
-    for (unsigned int cycle = 0; cycle < refinement_cycles; ++cycle)
+
+
+    for (unsigned int cycle = 0; cycle < sizeof(sizes) / sizeof(unsigned int); ++cycle)
       {
         triangulation.clear();
 
@@ -342,30 +349,43 @@ namespace BP4
 
         pcout << "Cycle " << cycle << std::endl;
 
-        // Same doubling-mesh sizing as bp_35::run() -- two-out-of-three
-        // dimensions get subdivided each step, so cell count roughly
-        // doubles per cycle instead of jumping by 8x on every dimension
-        // at once.
-        const unsigned int n_refine  = cycle / 3;
-        const unsigned int remainder = cycle % 3;
-        Point<dim>         p1;
-        for (unsigned int d = 0; d < dim; ++d)
-          p1[d] = -1;
-        Point<dim> p2;
-        for (unsigned int d = 0; d < remainder; ++d)
-          p2[d] = 2.8;
-        for (unsigned int d = remainder; d < dim; ++d)
-          p2[d] = 0.9;
-        std::vector<unsigned int> subdivisions(dim, 1);
-        for (unsigned int d = 0; d < remainder; ++d)
-          subdivisions[d] = 2;
-        const unsigned int base_refine = (1u << n_refine);
-
-        std::size_t projected_size = 1;
-        for (unsigned int d = 0; d < dim; ++d)
-          projected_size *= base_refine * subdivisions[d] * fe_degree + 1;
-
-        GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, p1, p2);
+        if (use_doubling_mesh)
+          {
+            n_refine                     = cycle / 3;
+            const unsigned int remainder = cycle % 3;
+            Point<dim>         p1;
+            for (unsigned int d = 0; d < dim; ++d)
+              p1[d] = -1;
+            Point<dim> p2;
+            for (unsigned int d = 0; d < remainder; ++d)
+              p2[d] = 2.8;
+            for (unsigned int d = remainder; d < dim; ++d)
+              p2[d] = 0.9;
+            std::vector<unsigned int> subdivisions(dim, 1);
+            for (unsigned int d = 0; d < remainder; ++d)
+              subdivisions[d] = 2;
+            const unsigned int base_refine = (1 << n_refine);
+            projected_size                 = 1;
+            for (unsigned int d = 0; d < dim; ++d)
+              projected_size *= base_refine * subdivisions[d] * fe_degree + 1;
+            GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, p1, p2);
+          }
+        else
+          {
+            n_refine              = 0;
+            unsigned int n_subdiv = sizes[cycle];
+            if (n_subdiv > 1)
+              while (n_subdiv % 2 == 0)
+                {
+                  n_refine += 1;
+                  n_subdiv /= 2;
+                }
+            if (dim == 2)
+              n_refine += 3;
+            GridGenerator::subdivided_hyper_cube(triangulation, n_subdiv, -0.9, 1.0);
+            const unsigned int base_refine = (1 << n_refine);
+            projected_size = Utilities::pow(base_refine * n_subdiv * fe_degree + 1, dim);
+          }
 
         if (projected_size < min_size)
           continue;
@@ -415,7 +435,7 @@ namespace BP4
                                      ,
                                      "tensor_core"
 #endif
-                })
+                 })
               {
                 convergence_table.set_scientific(std::string("cg_time_") + name, true);
                 convergence_table.set_precision(std::string("cg_time_") + name, 3);
