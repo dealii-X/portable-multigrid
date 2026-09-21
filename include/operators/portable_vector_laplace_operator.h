@@ -38,16 +38,15 @@ namespace Portable
   class LocalVectorLaplaceOperatorStep64
   {
   public:
-    static constexpr unsigned int n_local_dofs =
-      n_components * Utilities::pow(fe_degree + 1, dim);
-    static constexpr unsigned int n_q_points = Utilities::pow(n_q_points_1d, dim);
+    static constexpr unsigned int n_local_dofs = n_components * Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
 
     LocalVectorLaplaceOperatorStep64() = default;
 
     DEAL_II_HOST_DEVICE void
     operator()(const typename MatrixFree<dim, number>::Data *data,
-               const DeviceVector<number>                    &src,
-               DeviceVector<number>                          &dst) const
+               const DeviceVector<number>                   &src,
+               DeviceVector<number>                         &dst) const
     {
       FEEvaluation<dim, fe_degree, n_q_points_1d, n_components, number> fe_eval(data);
 
@@ -66,7 +65,11 @@ namespace Portable
 
 
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim,
+            int fe_degree,
+            int n_components,
+            typename number,
+            int n_q_points_1d = fe_degree + 1>
   class VectorLaplaceOperator : public LaplaceOperatorBase<dim, number>
   {
   public:
@@ -95,7 +98,7 @@ namespace Portable
     // tensor_core_nelmt_per_batch below derives it the same way this
     // kernel's own benchmark repo does at its call site (run_test<T, nq,
     // nm, shmemPerBlock/(4*nq^3)/sizeof(T)> picked per nq in a switch), just
-    // evaluated at compile time here from fe_degree/number instead of
+    // evaluated at compile time here from n_q_points_1d/number instead of
     // picked by hand per case.
     void
     vmult_tensor_core(
@@ -147,27 +150,21 @@ namespace Portable
 
   private:
     static constexpr unsigned int n_dofs_per_component = Utilities::pow(fe_degree + 1, dim);
-    static constexpr unsigned int n_local_dofs          = n_components * n_dofs_per_component;
-    static constexpr unsigned int n_q_points            = Utilities::pow(fe_degree + 1, dim);
+    static constexpr unsigned int n_local_dofs         = n_components * n_dofs_per_component;
+    static constexpr unsigned int n_q_points           = Utilities::pow(n_q_points_1d, dim);
 
     // vmult_tensor_core()'s nelmtPerBatch: the same "how many cells' worth
     // of quadrature-point scratch fits in one CUDA team's shared-memory
     // budget" formula bk4_cuda_kernels.cuh's own benchmark repo picks by
     // hand per nq in its dispatch switch (shmemPerBlock / (4 * nq^3) /
-    // sizeof(T)), evaluated here at compile time from fe_degree/number
-    // instead -- this project always uses n_q_points_1d == fe_degree + 1
-    // (nq == nm, unlike that benchmark's nq == nm + 1), matching every
-    // other vmult_*() on this class and the matrix_free/G_tensors this
-    // kernel reads. shmemPerBlock = 10'000 bytes matches that dispatch
-    // table's own constant (not BK3's own 10'800 -- a different kernel,
-    // different shared-memory layout).
-    // static constexpr unsigned int tensor_core_nq = fe_degree + 1;
+    // sizeof(T)), evaluated here at compile time from n_q_points_1d/number
+    // instead, matching every other vmult_*() on this class and the
+    // matrix_free/G_tensors this kernel reads. shmemPerBlock = 10'000
+    // bytes matches that dispatch table's own constant (not BK3's own
+    // 10'800 -- a different kernel, different shared-memory layout).
     static constexpr std::size_t  tensor_core_shmem_per_block = 10'000;
     static constexpr unsigned int tensor_core_nelmt_per_batch =
-      std::max<std::size_t>(1,
-                            tensor_core_shmem_per_block /
-                              (4 * n_q_points) /
-                              sizeof(number));
+      std::max<std::size_t>(1, tensor_core_shmem_per_block / (4 * n_q_points) / sizeof(number));
 
     MatrixFree<dim, number> matrix_free;
 
@@ -194,8 +191,8 @@ namespace Portable
 
 
 
-  template <int dim, int fe_degree, int n_components, typename number>
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::VectorLaplaceOperator(
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::VectorLaplaceOperator(
     const DoFHandler<dim>           &dof_handler,
     const AffineConstraints<number> &constraints,
     bool                             overlap_communication_computation)
@@ -212,7 +209,7 @@ namespace Portable
       update_gradients | update_JxW_values | update_quadrature_points;
     additional_data.overlap_communication_computation = overlap_communication_computation;
 
-    const QGauss<1> quadrature_1d(fe_degree + 1);
+    const QGauss<1> quadrature_1d(n_q_points_1d);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
 
     setup_dof_indices_per_color();
@@ -220,24 +217,24 @@ namespace Portable
     compute_G_tensors();
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     this->vmult_dealii(dst, src);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult_dealii(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult_dealii(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     dst = 0.;
 
-    LocalVectorLaplaceOperatorStep64<dim, fe_degree, fe_degree + 1, n_components, number>
+    LocalVectorLaplaceOperatorStep64<dim, fe_degree, n_q_points_1d, n_components, number>
       cell_operator;
 
     matrix_free.cell_loop(cell_operator, src, dst);
@@ -245,9 +242,9 @@ namespace Portable
     matrix_free.copy_constrained_values(src, dst);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult_bk4(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult_bk4(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
@@ -262,9 +259,8 @@ namespace Portable
     constexpr bool is_serial =
       std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks         = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
 
     if (is_serial)
       threadsPerBlock = 1u;
@@ -278,17 +274,17 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, n_components, number>(
-              precomputed_data.shape_values,
-              precomputed_data.co_shape_gradients,
-              G_tensors[color],
-              src_device,
-              dst_device,
-              dof_indices_per_color[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock,
-              n_cells_per_batch);
+            BK4::Parallel::
+              KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
+                precomputed_data.shape_values,
+                precomputed_data.co_shape_gradients,
+                G_tensors[color],
+                src_device,
+                dst_device,
+                dof_indices_per_color[color],
+                n_cells,
+                numBlocks,
+                threadsPerBlock);
           }
       };
 
@@ -338,9 +334,9 @@ namespace Portable
     matrix_free.copy_constrained_values(src, dst);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult_tensor_core(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult_tensor_core(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
@@ -371,10 +367,10 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::TensorCore::launch_f64_m8n8k4_mma<fe_degree + 1,
-                                                              fe_degree + 1,
-                                                              tensor_core_nelmt_per_batch,
-                                                              n_components>(
+            BK4::Parallel::TensorCore::launch_f64_m8n8k4_mma<n_q_points_1d,
+                                                             fe_degree + 1,
+                                                             tensor_core_nelmt_per_batch,
+                                                             n_components>(
               n_cells,
               precomputed_data.shape_values.data(),
               precomputed_data.co_shape_gradients.data(),
@@ -406,9 +402,9 @@ namespace Portable
 #endif
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::vmult_dummy(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult_dummy(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
     const bool                                                              ghost_exchange_on,
@@ -425,9 +421,8 @@ namespace Portable
     constexpr bool is_serial =
       std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
 
-    unsigned int numBlocks         = numbers::invalid_unsigned_int;
-    unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
 
     if (is_serial)
       threadsPerBlock = 1u;
@@ -440,17 +435,17 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, n_components, number>(
-              precomputed_data.shape_values,
-              precomputed_data.co_shape_gradients,
-              G_tensors[color],
-              src_device,
-              dst_device,
-              dof_indices_per_color[color],
-              n_cells,
-              numBlocks,
-              threadsPerBlock,
-              n_cells_per_batch);
+            BK4::Parallel::
+              KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
+                precomputed_data.shape_values,
+                precomputed_data.co_shape_gradients,
+                G_tensors[color],
+                src_device,
+                dst_device,
+                dof_indices_per_color[color],
+                n_cells,
+                numBlocks,
+                threadsPerBlock);
           }
       };
 
@@ -506,9 +501,9 @@ namespace Portable
     matrix_free.copy_constrained_values(src, dst);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::Tvmult(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::Tvmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
@@ -521,24 +516,25 @@ namespace Portable
     vmult(dst, src);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::initialize_dof_vector(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::initialize_dof_vector(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const
   {
     matrix_free.initialize_dof_vector(vec);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   const MatrixFree<dim, number> &
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::get_matrix_free() const
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::get_matrix_free()
+    const
   {
     return matrix_free;
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::compute_diagonal()
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::compute_diagonal()
   {
     this->inverse_diagonal_entries.reset(
       new DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>());
@@ -546,10 +542,10 @@ namespace Portable
       inverse_diagonal_entries->get_vector();
     initialize_dof_vector(inverse_diagonal);
 
-    internal::VectorLaplaceOperatorQuad<dim, fe_degree, fe_degree + 1, n_components, number>
+    internal::VectorLaplaceOperatorQuad<dim, fe_degree, n_q_points_1d, n_components, number>
       operator_quad;
 
-    MatrixFreeTools::compute_diagonal<dim, fe_degree, fe_degree + 1, n_components, number>(
+    MatrixFreeTools::compute_diagonal<dim, fe_degree, n_q_points_1d, n_components, number>(
       matrix_free,
       inverse_diagonal,
       operator_quad,
@@ -567,30 +563,31 @@ namespace Portable
       });
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   std::shared_ptr<DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::get_matrix_diagonal_inverse() const
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::
+    get_matrix_diagonal_inverse() const
   {
     return inverse_diagonal_entries;
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   types::global_dof_index
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::m() const
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::m() const
   {
     return matrix_free.get_vector_partitioner()->size();
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   types::global_dof_index
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::n() const
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::n() const
   {
     return matrix_free.get_vector_partitioner()->size();
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   number
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::el(
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::el(
     const types::global_dof_index row,
     const types::global_dof_index col) const
   {
@@ -602,16 +599,18 @@ namespace Portable
     return 1.0 / (*inverse_diagonal_entries)(row, row);
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   const std::shared_ptr<const Utilities::MPI::Partitioner> &
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::get_vector_partitioner() const
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::
+    get_vector_partitioner() const
   {
     return matrix_free.get_vector_partitioner();
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::setup_dof_indices_per_color()
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::
+    setup_dof_indices_per_color()
   {
     dealii::MemorySpace::Default::kokkos_space::execution_space exec_space;
     const auto        &colored_graph = matrix_free.get_colored_graph();
@@ -647,12 +646,12 @@ namespace Portable
             const auto &graph   = colored_graph[color];
 
             for (unsigned int c = 0; c < n_components; ++c)
-              this->dof_indices_per_color[color][c] = DoFIndicesView(
-                Kokkos::view_alloc("dof_indices_" + std::to_string(color) + "_" +
-                                     std::to_string(c),
-                                   Kokkos::WithoutInitializing),
-                n_dofs_per_component,
-                mf_data.n_cells);
+              this->dof_indices_per_color[color][c] =
+                DoFIndicesView(Kokkos::view_alloc("dof_indices_" + std::to_string(color) + "_" +
+                                                    std::to_string(c),
+                                                  Kokkos::WithoutInitializing),
+                               n_dofs_per_component,
+                               mf_data.n_cells);
 
             // Kokkos::View::HostMirror isn't available in every Kokkos
             // version (it tripped up a build on a cluster with a newer
@@ -706,9 +705,9 @@ namespace Portable
       }
   }
 
-  template <int dim, int fe_degree, int n_components, typename number>
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
   void
-  VectorLaplaceOperator<dim, fe_degree, n_components, number>::compute_G_tensors()
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::compute_G_tensors()
   {
     constexpr int symmetric_tensor_dim = (dim * (dim + 1)) / 2;
 

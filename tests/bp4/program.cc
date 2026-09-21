@@ -76,7 +76,8 @@ namespace BP4
     static constexpr int n_components = dim; // BP4: vector Poisson, n_components == dim
 
     using VectorType = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
-    using OperatorType = Portable::VectorLaplaceOperator<dim, fe_degree, n_components, double>;
+    using OperatorType =
+      Portable::VectorLaplaceOperator<dim, fe_degree, n_components, double, fe_degree + 2>;
 
     void
     setup_grid();
