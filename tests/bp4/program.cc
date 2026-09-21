@@ -349,6 +349,9 @@ namespace BP4
 
         pcout << "Cycle " << cycle << std::endl;
 
+        std::size_t  projected_size = numbers::invalid_size_type;
+        unsigned int n_refine       = 0;
+
         if (use_doubling_mesh)
           {
             n_refine                     = cycle / 3;
@@ -382,6 +385,7 @@ namespace BP4
                 }
             if (dim == 2)
               n_refine += 3;
+
             GridGenerator::subdivided_hyper_cube(triangulation, n_subdiv, -0.9, 1.0);
             const unsigned int base_refine = (1 << n_refine);
             projected_size = Utilities::pow(base_refine * n_subdiv * fe_degree + 1, dim);
