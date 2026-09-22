@@ -83,6 +83,9 @@ namespace Portable
               const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
+    compute_rhs_bk4(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
+
+    void
     vmult_tensor_core(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
@@ -297,6 +300,48 @@ namespace Portable
 
     src.zero_out_ghost_values();
     matrix_free.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
+  void
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::compute_rhs_bk4(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const
+  {
+    rhs = 0.;
+
+    DeviceVector<number> rhs_device(rhs.get_values(), rhs.locally_owned_size());
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      threadsPerBlock = 1u;
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK4::Parallel::
+              KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
+                precomputed_data.shape_values,
+                precomputed_data.JxW,
+                rhs_device,
+                dof_indices_per_color[color],
+                n_cells,
+                numbers::invalid_unsigned_int,
+                threadsPerBlock);
+          }
+      }
+
+    rhs.compress(VectorOperation::add);
   }
 
   template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
