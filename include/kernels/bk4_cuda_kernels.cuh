@@ -752,8 +752,8 @@ namespace BK4
         const unsigned int numBlocks = std::max(1U, (padded_nelmt / nelmtPerBatch));
 
 
-        const unsigned int total_m_tiles   = (nelmtPerBatch * nq * nq + 7u) / 8u;
-        const unsigned int num_warps       = std::min(32u, std::max(1u, total_m_tiles));
+        const unsigned int total_m_tiles   = (nelmtPerBatch * nm * nm + 7u) / 8u;
+        const unsigned int num_warps       = std::min(16u, std::max(1u, total_m_tiles));
         const unsigned int threadsPerBlock = num_warps * 32u;
 
         const unsigned int ssize      = nq * nm + nq * nq + 4u * nelmtPerBatch * nq * nq * nq;
