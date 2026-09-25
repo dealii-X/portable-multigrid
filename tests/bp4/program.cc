@@ -168,7 +168,7 @@ namespace BP4
   {
     Timer time;
 
-    system_matrix->compute_rhs_bk4(system_rhs_device);
+    system_matrix->compute_rhs_cuda(system_rhs_device);
     Kokkos::fence();
 
     setup_time += time.wall_time();

@@ -87,6 +87,9 @@ namespace Portable
     compute_rhs_bk4(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
 
     void
+    compute_rhs_cuda(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
+
+    void
     vmult_tensor_core(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
@@ -346,6 +349,54 @@ namespace Portable
       }
 
     rhs.compress(VectorOperation::add);
+  }
+
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
+  void
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::compute_rhs_cuda(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const
+  {
+    static_assert(dim == 3,
+                  "compute_rhs_cuda() only implements the dim == 3 kernel "
+                  "(bk4_cuda_plain_kernels.cuh).");
+    static_assert(std::is_same_v<number, double>,
+                  "gemm_rhs_operator's implementation assumes double.");
+
+#ifndef __CUDACC__
+    (void)rhs;
+    Assert(false,
+           ExcMessage("compute_rhs_cuda() requires this translation unit to be compiled "
+                      "by nvcc (a CUDA-enabled Kokkos build) -- it was not."));
+#else
+    rhs = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK4::Parallel::Cuda::launch_gemm_rhs_operator<n_q_points_1d,
+                                                          fe_degree + 1,
+                                                          tensor_core_nelmt_per_batch,
+                                                          n_components>(
+              n_cells,
+              precomputed_data.shape_values.data(),
+              precomputed_data.JxW,
+              rhs.get_values(),
+              dof_indices_per_color[color]);
+          }
+      }
+
+    Kokkos::fence();
+
+    rhs.compress(VectorOperation::add);
+#endif
   }
 
   template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
