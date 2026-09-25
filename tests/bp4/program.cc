@@ -32,7 +32,7 @@ namespace BP4
 
   const unsigned int dimension      = 3;
   const unsigned int minimal_degree = 1;
-  const unsigned int maximal_degree = 8;
+  const unsigned int maximal_degree = 16;
 
   template <int dim, int fe_degree>
   class LaplaceProblem

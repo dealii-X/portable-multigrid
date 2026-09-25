@@ -92,9 +92,8 @@ namespace Portable
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
-    vmult_cuda(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+    vmult_cuda(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+               const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -335,15 +334,14 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::
-              KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
-                precomputed_data.shape_values,
-                precomputed_data.JxW,
-                rhs_device,
-                dof_indices_per_color[color],
-                n_cells,
-                numbers::invalid_unsigned_int,
-                threadsPerBlock);
+            BK4::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
+              precomputed_data.shape_values,
+              precomputed_data.JxW,
+              rhs_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numbers::invalid_unsigned_int,
+              threadsPerBlock);
           }
       }
 
@@ -383,17 +381,46 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::TensorCore::launch_f64_m8n8k4_mma<n_q_points_1d,
-                                                             fe_degree + 1,
-                                                             tensor_core_nelmt_per_batch,
-                                                             n_components>(
-              n_cells,
-              precomputed_data.shape_values.data(),
-              precomputed_data.co_shape_gradients.data(),
-              G_tensors[color].data(),
-              src.get_values(),
-              dst.get_values(),
-              dof_indices_per_color[color]);
+            if (fe_degree == 1)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 16, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else if (fe_degree <= 3)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 4, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else if (fe_degree == 4)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 2, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 1, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
           }
       };
 
@@ -445,9 +472,9 @@ namespace Portable
             const auto &precomputed_data = matrix_free.get_data(color);
 
             BK4::Parallel::Cuda::launch_gemm_laplace_operator<n_q_points_1d,
-                                                               fe_degree + 1,
-                                                               tensor_core_nelmt_per_batch,
-                                                               n_components>(
+                                                              fe_degree + 1,
+                                                              tensor_core_nelmt_per_batch,
+                                                              n_components>(
               n_cells,
               precomputed_data.shape_values.data(),
               precomputed_data.co_shape_gradients.data(),
