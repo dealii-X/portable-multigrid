@@ -252,7 +252,7 @@ namespace BP4
     convergence_table.add_value("matvec_" + name, best_mv);
     convergence_table.add_value("Thrpr_per_iter_" + name,
                                 1e-9 /
-                                  (best_mv * Utilities::MPI::n_mpi_processes(mpi_communicator)) *
+                                  (time_cg * Utilities::MPI::n_mpi_processes(mpi_communicator)) *
                                   (dof_handler.n_dofs() * cg_details.first));
   }
 
