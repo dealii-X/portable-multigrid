@@ -17,6 +17,7 @@
 
 #include "base/portable_laplace_operator_base.h"
 #include "kernels/bk4_cuda_kernels.cuh"
+#include "kernels/bk4_cuda_plain_kernels.cuh"
 #include "kernels/bk4_kokkos_kernels.h"
 #include "operators/portable_vector_laplace_operator_quad.h"
 
@@ -86,9 +87,16 @@ namespace Portable
     compute_rhs_bk4(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
 
     void
+    compute_rhs_cuda(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
+
+    void
     vmult_tensor_core(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
+    vmult_cuda(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+               const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
     void
     vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -329,19 +337,66 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::
-              KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
-                precomputed_data.shape_values,
-                precomputed_data.JxW,
-                rhs_device,
-                dof_indices_per_color[color],
-                n_cells,
-                numbers::invalid_unsigned_int,
-                threadsPerBlock);
+            BK4::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, n_components, number>(
+              precomputed_data.shape_values,
+              precomputed_data.JxW,
+              rhs_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numbers::invalid_unsigned_int,
+              threadsPerBlock);
           }
       }
 
     rhs.compress(VectorOperation::add);
+  }
+
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
+  void
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::compute_rhs_cuda(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const
+  {
+    static_assert(dim == 3,
+                  "compute_rhs_cuda() only implements the dim == 3 kernel "
+                  "(bk4_cuda_plain_kernels.cuh).");
+    static_assert(std::is_same_v<number, double>,
+                  "gemm_rhs_operator's implementation assumes double.");
+
+#ifndef __CUDACC__
+    (void)rhs;
+    Assert(false,
+           ExcMessage("compute_rhs_cuda() requires this translation unit to be compiled "
+                      "by nvcc (a CUDA-enabled Kokkos build) -- it was not."));
+#else
+    rhs = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK4::Parallel::Cuda::launch_gemm_rhs_operator<n_q_points_1d,
+                                                          fe_degree + 1,
+                                                          tensor_core_nelmt_per_batch,
+                                                          n_components>(
+              n_cells,
+              precomputed_data.shape_values.data(),
+              precomputed_data.JxW,
+              rhs.get_values(),
+              dof_indices_per_color[color]);
+          }
+      }
+
+    Kokkos::fence();
+
+    rhs.compress(VectorOperation::add);
+#endif
   }
 
   template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
@@ -377,10 +432,100 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK4::Parallel::TensorCore::launch_f64_m8n8k4_mma<n_q_points_1d,
-                                                             fe_degree + 1,
-                                                             tensor_core_nelmt_per_batch,
-                                                             n_components>(
+            if (fe_degree == 1)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 16, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else if (fe_degree <= 3)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 4, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else if (fe_degree == 4)
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 2, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+            else
+              BK4::Parallel::TensorCore::
+                launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, 1, n_components>(
+                  n_cells,
+                  precomputed_data.shape_values.data(),
+                  precomputed_data.co_shape_gradients.data(),
+                  G_tensors[color].data(),
+                  src.get_values(),
+                  dst.get_values(),
+                  dof_indices_per_color[color]);
+          }
+      };
+
+    src.update_ghost_values();
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      if (colored_graph[color].size() > color)
+        do_color(color);
+
+    Kokkos::fence();
+
+    dst.compress(VectorOperation::add);
+
+    src.zero_out_ghost_values();
+    matrix_free.copy_constrained_values(src, dst);
+#endif
+  }
+
+  template <int dim, int fe_degree, int n_components, typename number, int n_q_points_1d>
+  void
+  VectorLaplaceOperator<dim, fe_degree, n_components, number, n_q_points_1d>::vmult_cuda(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    static_assert(dim == 3,
+                  "vmult_cuda() only implements the dim == 3 kernel (bk4_cuda_plain_kernels.cuh).");
+    static_assert(std::is_same_v<number, double>,
+                  "gemm_laplace_operator's G tensor layout assumes double.");
+
+#ifndef __CUDACC__
+    (void)dst;
+    (void)src;
+    Assert(false,
+           ExcMessage("vmult_cuda() requires this translation unit to be compiled "
+                      "by nvcc (a CUDA-enabled Kokkos build) -- it was not."));
+#else
+    dst = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    // helper to process one color
+    auto do_color = [&](const unsigned int color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK4::Parallel::Cuda::launch_gemm_laplace_operator<n_q_points_1d,
+                                                              fe_degree + 1,
+                                                              tensor_core_nelmt_per_batch,
+                                                              n_components>(
               n_cells,
               precomputed_data.shape_values.data(),
               precomputed_data.co_shape_gradients.data(),

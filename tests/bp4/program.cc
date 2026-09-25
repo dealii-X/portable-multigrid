@@ -32,7 +32,7 @@ namespace BP4
 
   const unsigned int dimension      = 3;
   const unsigned int minimal_degree = 1;
-  const unsigned int maximal_degree = 8;
+  const unsigned int maximal_degree = 16;
 
   template <int dim, int fe_degree>
   class LaplaceProblem
@@ -168,7 +168,7 @@ namespace BP4
   {
     Timer time;
 
-    system_matrix->compute_rhs_bk4(system_rhs_device);
+    system_matrix->compute_rhs_cuda(system_rhs_device);
     Kokkos::fence();
 
     setup_time += time.wall_time();
@@ -247,7 +247,7 @@ namespace BP4
 
     convergence_table.add_value("cg_time_" + name, time_cg);
     convergence_table.add_value("cg_its_" + name, cg_details.first);
-    convergence_table.add_value("cg_reduction_" + name, cg_details.second);
+    // convergence_table.add_value("cg_reduction_" + name, cg_details.second);
     convergence_table.add_value("matvec_" + name, best_mv);
   }
 
@@ -339,30 +339,32 @@ namespace BP4
         convergence_table.add_value("cells", triangulation.n_global_active_cells());
         convergence_table.add_value("dofs", dof_handler.n_dofs());
 
-        solve_and_time("bk4", &OperatorType::vmult_bk4);
+#ifdef __CUDACC__
+        if constexpr (dim == 3)
+          solve_and_time("cuda", &OperatorType::vmult_cuda);
+#else
+        pcout << "  [cuda_core] skipped (not built with nvcc)" << std::endl;
+#endif
+
 
 #ifdef __CUDACC__
         if constexpr (dim == 3)
-          solve_and_time("tensor_core", &OperatorType::vmult_tensor_core);
+          solve_and_time("tensor", &OperatorType::vmult_tensor_core);
 #else
         pcout << "  [tensor_core] skipped (not built with nvcc)" << std::endl;
 #endif
 
         pcout << std::endl;
 
+#ifdef __CUDACC__
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
           {
-            for (const char *name : {"bk4"
-#ifdef __CUDACC__
-                                     ,
-                                     "tensor_core"
-#endif
-                 })
+            for (const char *name : {"cuda", "tensor"})
               {
                 convergence_table.set_scientific(std::string("cg_time_") + name, true);
                 convergence_table.set_precision(std::string("cg_time_") + name, 3);
-                convergence_table.set_scientific(std::string("cg_reduction_") + name, true);
-                convergence_table.set_precision(std::string("cg_reduction_") + name, 3);
+                // convergence_table.set_scientific(std::string("cg_reduction_") + name, true);
+                // convergence_table.set_precision(std::string("cg_reduction_") + name, 3);
                 convergence_table.set_scientific(std::string("matvec_") + name, true);
                 convergence_table.set_precision(std::string("matvec_") + name, 3);
               }
@@ -371,6 +373,7 @@ namespace BP4
 
             std::cout << std::endl << std::endl;
           }
+#endif
       }
   }
 
