@@ -5,6 +5,8 @@
 
 #include <deal.II/fe/mapping_q1.h>
 
+#include <deal.II/matrix_free/tools.h>
+
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
