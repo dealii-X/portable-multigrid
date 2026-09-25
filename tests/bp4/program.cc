@@ -247,13 +247,8 @@ namespace BP4
 
     convergence_table.add_value("cg_time_" + name, time_cg);
     convergence_table.add_value("cg_its_" + name, cg_details.first);
-    convergence_table.add_value("cg_reduction_" + name, cg_details.second);
+    // convergence_table.add_value("cg_reduction_" + name, cg_details.second);
     convergence_table.add_value("matvec_" + name, best_mv);
-    convergence_table.add_value("matvec_" + name, best_mv);
-    convergence_table.add_value("Thrpr_per_iter_" + name,
-                                1e-9 /
-                                  (time_cg * Utilities::MPI::n_mpi_processes(mpi_communicator)) *
-                                  (dof_handler.n_dofs() * cg_details.first));
   }
 
   template <int dim, int fe_degree>
@@ -346,7 +341,7 @@ namespace BP4
 
 #ifdef __CUDACC__
         if constexpr (dim == 3)
-          solve_and_time("cuda_core", &OperatorType::vmult_cuda);
+          solve_and_time("cuda", &OperatorType::vmult_cuda);
 #else
         pcout << "  [cuda_core] skipped (not built with nvcc)" << std::endl;
 #endif
@@ -354,7 +349,7 @@ namespace BP4
 
 #ifdef __CUDACC__
         if constexpr (dim == 3)
-          solve_and_time("tensor_core", &OperatorType::vmult_tensor_core);
+          solve_and_time("tensor", &OperatorType::vmult_tensor_core);
 #else
         pcout << "  [tensor_core] skipped (not built with nvcc)" << std::endl;
 #endif
@@ -364,16 +359,14 @@ namespace BP4
 #ifdef __CUDACC__
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
           {
-            for (const char *name : {"cuda_core", "tensor_core"})
+            for (const char *name : {"cuda", "tensor"})
               {
                 convergence_table.set_scientific(std::string("cg_time_") + name, true);
                 convergence_table.set_precision(std::string("cg_time_") + name, 3);
-                convergence_table.set_scientific(std::string("cg_reduction_") + name, true);
-                convergence_table.set_precision(std::string("cg_reduction_") + name, 3);
+                // convergence_table.set_scientific(std::string("cg_reduction_") + name, true);
+                // convergence_table.set_precision(std::string("cg_reduction_") + name, 3);
                 convergence_table.set_scientific(std::string("matvec_") + name, true);
                 convergence_table.set_precision(std::string("matvec_") + name, 3);
-                convergence_table.set_scientific(std::string("Thrpr_per_iter_") + name, true);
-                convergence_table.set_precision(std::string("Thrpr_per_iter_") + name, 3);
               }
 
             convergence_table.write_text(std::cout);
