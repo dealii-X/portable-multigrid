@@ -8,14 +8,11 @@ set(TARGET_SRC ${TARGET}.cc)
 
 # 3. Find deal.II
 #
-# vmult_tensor_core() (bk4_cuda_kernels.cuh) only does anything useful when
-# this ends up pointed at a deal.II built against a CUDA-enabled Kokkos
-# (KOKKOS_ENABLE_CUDA=ON) -- with a Serial/OpenMP-only Kokkos, program.cc
-# still builds and runs, it just skips the tensor-core comparison and only
-# checks vmult_bk4() vs. vmult_dealii(). deal.II's own CMake macros
-# transitively pull in whatever nvcc flags Kokkos+CUDA needs (--extended-
-# lambda, --expt-relaxed-constexpr) for compiling program.cc, so nothing
-# extra needs to be added here for that.
+# The tensor-core columns in this benchmark's table only fill in when this
+# ends up pointed at a deal.II built against a CUDA-enabled Kokkos -- with
+# a Serial/OpenMP-only Kokkos, program.cc still builds and runs, it just
+# reports the Kokkos (bk3, vmult()) columns only. See tests/bp4/
+# CMakeLists.txt for the same note.
 find_package(deal.II 9.8.0
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../ ../../ $ENV{DEAL_II_DIR}
 )

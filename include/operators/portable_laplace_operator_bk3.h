@@ -7,17 +7,20 @@
 
 #include <deal.II/fe/mapping_q1.h>
 
+#include <deal.II/matrix_free/tools.h>
+
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
 #include "kernels/bk3_kokkos_kernels.h"
+#include "kernels/bk4_cuda_kernels.cuh"
 #include "operators/portable_laplace_operator_quad.h"
 
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d = fe_degree + 1>
   class LaplaceOperatorBK3 : public LaplaceOperatorBase<dim, number>
   {
   public:
@@ -29,6 +32,14 @@ namespace Portable
     vmult(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
+
+    void
+    vmult_tensor_core(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
+    compute_rhs(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const;
 
     void
     vmult_dummy(LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
@@ -91,7 +102,16 @@ namespace Portable
 
     ObserverPointer<const AffineConstraints<number>> constraints;
 
-    static const unsigned int n_q_points = Utilities::pow(fe_degree + 1, dim);
+    static const unsigned int n_q_points = Utilities::pow(n_q_points_1d, dim);
+
+    // VectorLaplaceOperator's own (portable_vector_laplace_operator.h):
+    // the "how many cells' worth of quadrature-point scratch fits in one
+    // CUDA team's shared-memory budget" heuristic bk4_cuda_kernels.cuh's
+    // own benchmark repo picks by hand per nq, evaluated here at compile
+    // time from n_q_points_1d/number instead.
+    static constexpr std::size_t  tensor_core_shmem_per_block = 10'000;
+    static constexpr unsigned int tensor_core_nelmt_per_batch =
+      std::max<std::size_t>(1, tensor_core_shmem_per_block / (4 * n_q_points) / sizeof(number));
 
     std::shared_ptr<
       DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
@@ -103,8 +123,8 @@ namespace Portable
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> G_tensors;
   };
 
-  template <int dim, int fe_degree, typename number>
-  LaplaceOperatorBK3<dim, fe_degree, number>::LaplaceOperatorBK3(
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::LaplaceOperatorBK3(
     const DoFHandler<dim>           &dof_handler,
     const AffineConstraints<number> &constraints,
     bool                             overlap_communication_computation)
@@ -119,7 +139,7 @@ namespace Portable
       update_gradients | update_JxW_values | update_quadrature_points;
     additional_data.overlap_communication_computation = overlap_communication_computation;
 
-    const QGauss<1> quadrature_1d(fe_degree + 1);
+    const QGauss<1> quadrature_1d(n_q_points_1d);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
 
     setup_dof_indices_per_color();
@@ -127,9 +147,9 @@ namespace Portable
     compute_G_tensors();
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::vmult(
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::vmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
@@ -161,7 +181,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -220,9 +240,123 @@ namespace Portable
     matrix_free.copy_constrained_values(src, dst);
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::vmult_dummy(
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::vmult_tensor_core(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    static_assert(dim == 3,
+                  "vmult_tensor_core() only implements the dim == 3 tensor-core kernel "
+                  "(bk4_cuda_kernels.cuh).");
+    static_assert(std::is_same_v<number, double>,
+                  "mma.sync.aligned.m8n8k4.f64 is a double-precision-only instruction.");
+
+#ifndef __CUDACC__
+    (void)dst;
+    (void)src;
+    Assert(false,
+           ExcMessage("vmult_tensor_core() requires this translation unit to be compiled "
+                      "by nvcc (a CUDA-enabled Kokkos build) -- it was not."));
+#else
+    dst = 0.;
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    // helper to process one color
+    auto do_color = [&](const unsigned int color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            // launch_f64_m8n8k4_mma() takes dof_indices per component
+            // (Kokkos::Array<..., n_components>) -- wrap this class's own
+            // single (n_components == 1) dof_indices_per_color[color] view
+            // to match, exactly as VectorLaplaceOperator's own
+            // dof_indices_per_color is already shaped for n_components > 1.
+            const Kokkos::Array<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>,
+                                1>
+              dof_indices_single_component{dof_indices_per_color[color]};
+
+            BK4::Parallel::TensorCore::
+              launch_f64_m8n8k4_mma<n_q_points_1d, fe_degree + 1, tensor_core_nelmt_per_batch, 1>(
+                n_cells,
+                precomputed_data.shape_values.data(),
+                precomputed_data.co_shape_gradients.data(),
+                G_tensors[color].data(),
+                src.get_values(),
+                dst.get_values(),
+                dof_indices_single_component);
+          }
+      };
+
+    src.update_ghost_values();
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      if (colored_graph[color].size() > color)
+        do_color(color);
+
+    Kokkos::fence();
+
+    dst.compress(VectorOperation::add);
+
+    src.zero_out_ghost_values();
+    matrix_free.copy_constrained_values(src, dst);
+#endif
+  }
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  void
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::compute_rhs(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &rhs) const
+  {
+    rhs = 0.;
+
+    DeviceVector<number> rhs_device(rhs.get_values(), rhs.locally_owned_size());
+
+    const auto        &colored_graph = matrix_free.get_colored_graph();
+    const unsigned int n_colors      = colored_graph.size();
+
+    constexpr bool is_serial =
+      std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
+
+    unsigned int numBlocks       = numbers::invalid_unsigned_int;
+    unsigned int threadsPerBlock = numbers::invalid_unsigned_int;
+    if (is_serial)
+      {
+        numBlocks       = 1u;
+        threadsPerBlock = 1u;
+      }
+
+    for (unsigned int color = 0; color < n_colors; ++color)
+      {
+        const unsigned int n_cells = colored_graph[color].size();
+
+        if (n_cells > 0)
+          {
+            const auto &precomputed_data = matrix_free.get_data(color);
+
+            BK3::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, number>(
+              precomputed_data.shape_values,
+              precomputed_data.JxW,
+              rhs_device,
+              dof_indices_per_color[color],
+              n_cells,
+              numBlocks,
+              threadsPerBlock);
+          }
+      }
+
+    rhs.compress(VectorOperation::add);
+  }
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  void
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::vmult_dummy(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src,
     const bool                                                              ghost_exchange_on,
@@ -256,7 +390,7 @@ namespace Portable
           {
             const auto &precomputed_data = matrix_free.get_data(color);
 
-            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, fe_degree + 1, number>(
+            BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, number>(
               precomputed_data.shape_values,
               precomputed_data.co_shape_gradients,
               G_tensors[color],
@@ -335,9 +469,9 @@ namespace Portable
   }
 
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::setup_dof_indices_per_color()
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::setup_dof_indices_per_color()
   {
     dealii::MemorySpace::Default::kokkos_space::execution_space exec_space;
     const auto        &colored_graph = matrix_free.get_colored_graph();
@@ -415,9 +549,9 @@ namespace Portable
   }
 
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::Tvmult(
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::Tvmult(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
@@ -431,9 +565,9 @@ namespace Portable
   }
 
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::compute_G_tensors()
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::compute_G_tensors()
   {
     constexpr int symmetric_tensor_dim = (dim * (dim + 1)) / 2;
 
@@ -493,24 +627,24 @@ namespace Portable
   }
 
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::initialize_dof_vector(
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::initialize_dof_vector(
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &vec) const
   {
     matrix_free.initialize_dof_vector(vec);
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   const MatrixFree<dim, number> &
-  LaplaceOperatorBK3<dim, fe_degree, number>::get_matrix_free() const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::get_matrix_free() const
   {
     return matrix_free;
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
-  LaplaceOperatorBK3<dim, fe_degree, number>::compute_diagonal()
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::compute_diagonal()
   {
     this->inverse_diagonal_entries.reset(
       new DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>());
@@ -518,9 +652,9 @@ namespace Portable
       inverse_diagonal_entries->get_vector();
     initialize_dof_vector(inverse_diagonal);
 
-    internal::LaplaceOperatorQuad<dim, fe_degree, fe_degree + 1, number> operator_quad;
+    internal::LaplaceOperatorQuad<dim, fe_degree, n_q_points_1d, number> operator_quad;
 
-    MatrixFreeTools::compute_diagonal<dim, fe_degree, fe_degree + 1, 1, number>(
+    MatrixFreeTools::compute_diagonal<dim, fe_degree, n_q_points_1d, 1, number>(
       matrix_free,
       inverse_diagonal,
       operator_quad,
@@ -538,31 +672,32 @@ namespace Portable
       });
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   std::shared_ptr<DiagonalMatrix<LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>>
-  LaplaceOperatorBK3<dim, fe_degree, number>::get_matrix_diagonal_inverse() const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::get_matrix_diagonal_inverse() const
   {
     return inverse_diagonal_entries;
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   types::global_dof_index
-  LaplaceOperatorBK3<dim, fe_degree, number>::m() const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::m() const
   {
     return matrix_free.get_vector_partitioner()->size();
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   types::global_dof_index
-  LaplaceOperatorBK3<dim, fe_degree, number>::n() const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::n() const
   {
     return matrix_free.get_vector_partitioner()->size();
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   number
-  LaplaceOperatorBK3<dim, fe_degree, number>::el(const types::global_dof_index row,
-                                                 const types::global_dof_index col) const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::el(
+    const types::global_dof_index row,
+    const types::global_dof_index col) const
   {
     (void)col;
     Assert(row == col, ExcNotImplemented());
@@ -572,9 +707,9 @@ namespace Portable
     return 1.0 / (*inverse_diagonal_entries)(row, row);
   }
 
-  template <int dim, int fe_degree, typename number>
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
   const std::shared_ptr<const Utilities::MPI::Partitioner> &
-  LaplaceOperatorBK3<dim, fe_degree, number>::get_vector_partitioner() const
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::get_vector_partitioner() const
   {
     return matrix_free.get_vector_partitioner();
   }

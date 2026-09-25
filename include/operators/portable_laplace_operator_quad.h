@@ -5,6 +5,8 @@
 
 #include <deal.II/fe/mapping_q1.h>
 
+#include <deal.II/matrix_free/portable_fe_evaluation.h>
+
 #include <memory>
 
 
