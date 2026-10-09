@@ -127,48 +127,48 @@ private:
                        const VectorType & /*src*/,
                        const std::pair<unsigned int, unsigned int> & /*face_range*/) const
   {
-    // FEFaceEvaluation<dim, -1, 0, dim, Number> fe_eval(data, true);
-    // FEFaceEvaluation<dim, -1, 0, dim, Number> fe_eval_neighbor(data, false);
-    // const int actual_degree = data.get_dof_handler().get_fe().degree;
+    FEFaceEvaluation<dim, -1, 0, dim, Number> fe_eval(data, true);
+    FEFaceEvaluation<dim, -1, 0, dim, Number> fe_eval_neighbor(data, false);
+    const int actual_degree = data.get_dof_handler().get_fe().degree;
 
-    // for (unsigned int face = face_range.first; face < face_range.second; ++face)
-    //   {
-    //     fe_eval.reinit(face);
-    //     fe_eval_neighbor.reinit(face);
+    for (unsigned int face = face_range.first; face < face_range.second; ++face)
+      {
+        fe_eval.reinit(face);
+        fe_eval_neighbor.reinit(face);
 
-    //     fe_eval.read_dof_values(src);
-    //     fe_eval.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
-    //     fe_eval_neighbor.read_dof_values(src);
-    //     fe_eval_neighbor.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
-    //     const VectorizedArray<Number> sigmaF =
-    //       (std::abs((fe_eval.normal_vector(0) * fe_eval.inverse_jacobian(0))[dim - 1]) +
-    //        std::abs((fe_eval.normal_vector(0) * fe_eval_neighbor.inverse_jacobian(0))[dim - 1]))
-    //        *
-    //       (Number)(std::max(actual_degree, 1) * (actual_degree + 1.0) * factor_lapl);
+        fe_eval.read_dof_values(src);
+        fe_eval.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
+        fe_eval_neighbor.read_dof_values(src);
+        fe_eval_neighbor.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
+        const VectorizedArray<Number> sigmaF =
+          (std::abs((fe_eval.normal_vector(0) * fe_eval.inverse_jacobian(0))[dim - 1]) +
+           std::abs((fe_eval.normal_vector(0) * fe_eval_neighbor.inverse_jacobian(0))[dim - 1]))
+           *
+          (Number)(std::max(actual_degree, 1) * (actual_degree + 1.0) * factor_lapl);
 
-    //     for (unsigned int q = 0; q < fe_eval.n_q_points; ++q)
-    //       {
-    //         const auto normal  = fe_eval.normal_vector(q);
-    //         const auto u_minus = fe_eval.get_value(q);
-    //         const auto u_plus  = fe_eval_neighbor.get_value(q);
+        for (unsigned int q = 0; q < fe_eval.n_q_points; ++q)
+          {
+            const auto normal  = fe_eval.normal_vector(q);
+            const auto u_minus = fe_eval.get_value(q);
+            const auto u_plus  = fe_eval_neighbor.get_value(q);
 
-    //         const auto viscous_value_flux =
-    //           make_vectorized_array<Number>(0.5 * factor_lapl) *
-    //             (fe_eval.get_gradient(q) + fe_eval_neighbor.get_gradient(q)) * normal -
-    //           sigmaF * (u_minus - u_plus);
-    //         const auto viscous_gradient_flux =
-    //           make_vectorized_array<Number>(0.5 * factor_lapl) * (u_plus - u_minus);
+            const auto viscous_value_flux =
+              make_vectorized_array<Number>(0.5 * factor_lapl) *
+                (fe_eval.get_gradient(q) + fe_eval_neighbor.get_gradient(q)) * normal -
+              sigmaF * (u_minus - u_plus);
+            const auto viscous_gradient_flux =
+              make_vectorized_array<Number>(0.5 * factor_lapl) * (u_plus - u_minus);
 
-    //         fe_eval.submit_gradient(outer_product(viscous_gradient_flux, normal), q);
-    //         fe_eval_neighbor.submit_gradient(outer_product(viscous_gradient_flux, normal), q);
-    //         fe_eval.submit_value(-viscous_value_flux, q);
-    //         fe_eval_neighbor.submit_value(viscous_value_flux, q);
-    //       }
-    //     fe_eval.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
-    //     fe_eval_neighbor.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
-    //     fe_eval.distribute_local_to_global(dst);
-    //     fe_eval_neighbor.distribute_local_to_global(dst);
-    //   }
+            fe_eval.submit_gradient(outer_product(viscous_gradient_flux, normal), q);
+            fe_eval_neighbor.submit_gradient(outer_product(viscous_gradient_flux, normal), q);
+            fe_eval.submit_value(-viscous_value_flux, q);
+            fe_eval_neighbor.submit_value(viscous_value_flux, q);
+          }
+        fe_eval.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
+        fe_eval_neighbor.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
+        fe_eval.distribute_local_to_global(dst);
+        fe_eval_neighbor.distribute_local_to_global(dst);
+      }
   }
 
   void
