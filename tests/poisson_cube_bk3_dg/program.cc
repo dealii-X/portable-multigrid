@@ -1,3 +1,39 @@
+// Poisson problem on a cube: CG solver preconditioned by a hybrid multigrid
+// (h-levels with Q1, p-levels Q2 and Q4, DG level of degree 4), with optional
+// overlap of the ghost exchange with the computation.
+//
+// Run command (Jupiter, 16 GPUs on 4 nodes):
+//
+//   export OMP_PROC_BIND=false
+//   srun -N 4 -n 16 --ntasks-per-node=4 -c 72 --cpu-bind=cores --gpu-bind=closest
+//        --mem-bind=local --gpus-per-task=1
+//        ./program 4 1 500000000 5 5 d 16384 1 1000000
+//
+// (one command line; written on three lines here)
+//
+// Arguments, in this order:
+//   4          degree:              polynomial degree of the DG discretization
+//                                   (and of the finest continuous Q4 level)
+//   1          minsize:             skip mesh sizes whose projected number of
+//                                   continuous Q4 DoFs is smaller than this
+//   500000000  maxsize:             stop at the first mesh size whose projected
+//                                   number of continuous Q4 DoFs exceeds this
+//   5          n_pre_smooth:        degree of the Chebyshev pre-smoother
+//   5          n_post_smooth:       degree of the Chebyshev post-smoother (must equal
+//                                   n_pre_smooth)
+//   d          doubling:            'd' doubling mesh (DoFs grow by 2x per cycle),
+//                                   anything else uses the square mesh sizes
+//   16384      coarse_granularity:  minimal number of cells per rank on the coarse
+//                                   h-levels (fewer ranks on the coarse levels)
+//   1          overlap:             1 colors the levels on the finest mesh (L7 to
+//                                   L10 and the outer DG operator) and overlaps the
+//                                   ghost exchange with the computation of interior
+//                                   cells in the FE_Q and DG vmult, 0 disables it
+//   1000000    overlap_min_dofs_per_rank: the vmult is overlapped only on levels
+//                                   with at least this many DoFs per rank (smaller
+//                                   FE_Q levels launch all colors and fence once,
+//                                   since overlap costs more than it hides)
+
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/quadrature_lib.h>
@@ -66,6 +102,31 @@ namespace multigrid
   // be overwritten by the seventh command line argument.
   unsigned int coarse_granularity = 16384;
 
+  // Overlap the ghost exchange with the computation in the matrix-vector
+  // products. On the continuous (FE_Q) levels: update_ghost_values_start(),
+  // cells away from the ghost layer, update_ghost_values_finish(), cells at
+  // the ghost layer, compress_start(), remaining cells, compress_finish().
+  // On the DG levels: update_ghost_values_start(), owned cells and the faces
+  // between them, update_ghost_values_finish(), ghost cells and the faces to
+  // them (see LaplaceOperatorDG::set_overlap_in_vmult()). Can be
+  // overwritten by the eighth command line argument (0 or 1).
+  //
+  // Overlapping needs a MatrixFree object with three colors, and the
+  // polynomial and continuous transfers require the same coloring on both
+  // of their levels. Therefore the levels on the finest mesh (the last
+  // h-level, the p-levels and the DG level) get the three colors, while the
+  // h-levels below keep a single color (the geometric transfer does not
+  // depend on the coloring). Of the colored FE_Q levels, only those with at
+  // least overlap_min_dofs_per_rank DoFs per rank actually overlap in
+  // vmult(); on smaller levels the computation is too short to hide the
+  // exchange and the extra kernel launches would only cost time. The same
+  // threshold applies to the DG level and the outer DG operator, whose vmult
+  // overlaps the exchange with the work on the owned cells (it does not use
+  // the coloring).
+  bool use_overlap = false;
+
+  // Can be overwritten by the ninth command line argument.
+  types::global_dof_index overlap_min_dofs_per_rank = 1000000;
 
 
   template <int dim, int fe_degree>
@@ -158,7 +219,7 @@ namespace multigrid
 
     const unsigned int refinement_cycles = 10;
 
-    const bool overlap_communication_computation = false;
+    const bool overlap_communication_computation = use_overlap;
 
     double setup_time;
 
@@ -177,6 +238,7 @@ namespace multigrid
       DoFHandler<dim>                  &dof_handler;
       AffineConstraints<vcycle_number> &constraints;
       bool                              overlap_communication_computation;
+      bool                              overlap_in_vmult;
       LaplaceProblem<dim, fe_degree>   &parent_problem;
 
       template <unsigned int degree>
@@ -185,7 +247,7 @@ namespace multigrid
       {
         parent_problem.level_matrices[level] =
           std::make_unique<Portable::LaplaceOperatorBK3<dim, degree, vcycle_number>>(
-            dof_handler, constraints, overlap_communication_computation);
+            dof_handler, constraints, overlap_communication_computation, overlap_in_vmult);
       }
     };
 
@@ -377,15 +439,23 @@ namespace multigrid
     Timer time;
     level_matrices.resize(0, level_dof_handlers.max_level());
 
+    std::string overlap_levels;
+
     for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
       {
+        // three colors on the levels on the finest mesh, see use_overlap
+        const bool colored = use_overlap && level + 1 >= coarse_triangulations.size();
+        const bool overlap_in_vmult =
+          colored && level_dof_handlers[level].n_dofs() >=
+                       overlap_min_dofs_per_rank * Utilities::MPI::n_mpi_processes(mpi_communicator);
+        if (overlap_in_vmult)
+          overlap_levels += " " + std::to_string(level);
+
         if (level < coarse_triangulations.size())
           {
             level_matrices[level] =
               std::make_unique<Portable::LaplaceOperatorBK3<dim, 1, vcycle_number>>(
-                level_dof_handlers[level],
-                level_constraints[level],
-                overlap_communication_computation);
+                level_dof_handlers[level], level_constraints[level], colored, overlap_in_vmult);
           }
 
         else if (level < level_dof_handlers.max_level())
@@ -394,7 +464,8 @@ namespace multigrid
             LaplaceOperatorRunner runner{level,
                                          level_dof_handlers[level],
                                          level_constraints[level],
-                                         overlap_communication_computation,
+                                         colored,
+                                         overlap_in_vmult,
                                          *this};
 
             bool success = Portable::OperatorDispatchFactory::dispatch(
@@ -405,14 +476,19 @@ namespace multigrid
           }
         else
           {
-            level_matrices[level] = std::make_unique<
+            auto dg_matrix = std::make_unique<
               Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, vcycle_number>>(
               mapping,
               level_dof_handlers[level],
               level_constraints[level],
-              overlap_communication_computation);
+              colored);
+            dg_matrix->set_overlap_in_vmult(overlap_in_vmult);
+            level_matrices[level] = std::move(dg_matrix);
           }
       }
+
+    if (use_overlap)
+      pcout << "Overlapping vmult on levels:" << overlap_levels << std::endl;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
       {
@@ -437,6 +513,9 @@ namespace multigrid
                                                           level_dof_handlers.back(),
                                                           fine_level_constraints,
                                                           overlap_communication_computation);
+        dg_fine_level_matrix->set_overlap_in_vmult(fine_float_matrix->get_overlap_in_vmult());
+        if (dg_fine_level_matrix->get_overlap_in_vmult())
+          pcout << "Overlapping vmult of the outer DG operator" << std::endl;
 
         fine_level_matrix = std::move(dg_fine_level_matrix);
         fine_level_matrix->initialize_dof_vector(solution_device);
@@ -1029,11 +1108,13 @@ main(int argc, char *argv[])
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
                       << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling "
-                      << "coarse_granularity" << std::endl
+                      << "coarse_granularity overlap overlap_min_dofs_per_rank" << std::endl
                       << "The parameters degree to n_post_smooth are integers, "
                       << "doubling selects between a square mesh or a doubling mesh, "
                       << "coarse_granularity is the minimal number of cells per rank "
-                      << "on the coarse levels" << std::endl;
+                      << "on the coarse levels, overlap (0 or 1) overlaps the ghost "
+                      << "exchange with the computation on the levels with at least "
+                      << "overlap_min_dofs_per_rank DoFs per rank" << std::endl;
           return 1;
         }
 
@@ -1051,6 +1132,10 @@ main(int argc, char *argv[])
         use_doubling_mesh = argv[6][0] == 'd';
       if (argc > 7)
         coarse_granularity = std::atoi(argv[7]);
+      if (argc > 8)
+        use_overlap = std::atoi(argv[8]) == 1;
+      if (argc > 9)
+        overlap_min_dofs_per_rank = std::atoll(argv[9]);
 
       AssertThrow(coarse_granularity > 0, ExcMessage("coarse_granularity must be positive."));
 
@@ -1065,6 +1150,8 @@ main(int argc, char *argv[])
                   << "Number of post-smoother iters:  " << n_post_smooth << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
                   << "Coarse level granularity:       " << coarse_granularity << std::endl
+                  << "Overlap comm./comp.:            " << use_overlap << std::endl
+                  << "Overlap min DoFs per rank:      " << overlap_min_dofs_per_rank << std::endl
                   << std::endl;
 
       LaplaceRunTime<dimension, minimal_degree, maximal_degree> run(

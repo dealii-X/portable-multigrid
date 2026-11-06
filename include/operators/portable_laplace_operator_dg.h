@@ -5,6 +5,7 @@
 
 #include <deal.II/fe/mapping.h>
 
+#include <algorithm>
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
@@ -195,6 +196,37 @@ namespace Portable
       return this->dof_indices;
     }
 
+    unsigned int
+    get_n_owned_inner_cells() const
+    {
+      return this->n_owned_inner_cells;
+    }
+
+    unsigned int
+    get_n_owned_inner_faces() const
+    {
+      return this->n_owned_inner_faces;
+    }
+
+    // Overlap the ghost exchange of src in vmult() with the work that does
+    // not need ghost values: the cell integrals of all owned cells, the
+    // boundary faces, the inner faces between two owned cells and the
+    // distribution of the owned cells without a ghost face neighbor. Only
+    // the ghost cells, the faces to ghost cells and the distribution of the
+    // owned cells at the processor boundary wait for the exchange, which
+    // uses update_ghost_values_start()/finish() of the vector.
+    void
+    set_overlap_in_vmult(const bool overlap)
+    {
+      this->overlap_in_vmult = overlap;
+    }
+
+    bool
+    get_overlap_in_vmult() const
+    {
+      return this->overlap_in_vmult;
+    }
+
   private:
     using TeamHandle =
       Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type;
@@ -238,6 +270,14 @@ namespace Portable
 
     // the locally owned cells come first in cell_local_info, followed by the ghost cells
     unsigned int                                               n_owned_cells = 0;
+    // of these, the first n_owned_inner_cells have no ghost cell as face
+    // neighbor, see compute_cell_info() and vmult()
+    unsigned int n_owned_inner_cells = 0;
+    // the first n_owned_inner_faces inner faces are between two owned cells,
+    // the others between an owned cell (minus side) and a ghost cell
+    unsigned int n_owned_inner_faces = 0;
+
+    bool overlap_in_vmult = false;
     Kokkos::View<Number *, MemorySpace::Default::kokkos_space> cell_measures;
 
 
@@ -406,6 +446,8 @@ namespace Portable
     // Share topology
     this->cell_local_info      = other.get_cell_local_info();
     this->n_owned_cells        = other.get_n_owned_cells();
+    this->n_owned_inner_cells  = other.get_n_owned_inner_cells();
+    this->n_owned_inner_faces  = other.get_n_owned_inner_faces();
     this->cell_level_index_map = other.get_cell_level_index_map();
     this->face_info_cpu        = other.get_face_info_cpu();
     this->face_info            = other.get_face_info();
@@ -568,7 +610,10 @@ namespace Portable
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
   {
-    src.update_ghost_values();
+    if (overlap_in_vmult)
+      src.update_ghost_values_start(0);
+    else
+      src.update_ghost_values();
 
     const unsigned int locally_relevant_size = cell_local_info.size() * n_local_dofs;
 
@@ -594,7 +639,139 @@ namespace Portable
     const unsigned int n_inner_faces    = face_info_cpu[0].size();
     const unsigned int n_boundary_faces = face_info_cpu[1].size();
 
-    if (n_cells > 0)
+    if (overlap_in_vmult)
+      {
+        // All kernels are launched without a fence: the host waits in
+        // update_ghost_values_finish() while the device works on the owned
+        // cells, which keeps the MPI communication progressing. The kernels
+        // run in order on the same stream.
+        constexpr bool fence = false;
+
+        // 1. work that only needs the owned values of src
+        if (n_owned_cells > 0)
+          BK3::DG::compute_cell<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_values,
+            shape_data.shape_gradients_collocation,
+            geometric_transformation_symmetric_cell,
+            src_device,
+            dst_device,
+            interpolate_quad_to_boundary,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            dof_indices,
+            n_owned_cells,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            0,
+            fence);
+
+        if (n_owned_inner_faces > 0)
+          BK3::DG::compute_inner_faces<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_gradients_collocation,
+            jacobians_times_normal_inner_face,
+            jxw_inner_face,
+            penalty_parameters_inner_face,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            face_info[0],
+            n_owned_inner_faces,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            0,
+            fence);
+
+        if (n_boundary_faces > 0)
+          BK3::DG::compute_boundary_faces<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_gradients_collocation,
+            jacobians_times_normal_boundary_face,
+            jxw_boundary_face,
+            penalty_parameters_boundary_face,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            face_info[1],
+            n_boundary_faces,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            0,
+            fence);
+
+        // all faces of these cells are done
+        if (n_owned_inner_cells > 0)
+          BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_values,
+            dst_device,
+            interpolate_quad_to_boundary,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            dof_indices,
+            n_owned_inner_cells,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            0,
+            fence);
+
+        src.update_ghost_values_finish();
+
+        // 2. work that needs the ghost values: the face values of the ghost
+        // cells (their cell integrals go to the ghost part of dst, which is
+        // discarded), the faces to the ghost cells and the owned cells at the
+        // processor boundary
+        if (n_cells > n_owned_cells)
+          BK3::DG::compute_cell<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_values,
+            shape_data.shape_gradients_collocation,
+            geometric_transformation_symmetric_cell,
+            src_device,
+            dst_device,
+            interpolate_quad_to_boundary,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            dof_indices,
+            n_cells - n_owned_cells,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            n_owned_cells,
+            fence);
+
+        if (n_inner_faces > n_owned_inner_faces)
+          BK3::DG::compute_inner_faces<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_gradients_collocation,
+            jacobians_times_normal_inner_face,
+            jxw_inner_face,
+            penalty_parameters_inner_face,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            face_info[0],
+            n_inner_faces - n_owned_inner_faces,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            n_owned_inner_faces,
+            fence);
+
+        if (n_owned_cells > n_owned_inner_cells)
+          BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_values,
+            dst_device,
+            interpolate_quad_to_boundary,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            dof_indices,
+            n_owned_cells - n_owned_inner_cells,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block,
+            n_owned_inner_cells,
+            fence);
+
+        Kokkos::fence();
+      }
+    else if (n_cells > 0)
       {
         BK3::DG::compute_cell<dim, fe_degree + 1, n_q_points_1d, Number>(
           shape_data.shape_values,
@@ -668,6 +845,13 @@ namespace Portable
     const bool                                                              ghost_exchange_on,
     const bool                                                              computation_on) const
   {
+    // the overlapped vmult cannot be split into exchange and computation
+    if (overlap_in_vmult && ghost_exchange_on && computation_on)
+      {
+        vmult(dst, src);
+        return;
+      }
+
     if (ghost_exchange_on)
       src.update_ghost_values();
 
@@ -791,13 +975,33 @@ namespace Portable
 
     unsigned int counter = 0;
 
-    for (const auto &cell : triangulation.active_cell_iterators())
-      if (cell->is_locally_owned())
-        {
-          cell_touched[cell->index()]                        = 1;
-          cell_level_index_map[cell->level()][cell->index()] = counter++;
-          cell_local_info.push_back(std::make_pair(cell->level(), cell->index()));
-        }
+    // Number the owned cells without a ghost face neighbor first and then the
+    // owned cells at the processor boundary, so that vmult() can work on the
+    // former while the ghost values are exchanged.
+    const auto has_ghost_face_neighbor = [](const auto &cell) {
+      for (const unsigned int face : cell->face_indices())
+        if (!cell->at_boundary(face) || cell->has_periodic_neighbor(face))
+          {
+            const auto neighbor = cell->neighbor_or_periodic_neighbor(face);
+            if (neighbor->is_active() && !neighbor->is_locally_owned())
+              return true;
+          }
+      return false;
+    };
+
+    for (const bool at_processor_boundary : {false, true})
+      {
+        for (const auto &cell : triangulation.active_cell_iterators())
+          if (cell->is_locally_owned() && has_ghost_face_neighbor(cell) == at_processor_boundary)
+            {
+              cell_touched[cell->index()]                        = 1;
+              cell_level_index_map[cell->level()][cell->index()] = counter++;
+              cell_local_info.push_back(std::make_pair(cell->level(), cell->index()));
+            }
+
+        if (!at_processor_boundary)
+          this->n_owned_inner_cells = counter;
+      }
 
     this->n_owned_cells = counter;
 
@@ -1009,6 +1213,18 @@ namespace Portable
                 }
             }
         }
+
+      // The inner faces between two owned cells first, then the faces between
+      // an owned cell and a ghost cell, see vmult(). The owned cell is always
+      // on the minus side.
+      const auto between_owned_cells = [&](const std::array<unsigned int, 5> &info) {
+        return info[1] < this->n_owned_cells;
+      };
+      std::stable_partition(face_info_cpu[0].begin(),
+                            face_info_cpu[0].end(),
+                            between_owned_cells);
+      this->n_owned_inner_faces =
+        std::count_if(face_info_cpu[0].begin(), face_info_cpu[0].end(), between_owned_cells);
 
       std::string name_handle[] = {"inner_faces_info", "boundary_faces_info"};
 

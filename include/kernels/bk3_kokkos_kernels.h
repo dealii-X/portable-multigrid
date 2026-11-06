@@ -37,7 +37,8 @@ namespace BK3
                            const unsigned int       n_blocks       = numbers::invalid_unsigned_int,
                            const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
                            const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
-                           const CellRangeIdView cell_range_ids    = CellRangeIdView())
+                           const CellRangeIdView cell_range_ids    = CellRangeIdView(),
+                           const bool            fence             = true)
     {
       if (n_cells == 0)
         return;
@@ -190,7 +191,11 @@ namespace BK3
               }
           });
 
-        Kokkos::fence();
+        // Without the fence the kernel runs asynchronously, so that the host
+        // can drive MPI (e.g. the rendezvous protocol of large messages) in
+        // the meantime, see the overlapping vmult of LaplaceOperatorBK3.
+        if (fence)
+          Kokkos::fence();
       }
     }
 

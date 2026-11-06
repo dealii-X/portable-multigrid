@@ -24,9 +24,17 @@ namespace Portable
   class LaplaceOperatorBK3 : public LaplaceOperatorBase<dim, number>
   {
   public:
+    // overlap_communication_computation sets up the MatrixFree object with
+    // the three colors (interior cells, cells at the ghost layer, interior
+    // cells) needed to overlap the ghost exchange with the computation. The
+    // transfers between two levels require the same coloring on both levels.
+    // overlap_in_vmult selects whether vmult() actually overlaps (only useful
+    // if there is enough computation to hide the exchange); otherwise it does
+    // the full exchange and then loops over all colors.
     LaplaceOperatorBK3(const DoFHandler<dim>           &dof_handler,
                        const AffineConstraints<number> &constraints,
-                       bool                             overlap_communication_computation);
+                       bool                             overlap_communication_computation,
+                       bool                             overlap_in_vmult = true);
 
     void
     vmult(
@@ -121,13 +129,17 @@ namespace Portable
       dof_indices_per_color;
 
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> G_tensors;
+
+    bool overlap_in_vmult;
   };
 
   template <int dim, int fe_degree, typename number, int n_q_points_1d>
   LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::LaplaceOperatorBK3(
     const DoFHandler<dim>           &dof_handler,
     const AffineConstraints<number> &constraints,
-    bool                             overlap_communication_computation)
+    bool                             overlap_communication_computation,
+    bool                             overlap_in_vmult)
+    : overlap_in_vmult(overlap_in_vmult)
   {
     const MappingQ<dim> mapping(fe_degree);
 
@@ -173,7 +185,7 @@ namespace Portable
       }
 
     // helper to process one color
-    auto do_color = [&](const unsigned int color)
+    auto do_color = [&](const unsigned int color, const bool fence = true)
       {
         const unsigned int n_cells = colored_graph[color].size();
 
@@ -190,18 +202,21 @@ namespace Portable
               dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              numbers::invalid_unsigned_int,
+              BK3::Parallel::CellRangeIdView(),
+              fence);
           }
       };
 
-    if (matrix_free.use_overlap_communication_computation())
+    if (matrix_free.use_overlap_communication_computation() && overlap_in_vmult)
       {
         src.update_ghost_values_start(0);
 
         // In parallel, it's possible that some processors do not own any
         // cells.
         if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
-          do_color(0);
+          do_color(0, false);
 
         src.update_ghost_values_finish();
 
@@ -221,18 +236,23 @@ namespace Portable
         // When the mesh is coarse it is possible that some processors do
         // not own any cells
         if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
-          do_color(2);
+          do_color(2, false);
         dst.compress_finish(VectorOperation::add);
       }
     else
       {
         src.update_ghost_values();
 
+        // launch the colors back to back and wait only once (with the three
+        // colors of the overlap setup, a fence per color would make the
+        // computation clearly slower)
         for (unsigned int color = 0; color < n_colors; ++color)
           {
-            if (colored_graph[color].size() > color)
-              do_color(color);
+            if (colored_graph[color].size() > 0)
+              do_color(color, false);
           }
+        Kokkos::fence();
+
         dst.compress(VectorOperation::add);
       }
 
@@ -382,7 +402,7 @@ namespace Portable
       }
 
     // helper to process one color
-    auto do_color = [&](const unsigned int color)
+    auto do_color = [&](const unsigned int color, const bool fence = true)
       {
         const unsigned int n_cells = colored_graph[color].size();
 
@@ -399,11 +419,14 @@ namespace Portable
               dof_indices_per_color[color],
               n_cells,
               numBlocks,
-              threadsPerBlock);
+              threadsPerBlock,
+              numbers::invalid_unsigned_int,
+              BK3::Parallel::CellRangeIdView(),
+              fence);
           }
       };
 
-    if (matrix_free.use_overlap_communication_computation())
+    if (matrix_free.use_overlap_communication_computation() && overlap_in_vmult)
       {
         if (ghost_exchange_on)
           src.update_ghost_values_start(0);
@@ -412,7 +435,7 @@ namespace Portable
         // cells.
         if (colored_graph.size() > 0 && colored_graph[0].size() > 0)
           if (computation_on)
-            do_color(0);
+            do_color(0, false);
 
         if (ghost_exchange_on)
           src.update_ghost_values_finish();
@@ -436,7 +459,7 @@ namespace Portable
         // not own any cells
         if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
           if (computation_on)
-            do_color(2);
+            do_color(2, false);
 
         if (ghost_exchange_on)
           dst.compress_finish(VectorOperation::add);
@@ -453,8 +476,9 @@ namespace Portable
             for (unsigned int color = 0; color < n_colors; ++color)
               {
                 if (colored_graph[color].size() > 0)
-                  do_color(color);
+                  do_color(color, false);
               }
+            Kokkos::fence();
           }
 
         if (ghost_exchange_on)
