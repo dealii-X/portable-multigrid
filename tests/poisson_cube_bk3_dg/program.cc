@@ -32,7 +32,8 @@
 //   1000000    overlap_min_dofs_per_rank: the vmult is overlapped only on levels
 //                                   with at least this many DoFs per rank (smaller
 //                                   FE_Q levels launch all colors and fence once,
-//                                   since overlap costs more than it hides)
+//                                   since overlap costs more than it hides; if no
+//                                   FE_Q level reaches it, nothing is colored)
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
@@ -122,7 +123,9 @@ namespace multigrid
   // exchange and the extra kernel launches would only cost time. The same
   // threshold applies to the DG level and the outer DG operator, whose vmult
   // overlaps the exchange with the work on the owned cells (it does not use
-  // the coloring).
+  // the coloring). If none of the FE_Q levels reaches the threshold, the
+  // levels are not colored either (the DG level may still overlap), so that
+  // small problems do not pay for the coloring.
   bool use_overlap = false;
 
   // Can be overwritten by the ninth command line argument.
@@ -218,8 +221,6 @@ namespace multigrid
     std::unique_ptr<Portable::LaplaceOperatorBase<dim, full_number>> fine_level_matrix;
 
     const unsigned int refinement_cycles = 10;
-
-    const bool overlap_communication_computation = use_overlap;
 
     double setup_time;
 
@@ -441,13 +442,25 @@ namespace multigrid
 
     std::string overlap_levels;
 
+    // Three colors on the levels on the finest mesh, but only if at least one
+    // of the FE_Q levels among them is large enough to overlap in vmult(),
+    // see use_overlap. The DG level (the last level) overlaps without the
+    // coloring, so it only needs to reach the threshold itself.
+    const types::global_dof_index min_overlap_dofs =
+      overlap_min_dofs_per_rank * Utilities::MPI::n_mpi_processes(mpi_communicator);
+    const unsigned int first_fine_mesh_level = coarse_triangulations.size() - 1;
+    const unsigned int dg_level              = level_dof_handlers.max_level();
+    bool               color_fine_mesh_levels = false;
+    if (use_overlap)
+      for (unsigned int level = first_fine_mesh_level; level < dg_level; ++level)
+        if (level_dof_handlers[level].n_dofs() >= min_overlap_dofs)
+          color_fine_mesh_levels = true;
+
     for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
       {
-        // three colors on the levels on the finest mesh, see use_overlap
-        const bool colored = use_overlap && level + 1 >= coarse_triangulations.size();
-        const bool overlap_in_vmult =
-          colored && level_dof_handlers[level].n_dofs() >=
-                       overlap_min_dofs_per_rank * Utilities::MPI::n_mpi_processes(mpi_communicator);
+        const bool colored = color_fine_mesh_levels && level >= first_fine_mesh_level;
+        const bool overlap_in_vmult = (level == dg_level ? use_overlap : colored) &&
+                                      level_dof_handlers[level].n_dofs() >= min_overlap_dofs;
         if (overlap_in_vmult)
           overlap_levels += " " + std::to_string(level);
 
@@ -488,7 +501,11 @@ namespace multigrid
       }
 
     if (use_overlap)
-      pcout << "Overlapping vmult on levels:" << overlap_levels << std::endl;
+      pcout << "Overlapping vmult on levels:"
+            << (overlap_levels.empty() ? std::string(" none (all below the threshold)") :
+                                         overlap_levels)
+            << (color_fine_mesh_levels ? "" : ", levels not colored")
+            << std::endl;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
       {
@@ -512,7 +529,7 @@ namespace multigrid
                                                           mapping,
                                                           level_dof_handlers.back(),
                                                           fine_level_constraints,
-                                                          overlap_communication_computation);
+                                                          color_fine_mesh_levels);
         dg_fine_level_matrix->set_overlap_in_vmult(fine_float_matrix->get_overlap_in_vmult());
         if (dg_fine_level_matrix->get_overlap_in_vmult())
           pcout << "Overlapping vmult of the outer DG operator" << std::endl;
