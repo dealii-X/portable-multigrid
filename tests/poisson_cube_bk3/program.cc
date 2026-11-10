@@ -516,44 +516,25 @@ namespace multigrid
   {
     Timer time;
 
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host> system_rhs_host(
-      locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
-
-    const QGauss<dim> quadrature_formula(fe_degree + 1);
-
-    FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
-
-    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
-    const unsigned int n_q_points    = quadrature_formula.size();
-
-    Vector<full_number> cell_rhs(dofs_per_cell);
-
-    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-    for (const auto &cell : dof_handler.active_cell_iterators())
+    // assemble the right-hand side f = 1 on the device with the fine-level
+    // operator, instead of on the host with FEValues and a copy to the device
+    if constexpr (std::is_same_v<full_number, vcycle_number>)
       {
-        if (cell->is_locally_owned())
-          {
-            cell_rhs = 0;
-
-            fe_values.reinit(cell);
-
-            for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
-              for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
-
-            cell->get_dof_indices(local_dof_indices);
-            level_constraints.back().distribute_local_to_global(cell_rhs,
-                                                                local_dof_indices,
-                                                                system_rhs_host);
-          }
+        const auto &system_matrix =
+          dynamic_cast<const Portable::LaplaceOperatorBK3<dim, fe_degree, full_number> &>(
+            *level_matrices.back());
+        system_matrix.compute_rhs(system_rhs_device);
+        system_matrix.get_matrix_free().set_constrained_values(0., system_rhs_device);
       }
-
-    system_rhs_host.compress(VectorOperation::add);
-    LinearAlgebra::ReadWriteVector<full_number> rw_vector(locally_owned_dofs);
-
-    rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
-    system_rhs_device.import_elements(rw_vector, VectorOperation::insert);
+    else
+      {
+        const auto &system_matrix =
+          dynamic_cast<const Portable::LaplaceOperatorBK3<dim, fe_degree, full_number> &>(
+            *fine_level_matrix);
+        system_matrix.compute_rhs(system_rhs_device);
+        system_matrix.get_matrix_free().set_constrained_values(0., system_rhs_device);
+      }
+    Kokkos::fence();
 
     setup_time += time.wall_time();
 
