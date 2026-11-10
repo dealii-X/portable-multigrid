@@ -362,7 +362,7 @@ namespace Portable
 
             BK3::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, number>(
               precomputed_data.shape_values,
-              precomputed_data.JxW,
+              precomputed_data,
               rhs_device,
               dof_indices_per_color[color],
               n_cells,
