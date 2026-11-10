@@ -816,17 +816,19 @@ namespace Portable
             n_blocks,
             threads_per_block);
 
-        BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
-          shape_data.shape_values,
-          dst_device,
-          interpolate_quad_to_boundary,
-          face_values_at_quads,
-          face_normal_derivatives_at_quads,
-          dof_indices,
-          n_cells,
-          n_cells_per_batch,
-          n_blocks,
-          threads_per_block);
+        // only the owned cells: the ghost part of dst is discarded
+        if (n_owned_cells > 0)
+          BK3::DG::distribute_face_to_global<dim, fe_degree + 1, n_q_points_1d, Number>(
+            shape_data.shape_values,
+            dst_device,
+            interpolate_quad_to_boundary,
+            face_values_at_quads,
+            face_normal_derivatives_at_quads,
+            dof_indices,
+            n_owned_cells,
+            n_cells_per_batch,
+            n_blocks,
+            threads_per_block);
       }
 
 
