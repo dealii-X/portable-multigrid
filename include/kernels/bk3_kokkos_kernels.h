@@ -37,7 +37,8 @@ namespace BK3
                            const unsigned int       n_blocks       = numbers::invalid_unsigned_int,
                            const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
                            const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
-                           const CellRangeIdView cell_range_ids    = CellRangeIdView())
+                           const CellRangeIdView cell_range_ids    = CellRangeIdView(),
+                           const bool            fence             = true)
     {
       if (n_cells == 0)
         return;
@@ -190,17 +191,25 @@ namespace BK3
               }
           });
 
-        Kokkos::fence();
+        // Without the fence the kernel runs asynchronously, so that the host
+        // can drive MPI (e.g. the rendezvous protocol of large messages) in
+        // the meantime, see the overlapping vmult of LaplaceOperatorBK3.
+        if (fence)
+          Kokkos::fence();
       }
     }
 
 
 
-    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+    // precomputed_data is the Portable::MatrixFree<dim, Number>::PrecomputedData
+    // of the color (passed by value, so that the kernel captures it); its
+    // JxW_value(cell, q) handles the compressed JxW storage of affine and
+    // Cartesian cells.
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename PrecomputedData>
     void
     KokkosRHSAbstracted(const DeviceView<Number> d_shape_values,
-                        const Kokkos::View<Number **, MemorySpace::Default::kokkos_space> &d_JxW,
-                        DeviceView<Number>                                                 d_out,
+                        const PrecomputedData    precomputed_data,
+                        DeviceView<Number>       d_out,
                         const DoFIndicesView  dof_indices,
                         const unsigned int    n_cells,
                         const unsigned int    n_blocks          = numbers::invalid_unsigned_int,
@@ -306,7 +315,7 @@ namespace BK3
                     if (cell_range_ids.size() > 0)
                       global_cell_index = cell_range_ids(global_cell_index);
 
-                    s_values[tid] = d_JxW(q_local, global_cell_index);
+                    s_values[tid] = precomputed_data.JxW_value(global_cell_index, q_local);
                   }
                 team_member.team_barrier();
 

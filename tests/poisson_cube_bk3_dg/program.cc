@@ -1,3 +1,40 @@
+// Poisson problem on a cube: CG solver preconditioned by a hybrid multigrid
+// (h-levels with Q1, p-levels Q2 and Q4, DG level of degree 4), with optional
+// overlap of the ghost exchange with the computation.
+//
+// Run command (Jupiter, 16 GPUs on 4 nodes):
+//
+//   export OMP_PROC_BIND=false
+//   srun -N 4 -n 16 --ntasks-per-node=4 -c 72 --cpu-bind=cores --gpu-bind=closest
+//        --mem-bind=local --gpus-per-task=1
+//        ./program 4 1 500000000 5 5 d 16384 1 1000000
+//
+// (one command line; written on three lines here)
+//
+// Arguments, in this order:
+//   4          degree:              polynomial degree of the DG discretization
+//                                   (and of the finest continuous Q4 level)
+//   1          minsize:             skip mesh sizes whose projected number of
+//                                   continuous Q4 DoFs is smaller than this
+//   500000000  maxsize:             stop at the first mesh size whose projected
+//                                   number of continuous Q4 DoFs exceeds this
+//   5          n_pre_smooth:        degree of the Chebyshev pre-smoother
+//   5          n_post_smooth:       degree of the Chebyshev post-smoother (must equal
+//                                   n_pre_smooth)
+//   d          doubling:            'd' doubling mesh (DoFs grow by 2x per cycle),
+//                                   anything else uses the square mesh sizes
+//   16384      coarse_granularity:  minimal number of cells per rank on the coarse
+//                                   h-levels (fewer ranks on the coarse levels)
+//   1          overlap:             1 colors the levels on the finest mesh (L7 to
+//                                   L10 and the outer DG operator) and overlaps the
+//                                   ghost exchange with the computation of interior
+//                                   cells in the FE_Q and DG vmult, 0 disables it
+//   1000000    overlap_min_dofs_per_rank: the vmult is overlapped only on levels
+//                                   with at least this many DoFs per rank (smaller
+//                                   FE_Q levels launch all colors and fence once,
+//                                   since overlap costs more than it hides; if no
+//                                   FE_Q level reaches it, nothing is colored)
+
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/quadrature_lib.h>
@@ -61,6 +98,38 @@ namespace multigrid
   using vcycle_number = float;
   using full_number   = double;
 
+  // Minimal number of cells per MPI rank on the geometric coarse levels. A
+  // larger value keeps the coarse levels on fewer ranks (agglomeration). Can
+  // be overwritten by the seventh command line argument.
+  unsigned int coarse_granularity = 16384;
+
+  // Overlap the ghost exchange with the computation in the matrix-vector
+  // products. On the continuous (FE_Q) levels: update_ghost_values_start(),
+  // cells away from the ghost layer, update_ghost_values_finish(), cells at
+  // the ghost layer, compress_start(), remaining cells, compress_finish().
+  // On the DG levels: update_ghost_values_start(), owned cells and the faces
+  // between them, update_ghost_values_finish(), ghost cells and the faces to
+  // them (see LaplaceOperatorDG::set_overlap_in_vmult()). Can be
+  // overwritten by the eighth command line argument (0 or 1).
+  //
+  // Overlapping needs a MatrixFree object with three colors, and the
+  // polynomial and continuous transfers require the same coloring on both
+  // of their levels. Therefore the levels on the finest mesh (the last
+  // h-level, the p-levels and the DG level) get the three colors, while the
+  // h-levels below keep a single color (the geometric transfer does not
+  // depend on the coloring). Of the colored FE_Q levels, only those with at
+  // least overlap_min_dofs_per_rank DoFs per rank actually overlap in
+  // vmult(); on smaller levels the computation is too short to hide the
+  // exchange and the extra kernel launches would only cost time. The same
+  // threshold applies to the DG level and the outer DG operator, whose vmult
+  // overlaps the exchange with the work on the owned cells (it does not use
+  // the coloring). If none of the FE_Q levels reaches the threshold, the
+  // levels are not colored either (the DG level may still overlap), so that
+  // small problems do not pay for the coloring.
+  bool use_overlap = false;
+
+  // Can be overwritten by the ninth command line argument.
+  types::global_dof_index overlap_min_dofs_per_rank = 1000000;
 
 
   template <int dim, int fe_degree>
@@ -153,8 +222,6 @@ namespace multigrid
 
     const unsigned int refinement_cycles = 10;
 
-    const bool overlap_communication_computation = false;
-
     double setup_time;
 
     ConvergenceTable convergence_table;
@@ -172,6 +239,7 @@ namespace multigrid
       DoFHandler<dim>                  &dof_handler;
       AffineConstraints<vcycle_number> &constraints;
       bool                              overlap_communication_computation;
+      bool                              overlap_in_vmult;
       LaplaceProblem<dim, fe_degree>   &parent_problem;
 
       template <unsigned int degree>
@@ -180,7 +248,7 @@ namespace multigrid
       {
         parent_problem.level_matrices[level] =
           std::make_unique<Portable::LaplaceOperatorBK3<dim, degree, vcycle_number>>(
-            dof_handler, constraints, overlap_communication_computation);
+            dof_handler, constraints, overlap_communication_computation, overlap_in_vmult);
       }
     };
 
@@ -263,12 +331,27 @@ namespace multigrid
     Timer time;
 
     coarse_triangulations = MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
-      triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
+      triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(coarse_granularity));
 
     setup_time += time.wall_time();
 
     time_details << "Coarse triangulations created  (CPU/wall)" << time.cpu_time() << "s/"
                  << time.wall_time() << 's' << std::endl;
+
+    for (unsigned int level = 0; level < coarse_triangulations.size(); ++level)
+      {
+        unsigned int owns_cells = 0;
+        for (const auto &cell : coarse_triangulations[level]->active_cell_iterators())
+          if (cell->is_locally_owned())
+            {
+              owns_cells = 1;
+              break;
+            }
+        const unsigned int n_active_ranks = Utilities::MPI::sum(owns_cells, MPI_COMM_WORLD);
+        time_details << "Coarse level " << level << ": "
+                     << coarse_triangulations[level]->n_global_active_cells() << " cells on "
+                     << n_active_ranks << " ranks" << std::endl;
+      }
   }
 
 
@@ -357,15 +440,35 @@ namespace multigrid
     Timer time;
     level_matrices.resize(0, level_dof_handlers.max_level());
 
+    std::string overlap_levels;
+
+    // Three colors on the levels on the finest mesh, but only if at least one
+    // of the FE_Q levels among them is large enough to overlap in vmult(),
+    // see use_overlap. The DG level (the last level) overlaps without the
+    // coloring, so it only needs to reach the threshold itself.
+    const types::global_dof_index min_overlap_dofs =
+      overlap_min_dofs_per_rank * Utilities::MPI::n_mpi_processes(mpi_communicator);
+    const unsigned int first_fine_mesh_level = coarse_triangulations.size() - 1;
+    const unsigned int dg_level              = level_dof_handlers.max_level();
+    bool               color_fine_mesh_levels = false;
+    if (use_overlap)
+      for (unsigned int level = first_fine_mesh_level; level < dg_level; ++level)
+        if (level_dof_handlers[level].n_dofs() >= min_overlap_dofs)
+          color_fine_mesh_levels = true;
+
     for (unsigned int level = 0; level <= level_dof_handlers.max_level(); ++level)
       {
+        const bool colored = color_fine_mesh_levels && level >= first_fine_mesh_level;
+        const bool overlap_in_vmult = (level == dg_level ? use_overlap : colored) &&
+                                      level_dof_handlers[level].n_dofs() >= min_overlap_dofs;
+        if (overlap_in_vmult)
+          overlap_levels += " " + std::to_string(level);
+
         if (level < coarse_triangulations.size())
           {
             level_matrices[level] =
               std::make_unique<Portable::LaplaceOperatorBK3<dim, 1, vcycle_number>>(
-                level_dof_handlers[level],
-                level_constraints[level],
-                overlap_communication_computation);
+                level_dof_handlers[level], level_constraints[level], colored, overlap_in_vmult);
           }
 
         else if (level < level_dof_handlers.max_level())
@@ -374,7 +477,8 @@ namespace multigrid
             LaplaceOperatorRunner runner{level,
                                          level_dof_handlers[level],
                                          level_constraints[level],
-                                         overlap_communication_computation,
+                                         colored,
+                                         overlap_in_vmult,
                                          *this};
 
             bool success = Portable::OperatorDispatchFactory::dispatch(
@@ -385,35 +489,57 @@ namespace multigrid
           }
         else
           {
-            level_matrices[level] = std::make_unique<
+            auto dg_matrix = std::make_unique<
               Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, vcycle_number>>(
               mapping,
               level_dof_handlers[level],
               level_constraints[level],
-              overlap_communication_computation);
+              colored);
+            dg_matrix->set_overlap_in_vmult(overlap_in_vmult);
+            level_matrices[level] = std::move(dg_matrix);
           }
       }
+
+    if (use_overlap)
+      pcout << "Overlapping vmult on levels:"
+            << (overlap_levels.empty() ? std::string(" none (all below the threshold)") :
+                                         overlap_levels)
+            << (color_fine_mesh_levels ? "" : ", levels not colored")
+            << std::endl;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
       {
         const auto &system_matrix = *level_matrices.back();
         system_matrix.initialize_dof_vector(solution_device);
       }
+
     else
       {
-        fine_level_matrix =
-          std::make_unique<Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>>(
-            mapping,
-            level_dof_handlers.back(),
-            fine_level_constraints,
-            overlap_communication_computation);
+        // Downcast the fine-level float matrix to access its topology
+        const auto *fine_float_matrix =
+          dynamic_cast<const Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, vcycle_number> *>(
+            level_matrices.back().get());
 
+        Assert(fine_float_matrix != nullptr, ExcInternalError());
+
+        auto dg_fine_level_matrix =
+          std::make_unique<Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>>();
+
+        dg_fine_level_matrix->reinit_with_shared_topology(*fine_float_matrix,
+                                                          mapping,
+                                                          level_dof_handlers.back(),
+                                                          fine_level_constraints,
+                                                          color_fine_mesh_levels);
+        dg_fine_level_matrix->set_overlap_in_vmult(fine_float_matrix->get_overlap_in_vmult());
+        if (dg_fine_level_matrix->get_overlap_in_vmult())
+          pcout << "Overlapping vmult of the outer DG operator" << std::endl;
+
+        fine_level_matrix = std::move(dg_fine_level_matrix);
         fine_level_matrix->initialize_dof_vector(solution_device);
       }
 
-
     system_rhs_device.reinit(solution_device);
-    ghost_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    //ghost_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
     Kokkos::fence();
 
     setup_time += time.wall_time();
@@ -531,44 +657,19 @@ namespace multigrid
   {
     Timer time;
 
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host> system_rhs_host(
-      locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    // The right-hand side f = 1 is integrated on the device by the fine-level
+    // DG operator, which already holds the cell measures and DoF indices.
+    using FineOperator = Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>;
 
-    const QGauss<dim> quadrature_formula(fe_degree + 1);
+    const FineOperator *fine_operator = nullptr;
+    if constexpr (std::is_same_v<full_number, vcycle_number>)
+      fine_operator = dynamic_cast<const FineOperator *>(level_matrices.back().get());
+    else
+      fine_operator = dynamic_cast<const FineOperator *>(fine_level_matrix.get());
 
-    FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
+    AssertThrow(fine_operator != nullptr, ExcInternalError());
 
-    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
-    const unsigned int n_q_points    = quadrature_formula.size();
-
-    Vector<full_number> cell_rhs(dofs_per_cell);
-
-    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-    for (const auto &cell : dof_handler.active_cell_iterators())
-      {
-        if (cell->is_locally_owned())
-          {
-            cell_rhs = 0;
-
-            fe_values.reinit(cell);
-
-            for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
-              for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
-
-            cell->get_dof_indices(local_dof_indices);
-            level_constraints.back().distribute_local_to_global(cell_rhs,
-                                                                local_dof_indices,
-                                                                system_rhs_host);
-          }
-      }
-
-    system_rhs_host.compress(VectorOperation::add);
-    LinearAlgebra::ReadWriteVector<full_number> rw_vector(locally_owned_dofs);
-
-    rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
-    system_rhs_device.import_elements(rw_vector, VectorOperation::insert);
+    fine_operator->compute_rhs(system_rhs_device, 1.);
 
     setup_time += time.wall_time();
 
@@ -581,11 +682,13 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::solve(const unsigned int n_pre_smooth,
                                         const unsigned int n_post_smooth)
   {
-    multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType> *solver;
+    std::unique_ptr<
+      multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>
+      solver;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
-      solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
+      solver = std::make_unique<
+        multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>(
           level_matrices.back(),
           level_dof_handlers,
           level_constraints,
@@ -596,8 +699,8 @@ namespace multigrid
           n_pre_smooth,
           n_post_smooth);
     else
-      solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
+      solver = std::make_unique<
+        multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>(
           fine_level_matrix,
           level_dof_handlers,
           level_constraints,
@@ -1021,10 +1124,14 @@ main(int argc, char *argv[])
           if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
-                      << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling"
-                      << std::endl
+                      << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling "
+                      << "coarse_granularity overlap overlap_min_dofs_per_rank" << std::endl
                       << "The parameters degree to n_post_smooth are integers, "
-                      << "the last selects between a square mesh or a doubling mesh" << std::endl;
+                      << "doubling selects between a square mesh or a doubling mesh, "
+                      << "coarse_granularity is the minimal number of cells per rank "
+                      << "on the coarse levels, overlap (0 or 1) overlaps the ghost "
+                      << "exchange with the computation on the levels with at least "
+                      << "overlap_min_dofs_per_rank DoFs per rank" << std::endl;
           return 1;
         }
 
@@ -1040,6 +1147,14 @@ main(int argc, char *argv[])
         n_post_smooth = std::atoi(argv[5]);
       if (argc > 6)
         use_doubling_mesh = argv[6][0] == 'd';
+      if (argc > 7)
+        coarse_granularity = std::atoi(argv[7]);
+      if (argc > 8)
+        use_overlap = std::atoi(argv[8]) == 1;
+      if (argc > 9)
+        overlap_min_dofs_per_rank = std::atoll(argv[9]);
+
+      AssertThrow(coarse_granularity > 0, ExcMessage("coarse_granularity must be positive."));
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         std::cout << "Settings of parameters: " << std::endl
@@ -1051,6 +1166,9 @@ main(int argc, char *argv[])
                   << "Number of pre-smoother iters:   " << n_pre_smooth << std::endl
                   << "Number of post-smoother iters:  " << n_post_smooth << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
+                  << "Coarse level granularity:       " << coarse_granularity << std::endl
+                  << "Overlap comm./comp.:            " << use_overlap << std::endl
+                  << "Overlap min DoFs per rank:      " << overlap_min_dofs_per_rank << std::endl
                   << std::endl;
 
       LaplaceRunTime<dimension, minimal_degree, maximal_degree> run(

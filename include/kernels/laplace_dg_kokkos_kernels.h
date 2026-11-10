@@ -38,7 +38,9 @@ namespace BK3
       const unsigned int                                           n_cells,
       const unsigned int n_cells_per_batch = numbers::invalid_unsigned_int,
       const unsigned int n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int threads_per_block = numbers::invalid_unsigned_int)
+      const unsigned int threads_per_block = numbers::invalid_unsigned_int,
+      const unsigned int first             = 0,
+      const bool         fence             = true)
     {
       constexpr int nq_total = Utilities::pow(nq, dim);
 
@@ -90,6 +92,9 @@ namespace BK3
         typedef Kokkos::TeamPolicy<>::member_type member_type;
         Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
         policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+        // the kernel works on the cells (faces) [first, first + n_cells)
+        const int first_index = first;
 
         Kokkos::parallel_for(
           policy, KOKKOS_LAMBDA(member_type team_member) {
@@ -164,7 +169,7 @@ namespace BK3
                     {
                       const int e = tid / co_dimension_size;
 
-                      const int global_cell_index = eb * nelmtPerBatch + e;
+                      const int global_cell_index = first_index + eb * nelmtPerBatch + e;
 
                       if (dim == 2)
                         {
@@ -361,7 +366,7 @@ namespace BK3
                     {
                       const int e = tid / nq_total_per_face;
 
-                      const int global_cell_id = eb * nelmtPerBatch + e;
+                      const int global_cell_id = first_index + eb * nelmtPerBatch + e;
 
                       if (dim == 2)
                         {
@@ -502,7 +507,7 @@ namespace BK3
                     {
                       const int e = tid / co_dimension_size;
 
-                      const int global_cell_id = eb * nelmtPerBatch + e;
+                      const int global_cell_id = first_index + eb * nelmtPerBatch + e;
 
                       const int tensor_offset =
                         global_cell_id * symmetric_tensor_dimension * nq_total;
@@ -842,7 +847,7 @@ namespace BK3
                     {
                       const int e = tid / co_dimension_size;
 
-                      const int global_cell_index = eb * nelmtPerBatch + e;
+                      const int global_cell_index = first_index + eb * nelmtPerBatch + e;
 
                       if (dim == 2)
                         {
@@ -890,7 +895,10 @@ namespace BK3
                 eb += team_member.league_size();
               }
           });
-        Kokkos::fence();
+        // without the fence the kernel runs asynchronously, e.g. while the host
+        // waits for the ghost exchange
+        if (fence)
+          Kokkos::fence();
       }
     }
 
@@ -907,7 +915,9 @@ namespace BK3
       const unsigned int                                                  n_faces,
       const unsigned int n_faces_per_batch = numbers::invalid_unsigned_int,
       const unsigned int n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int threads_per_block = numbers::invalid_unsigned_int)
+      const unsigned int threads_per_block = numbers::invalid_unsigned_int,
+      const unsigned int first             = 0,
+      const bool         fence             = true)
     {
       constexpr int nq_total_per_face = Utilities::pow(nq, dim - 1);
 
@@ -958,6 +968,9 @@ namespace BK3
         typedef Kokkos::TeamPolicy<>::member_type member_type;
         Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
         policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+        // the kernel works on the cells (faces) [first, first + n_cells)
+        const int first_index = first;
 
         Kokkos::parallel_for(
           policy, KOKKOS_LAMBDA(member_type team_member) {
@@ -1033,7 +1046,7 @@ namespace BK3
                       const int e = tid / co_dimension_size;
                       const int q = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int cell_minus = face_info(e_global, 0);
                       const int cell_plus  = face_info(e_global, 1);
@@ -1084,7 +1097,7 @@ namespace BK3
                     {
                       const int e = tid / co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int f_minus = face_info(e_global, 2);
 
@@ -1213,7 +1226,7 @@ namespace BK3
 
                       const int p = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int f_minus = face_info(e_global, 2);
 
@@ -1290,7 +1303,7 @@ namespace BK3
                       const int e = tid / co_dimension_size;
                       const int q = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int cell_minus = face_info(e_global, 0);
                       const int cell_plus  = face_info(e_global, 1);
@@ -1370,7 +1383,10 @@ namespace BK3
                 eb += team_member.league_size();
               }
           });
-        Kokkos::fence();
+        // without the fence the kernel runs asynchronously, e.g. while the host
+        // waits for the ghost exchange
+        if (fence)
+          Kokkos::fence();
       }
     }
 
@@ -1388,7 +1404,9 @@ namespace BK3
       const unsigned int                                                  n_faces,
       const unsigned int n_faces_per_batch = numbers::invalid_unsigned_int,
       const unsigned int n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int threads_per_block = numbers::invalid_unsigned_int)
+      const unsigned int threads_per_block = numbers::invalid_unsigned_int,
+      const unsigned int first             = 0,
+      const bool         fence             = true)
     {
       constexpr int nq_total_per_face = Utilities::pow(nq, dim - 1);
 
@@ -1437,6 +1455,9 @@ namespace BK3
         typedef Kokkos::TeamPolicy<>::member_type member_type;
         Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
         policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+        // the kernel works on the cells (faces) [first, first + n_cells)
+        const int first_index = first;
 
         Kokkos::parallel_for(
           policy, KOKKOS_LAMBDA(member_type team_member) {
@@ -1503,7 +1524,7 @@ namespace BK3
                       const int e = tid / co_dimension_size;
                       const int q = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int cell = face_info(e_global, 0);
                       const int face = face_info(e_global, 2);
@@ -1537,7 +1558,7 @@ namespace BK3
                     {
                       const int e = tid / co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int face = face_info(e_global, 2);
 
@@ -1629,7 +1650,7 @@ namespace BK3
 
                       const int p = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int face = face_info(e_global, 2);
 
@@ -1715,7 +1736,7 @@ namespace BK3
                       const int e = tid / co_dimension_size;
                       const int q = tid % co_dimension_size;
 
-                      const int e_global = eb * nelmtPerBatch + e;
+                      const int e_global = first_index + eb * nelmtPerBatch + e;
 
                       const int cell = face_info(e_global, 0);
                       const int face = face_info(e_global, 2);
@@ -1774,7 +1795,10 @@ namespace BK3
                 eb += team_member.league_size();
               }
           });
-        Kokkos::fence();
+        // without the fence the kernel runs asynchronously, e.g. while the host
+        // waits for the ghost exchange
+        if (fence)
+          Kokkos::fence();
       }
     }
 
@@ -1792,7 +1816,9 @@ namespace BK3
       const unsigned int   n_cells,
       const unsigned int   n_cells_per_batch = numbers::invalid_unsigned_int,
       const unsigned int   n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int   threads_per_block = numbers::invalid_unsigned_int)
+      const unsigned int   threads_per_block = numbers::invalid_unsigned_int,
+      const unsigned int first             = 0,
+      const bool         fence             = true)
     {
       constexpr int nq_total = Utilities::pow(nq, dim);
 
@@ -1840,6 +1866,9 @@ namespace BK3
         typedef Kokkos::TeamPolicy<>::member_type member_type;
         Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
         policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+        // the kernel works on the cells (faces) [first, first + n_cells)
+        const int first_index = first;
 
         Kokkos::parallel_for(
           policy, KOKKOS_LAMBDA(member_type team_member) {
@@ -1909,7 +1938,7 @@ namespace BK3
                         (dim == 3) ? ((q_idx_cell % (nq * nq) / nq)) : (q_idx_cell / nq);
                       const int p = q_idx_cell % nq;
 
-                      const int cell_id = eb * nelmtPerBatch + e;
+                      const int cell_id = first_index + eb * nelmtPerBatch + e;
 
                       Number cell_quad_value = 0.0;
 
@@ -2104,7 +2133,7 @@ namespace BK3
 
                     const int local_idx = tid % nm_total;
 
-                    const int global_cell_index = eb * nelmtPerBatch + e;
+                    const int global_cell_index = first_index + eb * nelmtPerBatch + e;
 
                     // Find where this node lives in the global 'd_out'
                     // vector
@@ -2125,7 +2154,10 @@ namespace BK3
                 eb += team_member.league_size();
               }
           });
-        Kokkos::fence();
+        // without the fence the kernel runs asynchronously, e.g. while the host
+        // waits for the ghost exchange
+        if (fence)
+          Kokkos::fence();
       }
     }
   } // namespace DG
