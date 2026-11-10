@@ -399,21 +399,31 @@ namespace multigrid
         const auto &system_matrix = *level_matrices.back();
         system_matrix.initialize_dof_vector(solution_device);
       }
+
     else
       {
-        fine_level_matrix =
-          std::make_unique<Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>>(
-            mapping,
-            level_dof_handlers.back(),
-            fine_level_constraints,
-            overlap_communication_computation);
+        // Downcast the fine-level float matrix to access its topology
+        const auto *fine_float_matrix =
+          dynamic_cast<const Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, vcycle_number> *>(
+            level_matrices.back().get());
 
+        Assert(fine_float_matrix != nullptr, ExcInternalError());
+
+        auto dg_fine_level_matrix =
+          std::make_unique<Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>>();
+
+        dg_fine_level_matrix->reinit_with_shared_topology(*fine_float_matrix,
+                                                          mapping,
+                                                          level_dof_handlers.back(),
+                                                          fine_level_constraints,
+                                                          overlap_communication_computation);
+
+        fine_level_matrix = std::move(dg_fine_level_matrix);
         fine_level_matrix->initialize_dof_vector(solution_device);
       }
 
-
     system_rhs_device.reinit(solution_device);
-    ghost_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    //ghost_solution_host.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
     Kokkos::fence();
 
     setup_time += time.wall_time();
@@ -531,44 +541,19 @@ namespace multigrid
   {
     Timer time;
 
-    LinearAlgebra::distributed::Vector<full_number, MemorySpace::Host> system_rhs_host(
-      locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    // The right-hand side f = 1 is integrated on the device by the fine-level
+    // DG operator, which already holds the cell measures and DoF indices.
+    using FineOperator = Portable::LaplaceOperatorDG<dim, fe_degree, fe_degree + 1, full_number>;
 
-    const QGauss<dim> quadrature_formula(fe_degree + 1);
+    const FineOperator *fine_operator = nullptr;
+    if constexpr (std::is_same_v<full_number, vcycle_number>)
+      fine_operator = dynamic_cast<const FineOperator *>(level_matrices.back().get());
+    else
+      fine_operator = dynamic_cast<const FineOperator *>(fine_level_matrix.get());
 
-    FEValues<dim> fe_values(fe, quadrature_formula, update_values | update_JxW_values);
+    AssertThrow(fine_operator != nullptr, ExcInternalError());
 
-    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
-    const unsigned int n_q_points    = quadrature_formula.size();
-
-    Vector<full_number> cell_rhs(dofs_per_cell);
-
-    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-    for (const auto &cell : dof_handler.active_cell_iterators())
-      {
-        if (cell->is_locally_owned())
-          {
-            cell_rhs = 0;
-
-            fe_values.reinit(cell);
-
-            for (unsigned int q_index = 0; q_index < n_q_points; ++q_index)
-              for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                cell_rhs(i) += (fe_values.shape_value(i, q_index) * 1.0 * fe_values.JxW(q_index));
-
-            cell->get_dof_indices(local_dof_indices);
-            level_constraints.back().distribute_local_to_global(cell_rhs,
-                                                                local_dof_indices,
-                                                                system_rhs_host);
-          }
-      }
-
-    system_rhs_host.compress(VectorOperation::add);
-    LinearAlgebra::ReadWriteVector<full_number> rw_vector(locally_owned_dofs);
-
-    rw_vector.import_elements(system_rhs_host, VectorOperation::insert);
-    system_rhs_device.import_elements(rw_vector, VectorOperation::insert);
+    fine_operator->compute_rhs(system_rhs_device, 1.);
 
     setup_time += time.wall_time();
 
@@ -581,11 +566,13 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::solve(const unsigned int n_pre_smooth,
                                         const unsigned int n_post_smooth)
   {
-    multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType> *solver;
+    std::unique_ptr<
+      multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>
+      solver;
 
     if constexpr (std::is_same_v<full_number, vcycle_number>)
-      solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
+      solver = std::make_unique<
+        multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>(
           level_matrices.back(),
           level_dof_handlers,
           level_constraints,
@@ -596,8 +583,8 @@ namespace multigrid
           n_pre_smooth,
           n_post_smooth);
     else
-      solver =
-        new multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>(
+      solver = std::make_unique<
+        multigrid::MultigridSolver<dim, fe_degree, vcycle_number, full_number, SmootherType>>(
           fine_level_matrix,
           level_dof_handlers,
           level_constraints,

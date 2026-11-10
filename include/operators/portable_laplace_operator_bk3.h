@@ -580,11 +580,8 @@ namespace Portable
       {
         if (colored_graph[color].size() > 0)
           {
-            const auto        &precomputed_data = matrix_free.get_data(color);
+            const auto        precomputed_data = matrix_free.get_data(color);
             const unsigned int n_cells          = precomputed_data.n_cells;
-
-            const auto &inv_jacobian = precomputed_data.inv_jacobian;
-            const auto &JxW          = precomputed_data.JxW;
 
             G_tensors[color] = Kokkos::View<number *, MemorySpace::Default::kokkos_space>(
               Kokkos::view_alloc("G_tensor_color_" + std::to_string(color),
@@ -600,17 +597,21 @@ namespace Portable
               KOKKOS_LAMBDA(const int cell_id) {
                 for (unsigned int q_point = 0; q_point < n_q_points; q_point++)
                   {
+                    const unsigned int ij  = precomputed_data.inv_jacobian_index(cell_id, q_point);
+                    const number       jxw = precomputed_data.JxW_value(cell_id, q_point);
+
                     number components[symmetric_tensor_dim];
 
                     int idx = 0;
                     for (int d1 = 0; d1 < dim; ++d1)
                       for (int d2 = d1; d2 < dim; ++d2)
                         {
+
                           number sum = 0;
                           for (int k = 0; k < dim; ++k)
-                            sum += inv_jacobian(q_point, cell_id, d1, k) *
-                                   inv_jacobian(q_point, cell_id, d2, k);
-                          components[idx] = JxW(q_point, cell_id) * sum;
+                            sum += precomputed_data.inv_jacobian(ij, d1, k) *
+                                   precomputed_data.inv_jacobian(ij, d2, k);
+                          components[idx] = jxw * sum;
                           ++idx;
                         }
 
@@ -625,7 +626,6 @@ namespace Portable
           }
       }
   }
-
 
   template <int dim, int fe_degree, typename number, int n_q_points_1d>
   void
