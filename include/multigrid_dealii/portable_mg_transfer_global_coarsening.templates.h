@@ -836,9 +836,13 @@ namespace Copy
         /**
          * Shared memory, in bytes, that the two value arrays of a team should
          * not exceed when the number of coarse cells per batch is chosen
-         * automatically; see n_cells_per_batch().
+         * automatically; see n_cells_per_batch(). 48 KB is available per
+         * block on every CUDA device without opting in to larger dynamic
+         * shared memory, and below the 64 KB of local data share of AMD GPUs.
+         * For FE_Q in 3d this gives 111, 48, 8, 3, 2 and 1 cells per team for
+         * degrees 1 to 6 in double precision.
          */
-        static constexpr std::size_t shared_memory_budget = 10800;
+        static constexpr std::size_t shared_memory_budget = 48 * 1024;
 
         /**
          * Return the number of coarse cells processed by one team for the

@@ -32,8 +32,9 @@
 #
 #   DIM=2 MAX_SIZE=100000000 sbatch run_sbatch.sh
 #   NTASKS=4 sbatch --ntasks-per-node=4 --gres=gpu:4 run_sbatch.sh
+#   CELLS_PER_BATCH=4 sbatch run_sbatch.sh
 #
-# Program arguments: dimension degree minsize maxsize doubling.
+# Program arguments: dimension degree minsize maxsize doubling cells_per_batch.
 
 set -u
 
@@ -48,6 +49,7 @@ default_max_size=$((33554432 * degree * degree * degree))
 [ "$default_max_size" -gt 600000000 ] && default_max_size=600000000
 MAX_SIZE=${MAX_SIZE:-$default_max_size}
 MESH=${MESH:-d}          # d: doubling mesh, s: square mesh
+CELLS_PER_BATCH=${CELLS_PER_BATCH:-0}   # coarse cells per team of the copy, 0: automatic
 BUILD_DIR=${BUILD_DIR:-build}
 NTASKS=${NTASKS:-$SLURM_NTASKS_PER_NODE}
 
@@ -65,7 +67,7 @@ if [ ! -x "$BUILD_DIR/program" ]; then
   exit 1
 fi
 
-echo "degree=$degree dim=$DIM sizes=[$MIN_SIZE,$MAX_SIZE] mesh=$MESH ntasks=$NTASKS"
+echo "degree=$degree dim=$DIM sizes=[$MIN_SIZE,$MAX_SIZE] mesh=$MESH ntasks=$NTASKS cells_per_batch=$CELLS_PER_BATCH"
 echo "executable: $BUILD_DIR/program"
 echo "deal.II:    $DEAL_II_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -78,4 +80,4 @@ srun -n "$NTASKS" \
      --gpu-bind=closest \
      --mem-bind=local \
      --gpus-per-task=1 \
-     "$BUILD_DIR/program" "$DIM" "$degree" "$MIN_SIZE" "$MAX_SIZE" "$MESH"
+     "$BUILD_DIR/program" "$DIM" "$degree" "$MIN_SIZE" "$MAX_SIZE" "$MESH" "$CELLS_PER_BATCH"

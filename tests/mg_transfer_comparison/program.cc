@@ -21,9 +21,11 @@
 // reference; timings are the best of five repetitions of n_mv applications,
 // taking the slowest rank.
 //
-// Usage: ./program dimension degree minsize maxsize doubling
+// Usage: ./program dimension degree minsize maxsize doubling [cells_per_batch]
 // (as for tests/abstracted_batched_laplace; degree is the FE_Q degree of
-// both levels, 1 to maximal_degree).
+// both levels, 1 to maximal_degree). The optional last argument fixes the
+// number of coarse cells per team of the `copy` column; 0 or absent selects
+// the automatic choice from the shared memory budget.
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
@@ -74,14 +76,17 @@ namespace multigrid
     TransferComparison();
 
     void
-    run(const std::size_t min_size, const std::size_t max_size, const bool use_doubling_mesh);
+    run(const std::size_t  min_size,
+        const std::size_t  max_size,
+        const bool         use_doubling_mesh,
+        const unsigned int cells_per_batch);
 
   private:
     void
     setup_dofs();
 
     void
-    setup_transfers();
+    setup_transfers(const unsigned int cells_per_batch);
 
     void
     comparison_timing();
@@ -160,7 +165,7 @@ namespace multigrid
 
   template <int dim, int fe_degree>
   void
-  TransferComparison<dim, fe_degree>::setup_transfers()
+  TransferComparison<dim, fe_degree>::setup_transfers(const unsigned int cells_per_batch)
   {
     Timer time;
 
@@ -180,6 +185,8 @@ namespace multigrid
                                              dof_handler_coarse,
                                              constraints_fine,
                                              constraints_coarse);
+    if (cells_per_batch > 0)
+      transfer_copy->set_cells_per_batch(cells_per_batch);
     Kokkos::fence();
     setup_time_copy = time.wall_time();
 
@@ -362,11 +369,14 @@ namespace multigrid
 
   template <int dim, int fe_degree>
   void
-  TransferComparison<dim, fe_degree>::run(const std::size_t min_size,
-                                          const std::size_t max_size,
-                                          const bool        use_doubling_mesh)
+  TransferComparison<dim, fe_degree>::run(const std::size_t  min_size,
+                                          const std::size_t  max_size,
+                                          const bool         use_doubling_mesh,
+                                          const unsigned int cells_per_batch)
   {
-    pcout << "Testing " << fe.get_name() << std::endl;
+    pcout << "Testing " << fe.get_name() << ", copy with "
+          << (cells_per_batch > 0 ? std::to_string(cells_per_batch) : std::string("automatic"))
+          << " coarse cells per team" << std::endl;
 
     // same mesh sequence as tests/abstracted_batched_laplace; the fine mesh
     // is the mesh of that sequence and the coarse mesh the same base mesh
@@ -462,7 +472,7 @@ namespace multigrid
         triangulation_fine.refine_global(n_refine);
 
         setup_dofs();
-        setup_transfers();
+        setup_transfers(cells_per_batch);
         pcout << std::endl;
 
         comparison_timing();
@@ -527,17 +537,18 @@ namespace multigrid
     TransferRunTime(const unsigned int target_degree,
                     const std::size_t  min_size,
                     const std::size_t  max_size,
-                    const bool         use_doubling_mesh)
+                    const bool         use_doubling_mesh,
+                    const unsigned int cells_per_batch)
     {
       if (min_degree > max_degree)
         return;
       if (min_degree == target_degree)
         {
           TransferComparison<dim, min_degree> comparison;
-          comparison.run(min_size, max_size, use_doubling_mesh);
+          comparison.run(min_size, max_size, use_doubling_mesh, cells_per_batch);
         }
       TransferRunTime<dim, (min_degree <= max_degree ? (min_degree + 1) : min_degree), max_degree>
-        m(target_degree, min_size, max_size, use_doubling_mesh);
+        m(target_degree, min_size, max_size, use_doubling_mesh, cells_per_batch);
     }
   };
 } // namespace multigrid
@@ -558,14 +569,17 @@ main(int argc, char *argv[])
       std::size_t  maxsize           = static_cast<std::size_t>(-1);
       std::size_t  minsize           = 1;
       bool         use_doubling_mesh = true;
+      unsigned int cells_per_batch   = 0;
       if (argc == 1)
         {
           if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
-                      << "./program dimension degree minsize maxsize doubling" << std::endl
+                      << "./program dimension degree minsize maxsize doubling [cells_per_batch]"
+                      << std::endl
                       << "The parameters degree to maxsize are integers, "
-                      << "the last selects between a square mesh or a doubling mesh" << std::endl;
+                      << "doubling selects between a square mesh or a doubling mesh, "
+                      << "cells_per_batch fixes the batch of the copy (0: automatic)" << std::endl;
           return 1;
         }
 
@@ -579,6 +593,8 @@ main(int argc, char *argv[])
         maxsize = std::atoll(argv[4]);
       if (argc > 5)
         use_doubling_mesh = argv[5][0] == 'd';
+      if (argc > 6)
+        cells_per_batch = std::atoi(argv[6]);
 
       AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
       AssertThrow(degree >= minimal_degree && degree <= maximal_degree,
@@ -594,21 +610,20 @@ main(int argc, char *argv[])
                   << "Minimum size:                   " << minsize << std::endl
                   << "Maximum size:                   " << maxsize << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
+                  << "Cells per batch (copy):         "
+                  << (cells_per_batch > 0 ? std::to_string(cells_per_batch) : "automatic")
+                  << std::endl
                   << std::endl;
 
       if (dimension == 2)
         {
-          TransferRunTime<2, minimal_degree, maximal_degree> run(degree,
-                                                                 minsize,
-                                                                 maxsize,
-                                                                 use_doubling_mesh);
+          TransferRunTime<2, minimal_degree, maximal_degree> run(
+            degree, minsize, maxsize, use_doubling_mesh, cells_per_batch);
         }
       else
         {
-          TransferRunTime<3, minimal_degree, maximal_degree> run(degree,
-                                                                 minsize,
-                                                                 maxsize,
-                                                                 use_doubling_mesh);
+          TransferRunTime<3, minimal_degree, maximal_degree> run(
+            degree, minsize, maxsize, use_doubling_mesh, cells_per_batch);
         }
     }
   catch (std::exception &exc)
