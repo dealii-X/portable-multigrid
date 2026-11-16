@@ -22,10 +22,14 @@
 // taking the slowest rank.
 //
 // Usage: ./program dimension degree minsize maxsize doubling [cells_per_batch]
+//                  [n_applications]
 // (as for tests/abstracted_batched_laplace; degree is the FE_Q degree of
-// both levels, 1 to maximal_degree). The optional last argument fixes the
+// both levels, 1 to maximal_degree). The optional cells_per_batch fixes the
 // number of coarse cells per team of the `copy` column; 0 or absent selects
-// the automatic choice from the shared memory budget.
+// the automatic choice from the shared memory budget. The optional
+// n_applications overrides the number of applications per timing repetition
+// (default 200, or 50 above 1e7 fine dofs), e.g. for profiling runs. Each
+// timed variant runs inside a Kokkos profiling region named after it.
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
@@ -66,6 +70,9 @@ namespace multigrid
   // degrees 1 to 6 (CellTransferFactory).
   const unsigned int minimal_degree = 1;
   const unsigned int maximal_degree = 6;
+
+  // applications per timing repetition; 0 selects the size-dependent default
+  unsigned int n_applications_override = 0;
 
   template <int dim, int fe_degree>
   class TransferComparison
@@ -289,12 +296,15 @@ namespace multigrid
     const double err_r_bk1     = relative_error(dst_coarse_bk1, dst_coarse_dealii);
 
     // -- timing --
-    const unsigned int n_mv = dof_handler_fine.n_dofs() < 10000000 ? 200 : 50;
+    const unsigned int n_mv = n_applications_override > 0 ?
+                                n_applications_override :
+                                (dof_handler_fine.n_dofs() < 10000000 ? 200u : 50u);
 
-    const auto time_op = [&](const std::function<void()> &func)
+    const auto time_op = [&](const std::string &name, const std::function<void()> &func)
     {
       double best = 1e10;
       Timer  time;
+      Kokkos::Profiling::pushRegion(name);
       for (unsigned int i = 0; i < 5; ++i)
         {
           Kokkos::fence();
@@ -308,26 +318,31 @@ namespace multigrid
 
           best = std::min(best, stat.max);
         }
+      Kokkos::Profiling::popRegion();
       return best;
     };
 
     const double t_p_dealii =
-      time_op([&]() { transfer_dealii->prolongate_and_add(dst_fine_dealii, src_coarse); });
+      time_op("P_dealii",
+              [&]() { transfer_dealii->prolongate_and_add(dst_fine_dealii, src_coarse); });
     const double t_p_copy =
-      time_op([&]() { transfer_copy->prolongate_and_add(dst_fine_copy, src_coarse); });
+      time_op("P_copy", [&]() { transfer_copy->prolongate_and_add(dst_fine_copy, src_coarse); });
     const double t_p_copy_b1 =
-      time_op([&]() { transfer_copy_b1->prolongate_and_add(dst_fine_copy_b1, src_coarse); });
+      time_op("P_copy_b1",
+              [&]() { transfer_copy_b1->prolongate_and_add(dst_fine_copy_b1, src_coarse); });
     const double t_p_bk1 =
-      time_op([&]() { transfer_bk1->prolongate_and_add(dst_fine_bk1, src_coarse); });
+      time_op("P_bk1", [&]() { transfer_bk1->prolongate_and_add(dst_fine_bk1, src_coarse); });
 
     const double t_r_dealii =
-      time_op([&]() { transfer_dealii->restrict_and_add(dst_coarse_dealii, src_fine); });
+      time_op("R_dealii",
+              [&]() { transfer_dealii->restrict_and_add(dst_coarse_dealii, src_fine); });
     const double t_r_copy =
-      time_op([&]() { transfer_copy->restrict_and_add(dst_coarse_copy, src_fine); });
+      time_op("R_copy", [&]() { transfer_copy->restrict_and_add(dst_coarse_copy, src_fine); });
     const double t_r_copy_b1 =
-      time_op([&]() { transfer_copy_b1->restrict_and_add(dst_coarse_copy_b1, src_fine); });
+      time_op("R_copy_b1",
+              [&]() { transfer_copy_b1->restrict_and_add(dst_coarse_copy_b1, src_fine); });
     const double t_r_bk1 =
-      time_op([&]() { transfer_bk1->restrict_and_add(dst_coarse_bk1, src_fine); });
+      time_op("R_bk1", [&]() { transfer_bk1->restrict_and_add(dst_coarse_bk1, src_fine); });
 
     timing_table.add_value("cells", triangulation_fine.n_global_active_cells());
     timing_table.add_value("dofs_fine", dof_handler_fine.n_dofs());
@@ -575,8 +590,8 @@ main(int argc, char *argv[])
           if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
-                      << "./program dimension degree minsize maxsize doubling [cells_per_batch]"
-                      << std::endl
+                      << "./program dimension degree minsize maxsize doubling "
+                      << "[cells_per_batch] [n_applications]" << std::endl
                       << "The parameters degree to maxsize are integers, "
                       << "doubling selects between a square mesh or a doubling mesh, "
                       << "cells_per_batch fixes the batch of the copy (0: automatic)" << std::endl;
@@ -595,6 +610,8 @@ main(int argc, char *argv[])
         use_doubling_mesh = argv[5][0] == 'd';
       if (argc > 6)
         cells_per_batch = std::atoi(argv[6]);
+      if (argc > 7)
+        n_applications_override = std::atoi(argv[7]);
 
       AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
       AssertThrow(degree >= minimal_degree && degree <= maximal_degree,
@@ -612,6 +629,10 @@ main(int argc, char *argv[])
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
                   << "Cells per batch (copy):         "
                   << (cells_per_batch > 0 ? std::to_string(cells_per_batch) : "automatic")
+                  << std::endl
+                  << "Applications per repetition:    "
+                  << (n_applications_override > 0 ? std::to_string(n_applications_override) :
+                                                    "default")
                   << std::endl
                   << std::endl;
 
