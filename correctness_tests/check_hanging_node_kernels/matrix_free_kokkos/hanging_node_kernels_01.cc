@@ -12,15 +12,12 @@
 
 
 
-// Compare the result of Portable::internal::batched::resolve_hanging_nodes()
-// with FEEvaluationImplHangingNodes. Same as
+// Compare the result of Portable::internal::resolve_hanging_nodes() with
+// FEEvaluationImplHangingNodes. Same as
 // tests/matrix_free/hanging_node_kernels_01.cc, but all constraint masks of
 // one dimension and degree are resolved on the device in a single kernel
-// launch, with the masks distributed as cells over the batches of several
-// teams, once with batches of four cells and once with a single cell per
-// team. The printed values are the ones of the batches of four cells; the
-// ones of a single cell per team must be identical. The interpolation
-// weights are the ones Portable::MatrixFree uses.
+// launch with one cell per team, like Portable::FEEvaluation does. The
+// interpolation weights are the ones Portable::MatrixFree uses.
 
 #include <deal.II/base/memory_space.h>
 
@@ -59,47 +56,37 @@ using ScratchView = Kokkos::View<
 
 
 
-// One team resolves the hanging nodes of the cells [first, first + n) of its
-// batch, staged cell after cell in shared memory.
+// One team resolves the hanging nodes of one cell, staged in shared memory,
+// like Portable::FEEvaluation::read_dof_values() and
+// distribute_local_to_global() do.
 template <int dim, int fe_degree, bool transpose>
-struct ResolveBatch
+struct ResolveCell
 {
   static constexpr int n_dofs = Utilities::pow(fe_degree + 1, dim);
 
   DeviceView<double *>          weights;
   DeviceView<ConstraintKinds *> masks;
   DeviceView<double *>          values;
-  int                           n_cells;
-  int                           cells_per_team;
 
   DEAL_II_HOST_DEVICE void
   operator()(const TeamHandle &team_member) const
   {
-    const int first_cell       = team_member.league_rank() * cells_per_team;
-    const int n_cells_in_batch = (n_cells - first_cell < cells_per_team) ?
-                                   (n_cells - first_cell) :
-                                   cells_per_team;
-    const int n_values         = n_cells_in_batch * n_dofs;
-    const int offset           = first_cell * n_dofs;
+    const int cell   = team_member.league_rank();
+    const int offset = cell * n_dofs;
 
-    ScratchView shared_values(team_member.team_shmem(),
-                              cells_per_team * n_dofs);
+    ScratchView shared_values(team_member.team_shmem(), n_dofs);
 
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_values),
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_dofs),
                          [&](const int i) {
                            shared_values(i) = values(offset + i);
                          });
     team_member.team_barrier();
 
-    Portable::internal::batched::
-      resolve_hanging_nodes<dim, fe_degree, transpose>(
-        team_member,
-        weights,
-        [&](const int cell) { return masks(first_cell + cell); },
-        n_cells_in_batch,
-        shared_values);
+    if (masks(cell) != ConstraintKinds::unconstrained)
+      Portable::internal::resolve_hanging_nodes<dim, fe_degree, transpose>(
+        team_member, weights, masks(cell), shared_values);
 
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_values),
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_dofs),
                          [&](const int i) {
                            values(offset + i) = shared_values(i);
                          });
@@ -112,9 +99,8 @@ struct ResolveBatch
 // from the values 0, 1, 2, ... like in hanging_node_kernels_01.
 template <int dim, int fe_degree, bool transpose>
 std::vector<double>
-run_batched(const AlignedVector<double>        &subface_interpolation_matrix,
-            const std::vector<ConstraintKinds> &cell_masks,
-            const int                           cells_per_team)
+run_on_device(const AlignedVector<double>        &subface_interpolation_matrix,
+              const std::vector<ConstraintKinds> &cell_masks)
 {
   constexpr int n_dofs  = Utilities::pow(fe_degree + 1, dim);
   const int     n_cells = cell_masks.size();
@@ -139,17 +125,16 @@ run_batched(const AlignedVector<double>        &subface_interpolation_matrix,
       values_host(cell * n_dofs + i) = i;
   Kokkos::deep_copy(values, values_host);
 
-  const int n_teams = (n_cells + cells_per_team - 1) / cells_per_team;
-
   MemorySpace::Default::kokkos_space::execution_space exec;
   Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>
-    team_policy(exec, n_teams, Kokkos::AUTO);
+    team_policy(exec, n_cells, Kokkos::AUTO);
   team_policy.set_scratch_size(
-    0, Kokkos::PerTeam(ScratchView::shmem_size(cells_per_team * n_dofs)));
+    0, Kokkos::PerTeam(ScratchView::shmem_size(n_dofs)));
 
   Kokkos::parallel_for(team_policy,
-                       ResolveBatch<dim, fe_degree, transpose>{
-                         weights, masks, values, n_cells, cells_per_team});
+                       ResolveCell<dim, fe_degree, transpose>{weights,
+                                                              masks,
+                                                              values});
 
   Kokkos::deep_copy(values_host, values);
 
@@ -200,19 +185,11 @@ test(const std::vector<std::vector<ConstraintKinds>> &groups)
   for (const auto &group : groups)
     cell_masks.insert(cell_masks.end(), group.begin(), group.end());
 
-  // batches of 4 cells, where the last team gets a shorter batch, and of a
-  // single cell, which is how the cell-wise callers would use the kernel
-  const auto run = [&](const int cells_per_team) {
-    return std::array<std::vector<double>, 2>{
-      {run_batched<dim, fe_degree, false>(subface_interpolation_matrix,
-                                          cell_masks,
-                                          cells_per_team),
-       run_batched<dim, fe_degree, true>(subface_interpolation_matrix,
-                                         cell_masks,
-                                         cells_per_team)}};
-  };
-  const auto batched     = run(4);
-  const auto single_cell = run(1);
+  const std::array<std::vector<double>, 2> device = {
+    {run_on_device<dim, fe_degree, false>(subface_interpolation_matrix,
+                                          cell_masks),
+     run_on_device<dim, fe_degree, true>(subface_interpolation_matrix,
+                                         cell_masks)}};
 
   const unsigned int n_dofs = fe.n_dofs_per_cell();
   unsigned int       cell   = 0;
@@ -250,19 +227,14 @@ test(const std::vector<std::vector<ConstraintKinds>> &groups)
               deallog << std::endl;
 
               for (unsigned int i = 0; i < n_dofs; ++i)
-                deallog << batched[b][cell * n_dofs + i] << ' ';
+                deallog << device[b][cell * n_dofs + i] << ' ';
               deallog << std::endl;
               deallog << std::endl;
 
               for (unsigned int i = 0; i < n_dofs; ++i)
-                {
-                  AssertThrow(std::abs(values[i][0] -
-                                       batched[b][cell * n_dofs + i]) < 1e-10,
-                              ExcInternalError());
-                  AssertThrow(single_cell[b][cell * n_dofs + i] ==
-                                batched[b][cell * n_dofs + i],
-                              ExcInternalError());
-                }
+                AssertThrow(std::abs(values[i][0] -
+                                     device[b][cell * n_dofs + i]) < 1e-10,
+                            ExcInternalError());
             }
           ++cell;
         }

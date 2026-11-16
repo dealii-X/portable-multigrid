@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=batched-hanging-nodes
+#SBATCH --job-name=hanging-node-kernels
 #SBATCH --account=dealii-X
 #SBATCH --partition=booster
 #SBATCH --nodes=1
@@ -9,11 +9,11 @@
 #SBATCH --cpus-per-task=12
 #SBATCH --threads-per-core=1
 #SBATCH --time=00:10:00
-#SBATCH --output=batched-hanging-nodes-%j.out
+#SBATCH --output=hanging-node-kernels-%j.out
 #
-# Run the deal.II tests hanging_node_kernels_batched_01 and _02 (branch
-# batched-hanging-nodes) on one GPU of JUPITER and compare their output with
-# the expected output recorded on the CPU.
+# Run the deal.II tests hanging_node_kernels_01 and _02 (branch
+# portable-hanging-nodes-line-kernel) on one GPU of JUPITER and compare their
+# output with the expected output recorded on the CPU.
 #
 # Build on the login node against the deal.II that scripts/jupiter/env.sh
 # points to, then submit, both from this directory:
@@ -43,7 +43,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 echo
 
 status=0
-for test in hanging_node_kernels_batched_01 hanging_node_kernels_batched_02; do
+for test in hanging_node_kernels_01 hanging_node_kernels_02; do
   executable=$PWD/$BUILD_DIR/$test
   if [ ! -x "$executable" ]; then
     echo "no executable $executable, build first (see header of this script)" >&2

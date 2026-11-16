@@ -16,8 +16,9 @@
 # adaptively refined mesh, one job per degree, 2d and 3d, ball and random
 # mesh, on one GPU of JUPITER. Each configuration runs with every build in
 # BUILD_DIRS right after each other in the same allocation, by default the
-# cell-wise hanging-node kernel of the installed deal.II (build-master) and
-# the batched one through overlay/ (build-batched); |A src| must agree.
+# hanging-node kernel of the installed deal.II (build-master) and the
+# line-wise one of the PR through overlay/ (build-line-wise); |A src| must
+# agree.
 #
 # The first array task also writes the register, shared and stack usage of
 # all kernels of each build (the cell loops are
@@ -29,8 +30,8 @@
 #   source ../../scripts/jupiter/env.sh [DEAL_II_DIR]
 #   cmake -S . -B build-master -DCMAKE_BUILD_TYPE=Release -DDEAL_II_DIR=$DEAL_II_DIR
 #   cmake --build build-master
-#   cmake -S . -B build-batched -DCMAKE_BUILD_TYPE=Release -DDEAL_II_DIR=$DEAL_II_DIR -DHANGING_NODES_OVERLAY=ON
-#   cmake --build build-batched
+#   cmake -S . -B build-line-wise -DCMAKE_BUILD_TYPE=Release -DDEAL_II_DIR=$DEAL_II_DIR -DHANGING_NODES_OVERLAY=ON
+#   cmake --build build-line-wise
 #   sbatch run_sbatch.sh
 #
 # Slurm opens the output file before the script runs, so results/ must exist
@@ -48,7 +49,7 @@ DIMS=${DIMS:-"2 3"}
 MESHES=${MESHES:-"b r"}
 N_DOFS=${N_DOFS:-33554432}   # 2^25 dofs
 N_REPETITIONS=${N_REPETITIONS:-50}
-BUILD_DIRS=${BUILD_DIRS:-"build-master build-batched"}
+BUILD_DIRS=${BUILD_DIRS:-"build-master build-line-wise"}
 degree=$SLURM_ARRAY_TASK_ID
 
 # module stack, LD_LIBRARY_PATH and thread pinning (DEAL_II_DIR from the

@@ -30,13 +30,15 @@ target_include_directories(${TARGET} PUBLIC
 
 # 7. -DHANGING_NODES_OVERLAY=ON: put overlay/ in front of the installed deal.II
 # headers, so that Portable::FEEvaluation resolves hanging nodes with the
-# batched kernel (batch size 1) instead of the cell-wise one, without
-# rebuilding deal.II (all of it is instantiated in this program).
-option(HANGING_NODES_OVERLAY "Use the batched hanging-node kernel through overlay/" OFF)
+# line-wise kernel of the deal.II branch portable-hanging-nodes-line-kernel
+# (overlay/ holds its portable_hanging_nodes_internal.h verbatim) instead of
+# the installed one, without rebuilding deal.II (all of it is instantiated in
+# this program).
+option(HANGING_NODES_OVERLAY "Use the line-wise hanging-node kernel through overlay/" OFF)
 if(HANGING_NODES_OVERLAY)
   target_include_directories(${TARGET} BEFORE PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/overlay)
   target_compile_definitions(${TARGET} PRIVATE HANGING_NODES_OVERLAY)
-  message(STATUS "hanging-node kernel: batched (overlay/)")
+  message(STATUS "hanging-node kernel: line-wise (overlay/)")
 else()
   message(STATUS "hanging-node kernel: cell-wise (installed deal.II)")
 endif()

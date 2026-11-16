@@ -4,11 +4,12 @@
 //
 //  1. cuobjdump --dump-resource-usage on the binary gives the register count
 //     of the real cell-loop kernels (Portable::internal::ApplyKernel with the
-//     local operator below), to judge whether the extra registers of the
-//     batched hanging-node kernel can lower the occupancy of an operator.
-//  2. Built once against deal.II master and once against the deal.II branch
-//     in which Portable::FEEvaluation resolves hanging nodes with the batched
-//     kernel (batch size 1), the vmult timings are the end-to-end comparison.
+//     local operator below), to judge whether the registers of the
+//     line-wise hanging-node kernel can lower the occupancy of an operator.
+//  2. Built once against deal.II master and once with overlay/, the
+//     portable_hanging_nodes_internal.h of the deal.II branch
+//     portable-hanging-nodes-line-kernel (one thread per line), the vmult
+//     timings are the end-to-end comparison.
 //
 // The mesh is a cube, refined globally to roughly the requested number of
 // dofs, then once more either inside a ball around the center (mesh 'b':
@@ -195,7 +196,7 @@ run(const long long target_n_dofs, const int n_repetitions, const char mesh)
   std::cout << "dim=" << dim << " degree=" << fe_degree
             << " mesh=" << ((mesh == 'r') ? "random half" : "ball") << " hanging-node kernel="
 #ifdef HANGING_NODES_OVERLAY
-            << "batched (overlay)"
+            << "line-wise (overlay)"
 #else
             << "cell-wise"
 #endif

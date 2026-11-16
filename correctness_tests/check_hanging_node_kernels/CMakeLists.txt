@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.13.4)
 
 # Standalone build of the deal.II tests
-#   tests/matrix_free_kokkos/hanging_node_kernels_batched_01
-#   tests/matrix_free_kokkos/hanging_node_kernels_batched_02
-# of the deal.II branch batched-hanging-nodes against an installed deal.II
-# that does not have Portable::internal::batched::resolve_hanging_nodes() yet.
+#   tests/matrix_free_kokkos/hanging_node_kernels_01
+#   tests/matrix_free_kokkos/hanging_node_kernels_02
+# of the deal.II branch portable-hanging-nodes-line-kernel (commit 3db80e0257:
+# Portable::internal::resolve_hanging_nodes() with one thread per line)
+# against an installed deal.II with the old kernels.
 #
 # matrix_free_kokkos/, tests.h and overlay/ are verbatim copies from that
 # branch. The header in overlay/ is template-only, so putting it in front of
@@ -19,9 +20,9 @@ if(NOT ${deal.II_FOUND})
 endif()
 
 deal_ii_initialize_cached_variables()
-project(check_batched_hanging_nodes CXX)
+project(check_hanging_node_kernels CXX)
 
-foreach(test hanging_node_kernels_batched_01 hanging_node_kernels_batched_02)
+foreach(test hanging_node_kernels_01 hanging_node_kernels_02)
   add_executable(${test} matrix_free_kokkos/${test}.cc)
   deal_ii_setup_target(${test})
   # -I overlay before deal.II's own include directories
