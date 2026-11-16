@@ -26,6 +26,8 @@ export DEAL_II_DIR=${1:-${DEAL_II_DIR:-$WORK/dealii/dealii-master}}
 
 module --force purge
 module load Stages/2026
+module load GCCcore/.14.3.0
+module load CMake/4.0.3
 module load nvidia-compilers
 module load OpenMPI # deal.II is built against OpenMPI; ParaStationMPI breaks the ABI
 module load FlexiBLAS
