@@ -39,10 +39,14 @@ set -u
 
 DIM=${DIM:-3}
 MIN_SIZE=${MIN_SIZE:-1000}
-# Four transfers keep per-cell fine dof indices and weights (about 130 bytes
-# per fine dof each at degree 5), so about 5e8 fine dofs fit a GH200 node;
-# 1e9 was OOM-killed.
-MAX_SIZE=${MAX_SIZE:-600000000}
+# Default size cap from the OOM kills seen on a GH200 node with one rank:
+# 2^26 fine cells (the two triangulations on one rank) at degrees 1 and 2,
+# and 1e9 fine dofs (per-cell indices and weights of four transfers) at
+# degree 5. Allow 2^25 fine cells, i.e. 2^25 * degree^3 dofs, at most 6e8.
+degree=$SLURM_ARRAY_TASK_ID
+default_max_size=$((33554432 * degree * degree * degree))
+[ "$default_max_size" -gt 600000000 ] && default_max_size=600000000
+MAX_SIZE=${MAX_SIZE:-$default_max_size}
 MESH=${MESH:-d}          # d: doubling mesh, s: square mesh
 BUILD_DIR=${BUILD_DIR:-build}
 NTASKS=${NTASKS:-$SLURM_NTASKS_PER_NODE}
@@ -61,7 +65,7 @@ if [ ! -x "$BUILD_DIR/program" ]; then
   exit 1
 fi
 
-echo "degree=$SLURM_ARRAY_TASK_ID dim=$DIM sizes=[$MIN_SIZE,$MAX_SIZE] mesh=$MESH ntasks=$NTASKS"
+echo "degree=$degree dim=$DIM sizes=[$MIN_SIZE,$MAX_SIZE] mesh=$MESH ntasks=$NTASKS"
 echo "executable: $BUILD_DIR/program"
 echo "deal.II:    $DEAL_II_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -74,4 +78,4 @@ srun -n "$NTASKS" \
      --gpu-bind=closest \
      --mem-bind=local \
      --gpus-per-task=1 \
-     "$BUILD_DIR/program" "$DIM" "$SLURM_ARRAY_TASK_ID" "$MIN_SIZE" "$MAX_SIZE" "$MESH"
+     "$BUILD_DIR/program" "$DIM" "$degree" "$MIN_SIZE" "$MAX_SIZE" "$MESH"
