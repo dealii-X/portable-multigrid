@@ -54,130 +54,69 @@ namespace Copy
 
 
       /**
-       * Helper class to select the right templated implementation.
+       * Select the kernel instantiation of a transfer scheme on the host.
+       *
+       * The schemes of a geometric transfer between FE_Q spaces of degree p
+       * are the identity scheme (degree_fine == degree_coarse == p, cells
+       * present on both levels) and the interpolation scheme from a coarse
+       * cell to its children (degree_fine == 2p). run() calls
+       * `launcher.template run<degree_fine, degree_coarse>()` for the
+       * matching pair, so that every kernel is compiled for exactly one pair
+       * of degrees: the loop bounds and the numbers of DoFs per cell are
+       * compile-time constants, and the register allocation of a kernel is
+       * not determined by the largest degree any scheme might use, as it
+       * would be with a switch over the degrees inside the kernel.
        *
        * @note This class is similar to internal::FEEvaluationFactory
        */
       class CellTransferFactory
       {
       public:
-        static const unsigned int max_degree = 4;
+        static const unsigned int max_degree = 6;
 
         CellTransferFactory(const unsigned int degree_fine, const unsigned int degree_coarse)
           : degree_fine(degree_fine)
           , degree_coarse(degree_coarse)
         {}
 
-        template <typename KernelType>
-        DEAL_II_HOST_DEVICE bool
-        run(KernelType &kernel) const
+        /**
+         * Return false if the pair of degrees is not supported.
+         */
+        template <typename LauncherType>
+        bool
+        run(const LauncherType &launcher) const
         {
-          // h-MG can use a faster path
-          if (degree_fine == 2 && degree_coarse == 1)
-            {
-              kernel.template run<2, 1>();
-              return true; // fast path taken
-            }
-          if (degree_fine == 4 && degree_coarse == 2)
-            {
-              kernel.template run<4, 2>();
-              return true; // fast path taken
-            }
-          if (degree_fine == 6 && degree_coarse == 3)
-            {
-              kernel.template run<6, 3>();
-              return true; // fast path taken
-            }
-          if (degree_fine == 8 && degree_coarse == 4)
-            {
-              kernel.template run<8, 4>();
-              return true; // fast path taken
-            }
-          if (degree_fine == 10 && degree_coarse == 5)
-            {
-              kernel.template run<10, 5>();
-              return true; // fast path taken
-            }
-          if (degree_fine == 12 && degree_coarse == 6)
-            {
-              kernel.template run<12, 6>();
-              return true; // fast path taken
-            }
+#define DEAL_II_TRANSFER_DEGREE_CASE(p)    \
+  case p:                                  \
+    if (degree_fine == p)                  \
+      {                                    \
+        launcher.template run<p, p>();     \
+        return true;                       \
+      }                                    \
+    if (degree_fine == 2 * p)              \
+      {                                    \
+        launcher.template run<2 * p, p>(); \
+        return true;                       \
+      }                                    \
+    return false;
 
-          // due to limited functionality (e.g., FE_Q only) at the moment this
-          // should be unreachable due to the checks in the initialization phase
-          return false; // indicate that slow path has been taken
+          switch (degree_coarse)
+            {
+              DEAL_II_TRANSFER_DEGREE_CASE(1)
+              DEAL_II_TRANSFER_DEGREE_CASE(2)
+              DEAL_II_TRANSFER_DEGREE_CASE(3)
+              DEAL_II_TRANSFER_DEGREE_CASE(4)
+              DEAL_II_TRANSFER_DEGREE_CASE(5)
+              DEAL_II_TRANSFER_DEGREE_CASE(6)
+              default:
+                return false;
+            }
+#undef DEAL_II_TRANSFER_DEGREE_CASE
         }
 
       private:
         const unsigned int degree_fine;
         const unsigned int degree_coarse;
-      };
-
-
-
-      /**
-       * Dispatch resolve_hanging_nodes for a run-time coarse degree.
-       */
-      class HangingNodeDegreeFactory
-      {
-      public:
-        static const unsigned int max_degree = 9;
-
-        explicit HangingNodeDegreeFactory(const unsigned int degree)
-          : degree(degree)
-        {}
-
-        template <int dim, bool transpose, typename Number, typename ViewType>
-        DEAL_II_HOST_DEVICE bool
-        run(
-          const Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type
-                                                                      &team_member,
-          Kokkos::View<Number *, MemorySpace::Default::kokkos_space>   constraint_weights,
-          const dealii::internal::MatrixFreeFunctions::ConstraintKinds constraint_mask,
-          ViewType                                                     values) const
-        {
-          // resolve_hanging_nodes() only implements dim == 2 and dim == 3.
-          if constexpr (dim < 2)
-            {
-              (void)team_member;
-              (void)constraint_weights;
-              (void)constraint_mask;
-              (void)values;
-              return false;
-            }
-          else
-            {
-#define DEAL_II_HANGING_NODE_DEGREE_CASE(degree_value)                                \
-  case degree_value:                                                                  \
-    {                                                                                 \
-      resolve_hanging_nodes<dim, degree_value, transpose, Number>(team_member,        \
-                                                                  constraint_weights, \
-                                                                  constraint_mask,    \
-                                                                  values);            \
-      return true;                                                                    \
-    }
-
-              switch (degree)
-                {
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(1)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(2)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(3)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(4)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(5)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(6)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(7)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(8)
-                  DEAL_II_HANGING_NODE_DEGREE_CASE(9)
-                  default:
-                    return false;
-                }
-#undef DEAL_II_HANGING_NODE_DEGREE_CASE
-            }
-        }
-
-      private:
-        const unsigned int degree;
       };
 
 
@@ -836,13 +775,16 @@ namespace Copy
         /**
          * Shared memory, in bytes, that the two value arrays of a team should
          * not exceed when the number of coarse cells per batch is chosen
-         * automatically; see n_cells_per_batch(). 48 KB is available per
-         * block on every CUDA device without opting in to larger dynamic
-         * shared memory, and below the 64 KB of local data share of AMD GPUs.
-         * For FE_Q in 3d this gives 111, 48, 8, 3, 2 and 1 cells per team for
-         * degrees 1 to 6 in double precision.
+         * automatically; see n_cells_per_batch(). Since the team has one
+         * thread per line of a batch, the budget also bounds the team size:
+         * for FE_Q in 3d in double precision it gives 25, 5, 1, 1, 1 and 1
+         * cells, and teams of 225, 125, 49, 81, 121 and 169 threads, for
+         * degrees 1 to 6. Measured on GH200, wider batches (up to 1024
+         * threads with 48 KB) lose up to 1.8x at low degree, because larger
+         * teams wait longer at each barrier and fewer of them fit on a
+         * multiprocessor to hide memory latency.
          */
-        static constexpr std::size_t shared_memory_budget = 48 * 1024;
+        static constexpr std::size_t shared_memory_budget = 10800;
 
         /**
          * Return the number of coarse cells processed by one team for the
@@ -938,234 +880,54 @@ namespace Copy
                  SharedViewScratchPad::shmem_size(prolongation_matrix_size);
         }
 
+        /**
+         * Launch the kernel of one scheme with the degrees as template
+         * arguments, see CellTransferFactory.
+         */
+        template <int dim, typename VectorType, typename SchemeType, bool is_prolongation>
+        struct SchemeLauncher
+        {
+          const MGTwoLevelTransfer<dim, VectorType> &transfer;
+          const SchemeType                          &scheme;
+          const unsigned int                         scheme_index;
+          VectorType                                &dst;
+          const VectorType                          &src;
+
+          template <int degree_fine, int degree_coarse>
+          void
+          run() const
+          {
+            if constexpr (is_prolongation)
+              prolongate_and_add_scheme<dim, degree_fine, degree_coarse>(
+                transfer, scheme, scheme_index, dst, src);
+            else
+              restrict_and_add_scheme<dim, degree_fine, degree_coarse>(
+                transfer, scheme, scheme_index, dst, src);
+          }
+        };
+
         template <int dim, typename VectorType>
         static void
         prolongate_and_add_internal(const MGTwoLevelTransfer<dim, VectorType> &transfer,
                                     VectorType                                &dst,
                                     const VectorType                          &src)
         {
-          using TeamPolicy =
-            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
-
-          using TeamHandle =
-            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type;
-
-          using Number = typename VectorType::value_type;
-
-          using SharedViewScratchPad =
-            Kokkos::View<Number *,
-                         MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
-                         Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
-
-          MemorySpace::Default::kokkos_space::execution_space exec;
-
-          dealii::Portable::DeviceVector<Number> dst_device(dst.get_values(),
-                                                            dst.locally_owned_size());
-          dealii::Portable::DeviceVector<Number> src_device(src.get_values(),
-                                                            src.locally_owned_size());
-
           unsigned int scheme_index = 0;
-
-          const unsigned int n_components         = transfer.n_components;
-          const auto         hanging_node_weights = transfer.hanging_node_constraint_weights;
-
           for (const auto &scheme : transfer.schemes)
             {
-              // Per scheme we select:
-              // - whether a prolongation matrix is needed, or the levels share
-              //   the same cells (identity);
-              // - how coarse constraints are applied: Dirichlet via
-              //   invalid_unsigned_int indices, hanging nodes via masks, or
-              //   general AffineConstraints via CRS.
-              if (scheme.n_coarse_cells == 0)
-                continue;
-
-              const bool needs_interpolation = scheme.prolongation_matrix.extent(0) > 0;
-              const bool has_hanging_nodes   = scheme.hanging_node_masks.extent(0) > 0;
-
-              CellTransferFactory      cell_transfer(scheme.degree_fine, scheme.degree_coarse);
-              HangingNodeDegreeFactory hanging_node_factory(scheme.degree_coarse);
-
-              // One team processes a batch of coarse cells; the last batch may
-              // be shorter.
-              const unsigned int cells_per_batch =
-                n_cells_per_batch<Number>(scheme, n_components, transfer.n_cells_per_batch);
-              const unsigned int n_batches =
-                (scheme.n_coarse_cells + cells_per_batch - 1) / cells_per_batch;
-
-              unsigned int      values_coarse_size, values_fine_size, prolongation_matrix_size;
-              const std::size_t shmem_size = team_shmem_size<dim, Number>(scheme,
-                                                                          n_components,
-                                                                          cells_per_batch,
-                                                                          values_coarse_size,
-                                                                          values_fine_size,
-                                                                          prolongation_matrix_size);
-
-              const auto         coarse_constraint_offsets = scheme.coarse_constraint_offsets;
-              const auto         coarse_constraint_indices = scheme.coarse_constraint_indices;
-              const auto         coarse_constraint_weights = scheme.coarse_constraint_weights;
-              const auto         hanging_node_masks        = scheme.hanging_node_masks;
-              const auto         dof_indices_fine          = scheme.dof_indices_fine;
-              const auto         weights                   = scheme.weights;
-              const auto         prolongation_matrix       = scheme.prolongation_matrix;
-              const int          n_coarse_cells            = scheme.n_coarse_cells;
-              const unsigned int n_dofs_coarse             = scheme.n_dofs_per_cell_coarse;
-              const int          n_scalar_dofs_per_cell_coarse =
-                scheme.n_dofs_per_cell_coarse / n_components;
-              const int n_scalar_dofs_per_cell_fine = scheme.n_dofs_per_cell_fine / n_components;
-
-              const bool use_crs = scheme.use_constraint_crs;
-
-              auto kernel = KOKKOS_LAMBDA(const TeamHandle &team_member)
-              {
-                const int first_cell = team_member.league_rank() * cells_per_batch;
-                const int n_cells_in_batch =
-                  (n_coarse_cells - first_cell < static_cast<int>(cells_per_batch)) ?
-                    (n_coarse_cells - first_cell) :
-                    static_cast<int>(cells_per_batch);
-
-                SharedViewScratchPad prolongation_matrix_device(team_member.team_shmem(),
-                                                                prolongation_matrix_size);
-                SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
-                SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
-
-                if (needs_interpolation)
-                  {
-                    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member,
-                                                                 prolongation_matrix_size),
-                                         [&](const int &i) {
-                                           prolongation_matrix_device(i) = prolongation_matrix(i);
-                                         });
-                    team_member.team_barrier();
-                  }
-
-                typename MGTwoLevelTransfer<dim, VectorType>::TransferCellData cell_data{
-                  team_member,
-                  prolongation_matrix_device,
-                  values_coarse,
-                  values_fine,
-                  n_cells_in_batch};
-                CellProlongator<dim, VectorType> cell_prolongator(&cell_data);
-
-                // In the identity scheme (the cell exists on both levels) the
-                // coarse values are scattered directly. The view handle is
-                // copied: a reference to one of two local views would force
-                // both into local memory.
-                const SharedViewScratchPad values_fine_result =
-                  needs_interpolation ? values_fine : values_coarse;
-
-                // The shared memory holds the values of a single component
-                // of the cells of the batch, cell after cell, so the
-                // components are processed one after the other.
-                for (unsigned int component = 0; component < n_components; ++component)
-                  {
-                    // read coarse dof values of this component
-                    Kokkos::parallel_for(
-                      Kokkos::TeamThreadRange(team_member,
-                                              n_cells_in_batch * n_scalar_dofs_per_cell_coarse),
-                      [&](const int &tid)
-                      {
-                        const int cell_in_batch     = tid / n_scalar_dofs_per_cell_coarse;
-                        const int local_dof         = tid % n_scalar_dofs_per_cell_coarse;
-                        const int coarse_cell_index = first_cell + cell_in_batch;
-
-                        const unsigned int row = coarse_cell_index * n_dofs_coarse +
-                                                 component * n_scalar_dofs_per_cell_coarse +
-                                                 local_dof;
-
-                        if (use_crs)
-                          {
-                            Number     result = 0.;
-                            const auto begin  = coarse_constraint_offsets(row);
-                            const auto end    = coarse_constraint_offsets(row + 1);
-
-                            Kokkos::parallel_reduce(
-                              Kokkos::ThreadVectorRange(team_member, begin, end),
-                              [&](const int &k, Number &value) {
-                                value += coarse_constraint_weights(k) *
-                                         src_device[coarse_constraint_indices(k)];
-                              },
-                              Kokkos::Sum<Number>(result));
-
-                            values_coarse(tid) = result;
-                          }
-                        else
-                          {
-                            const unsigned int global_dof = coarse_constraint_indices(row);
-                            values_coarse(tid) = (global_dof != numbers::invalid_unsigned_int) ?
-                                                   src_device[global_dof] :
-                                                   Number(0.);
-                          }
-                      });
-                    team_member.team_barrier();
-
-                    // fast hanging-node interpolation on the coarse cells
-                    if (has_hanging_nodes)
-                      for (int cell_in_batch = 0; cell_in_batch < n_cells_in_batch; ++cell_in_batch)
-                        {
-                          const auto mask = hanging_node_masks(first_cell + cell_in_batch);
-                          if (mask !=
-                              dealii::internal::MatrixFreeFunctions::ConstraintKinds::unconstrained)
-                            hanging_node_factory.template run<dim, false, Number>(
-                              team_member,
-                              hanging_node_weights,
-                              mask,
-                              Kokkos::subview(values_coarse,
-                                              Kokkos::make_pair(cell_in_batch *
-                                                                  n_scalar_dofs_per_cell_coarse,
-                                                                (cell_in_batch + 1) *
-                                                                  n_scalar_dofs_per_cell_coarse)));
-                        }
-
-                    // interpolate to the children
-                    if (needs_interpolation)
-                      cell_transfer.run(cell_prolongator);
-
-                    // apply weights and add the fine values of this component
-                    // into the result vector
-                    Kokkos::parallel_for(
-                      Kokkos::TeamThreadRange(team_member,
-                                              n_cells_in_batch * n_scalar_dofs_per_cell_fine),
-                      [&](const int &tid)
-                      {
-                        const int cell_in_batch     = tid / n_scalar_dofs_per_cell_fine;
-                        const int local_dof         = tid % n_scalar_dofs_per_cell_fine;
-                        const int coarse_cell_index = first_cell + cell_in_batch;
-
-                        const unsigned int index =
-                          component * n_scalar_dofs_per_cell_fine + local_dof;
-
-                        const unsigned int global_dof = dof_indices_fine(index, coarse_cell_index);
-
-                        const Number weight = weights(index, coarse_cell_index);
-
-                        Kokkos::atomic_add(&dst_device[global_dof],
-                                           weight * values_fine_result(tid));
-                      });
-
-                    // the next component overwrites the shared arrays
-                    team_member.team_barrier();
-                  }
-              };
-
-              // one thread per line of the widest direction (Nf^(dim-1) lines per
-              // cell), or per fine dof for the identity scheme
-              const unsigned int n_lines =
-                needs_interpolation ?
-                  cells_per_batch * Utilities::pow(scheme.degree_fine + 1, dim - 1) :
-                  cells_per_batch * n_scalar_dofs_per_cell_fine;
-              const int size_of_team =
-                team_size(exec, kernel, use_crs, n_batches, shmem_size, n_lines);
-              TeamPolicy team_policy = use_crs ?
-                                         TeamPolicy(exec, n_batches, size_of_team, Kokkos::AUTO) :
-                                         TeamPolicy(exec, n_batches, size_of_team);
-              team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
-
-              Kokkos::parallel_for("prolongate_and_add_geometric_transfer_scheme_" +
-                                     std::to_string(scheme_index),
-                                   team_policy,
-                                   kernel);
-
+              if (scheme.n_coarse_cells > 0)
+                {
+                  using SchemeType = std::decay_t<decltype(scheme)>;
+                  const SchemeLauncher<dim, VectorType, SchemeType, true> launcher{
+                    transfer, scheme, scheme_index, dst, src};
+                  const bool supported =
+                    CellTransferFactory(scheme.degree_fine, scheme.degree_coarse).run(launcher);
+                  AssertThrow(supported,
+                              ExcMessage("The transfer between the degrees " +
+                                         std::to_string(scheme.degree_coarse) + " and " +
+                                         std::to_string(scheme.degree_fine) +
+                                         " is not implemented."));
+                }
               ++scheme_index;
             }
         }
@@ -1173,6 +935,44 @@ namespace Copy
         template <int dim, typename VectorType>
         static void
         restrict_and_add_internal(const MGTwoLevelTransfer<dim, VectorType> &transfer,
+                                  VectorType                                &dst,
+                                  const VectorType                          &src)
+        {
+          unsigned int scheme_index = 0;
+          for (const auto &scheme : transfer.schemes)
+            {
+              if (scheme.n_coarse_cells > 0)
+                {
+                  using SchemeType = std::decay_t<decltype(scheme)>;
+                  const SchemeLauncher<dim, VectorType, SchemeType, false> launcher{
+                    transfer, scheme, scheme_index, dst, src};
+                  const bool supported =
+                    CellTransferFactory(scheme.degree_fine, scheme.degree_coarse).run(launcher);
+                  AssertThrow(supported,
+                              ExcMessage("The transfer between the degrees " +
+                                         std::to_string(scheme.degree_coarse) + " and " +
+                                         std::to_string(scheme.degree_fine) +
+                                         " is not implemented."));
+                }
+              ++scheme_index;
+            }
+        }
+
+        /**
+         * Prolongate with one scheme, compiled for one pair of degrees:
+         * degree_fine == degree_coarse is the identity scheme (the cell exists
+         * on both levels), degree_fine == 2 * degree_coarse the interpolation
+         * from a coarse cell to its children.
+         */
+        template <int dim,
+                  int degree_fine,
+                  int degree_coarse,
+                  typename VectorType,
+                  typename SchemeType>
+        static void
+        prolongate_and_add_scheme(const MGTwoLevelTransfer<dim, VectorType> &transfer,
+                                  const SchemeType                          &scheme,
+                                  const unsigned int                         scheme_index,
                                   VectorType                                &dst,
                                   const VectorType                          &src)
         {
@@ -1189,6 +989,25 @@ namespace Copy
                          MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
                          Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
+          constexpr bool needs_interpolation           = degree_fine != degree_coarse;
+          constexpr int  n_scalar_dofs_per_cell_coarse = Utilities::pow(degree_coarse + 1, dim);
+          constexpr int  n_scalar_dofs_per_cell_fine   = Utilities::pow(degree_fine + 1, dim);
+
+          // one thread per line of the widest direction (Nf^(dim-1) lines per
+          // cell), or per fine dof for the identity scheme
+          constexpr int n_lines_per_cell = needs_interpolation ?
+                                             Utilities::pow(degree_fine + 1, dim - 1) :
+                                             n_scalar_dofs_per_cell_fine;
+
+          const unsigned int n_components = transfer.n_components;
+
+          Assert(scheme.n_dofs_per_cell_coarse == n_components * n_scalar_dofs_per_cell_coarse,
+                 ExcInternalError());
+          Assert(scheme.n_dofs_per_cell_fine == n_components * n_scalar_dofs_per_cell_fine,
+                 ExcInternalError());
+          Assert((scheme.prolongation_matrix.extent(0) > 0) == needs_interpolation,
+                 ExcInternalError());
+
           MemorySpace::Default::kokkos_space::execution_space exec;
 
           dealii::Portable::DeviceVector<Number> dst_device(dst.get_values(),
@@ -1196,205 +1015,396 @@ namespace Copy
           dealii::Portable::DeviceVector<Number> src_device(src.get_values(),
                                                             src.locally_owned_size());
 
-          const unsigned int n_components         = transfer.n_components;
-          const auto         hanging_node_weights = transfer.hanging_node_constraint_weights;
+          const auto hanging_node_weights = transfer.hanging_node_constraint_weights;
+          const bool has_hanging_nodes    = scheme.hanging_node_masks.extent(0) > 0;
 
-          unsigned int scheme_index = 0;
+          // One team processes a batch of coarse cells; the last batch may be
+          // shorter.
+          const unsigned int cells_per_batch =
+            n_cells_per_batch<Number>(scheme, n_components, transfer.n_cells_per_batch);
+          const unsigned int n_batches =
+            (scheme.n_coarse_cells + cells_per_batch - 1) / cells_per_batch;
 
-          for (const auto &scheme : transfer.schemes)
-            {
-              // Per scheme we select:
-              // - whether a prolongation matrix is needed, or the levels share
-              //   the same cells (identity);
-              // - how coarse constraints are applied: Dirichlet via
-              //   invalid_unsigned_int indices, hanging nodes via masks, or
-              //   general AffineConstraints via CRS.
+          unsigned int      values_coarse_size, values_fine_size, prolongation_matrix_size;
+          const std::size_t shmem_size = team_shmem_size<dim, Number>(scheme,
+                                                                      n_components,
+                                                                      cells_per_batch,
+                                                                      values_coarse_size,
+                                                                      values_fine_size,
+                                                                      prolongation_matrix_size);
 
-              if (scheme.n_coarse_cells == 0)
-                continue;
+          const auto         coarse_constraint_offsets = scheme.coarse_constraint_offsets;
+          const auto         coarse_constraint_indices = scheme.coarse_constraint_indices;
+          const auto         coarse_constraint_weights = scheme.coarse_constraint_weights;
+          const auto         hanging_node_masks        = scheme.hanging_node_masks;
+          const auto         dof_indices_fine          = scheme.dof_indices_fine;
+          const auto         weights                   = scheme.weights;
+          const auto         prolongation_matrix       = scheme.prolongation_matrix;
+          const int          n_coarse_cells            = scheme.n_coarse_cells;
+          const unsigned int n_dofs_coarse             = scheme.n_dofs_per_cell_coarse;
 
-              const bool needs_interpolation = scheme.prolongation_matrix.extent(0) > 0;
-              const bool has_hanging_nodes   = scheme.hanging_node_masks.extent(0) > 0;
+          const bool use_crs = scheme.use_constraint_crs;
 
-              CellTransferFactory      cell_transfer(scheme.degree_fine, scheme.degree_coarse);
-              HangingNodeDegreeFactory hanging_node_factory(scheme.degree_coarse);
+          auto kernel = KOKKOS_LAMBDA(const TeamHandle &team_member)
+          {
+            const int first_cell = team_member.league_rank() * cells_per_batch;
+            const int n_cells_in_batch =
+              (n_coarse_cells - first_cell < static_cast<int>(cells_per_batch)) ?
+                (n_coarse_cells - first_cell) :
+                static_cast<int>(cells_per_batch);
 
-              // One team processes a batch of coarse cells; the last batch may
-              // be shorter.
-              const unsigned int cells_per_batch =
-                n_cells_per_batch<Number>(scheme, n_components, transfer.n_cells_per_batch);
-              const unsigned int n_batches =
-                (scheme.n_coarse_cells + cells_per_batch - 1) / cells_per_batch;
+            SharedViewScratchPad prolongation_matrix_device(team_member.team_shmem(),
+                                                            prolongation_matrix_size);
+            SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
+            SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
 
-              unsigned int      values_coarse_size, values_fine_size, prolongation_matrix_size;
-              const std::size_t shmem_size = team_shmem_size<dim, Number>(scheme,
-                                                                          n_components,
-                                                                          cells_per_batch,
-                                                                          values_coarse_size,
-                                                                          values_fine_size,
-                                                                          prolongation_matrix_size);
-
-              const auto         coarse_constraint_offsets = scheme.coarse_constraint_offsets;
-              const auto         coarse_constraint_indices = scheme.coarse_constraint_indices;
-              const auto         coarse_constraint_weights = scheme.coarse_constraint_weights;
-              const auto         hanging_node_masks        = scheme.hanging_node_masks;
-              const auto         dof_indices_fine          = scheme.dof_indices_fine;
-              const auto         weights                   = scheme.weights;
-              const auto         prolongation_matrix       = scheme.prolongation_matrix;
-              const int          n_coarse_cells            = scheme.n_coarse_cells;
-              const unsigned int n_dofs_coarse             = scheme.n_dofs_per_cell_coarse;
-              const int          n_scalar_dofs_per_cell_coarse =
-                scheme.n_dofs_per_cell_coarse / n_components;
-              const int n_scalar_dofs_per_cell_fine = scheme.n_dofs_per_cell_fine / n_components;
-
-              const bool use_crs = scheme.use_constraint_crs;
-
-              auto kernel = KOKKOS_LAMBDA(const TeamHandle &team_member)
+            if constexpr (needs_interpolation)
               {
-                const int first_cell = team_member.league_rank() * cells_per_batch;
-                const int n_cells_in_batch =
-                  (n_coarse_cells - first_cell < static_cast<int>(cells_per_batch)) ?
-                    (n_coarse_cells - first_cell) :
-                    static_cast<int>(cells_per_batch);
+                Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, prolongation_matrix_size),
+                                     [&](const int &i)
+                                     { prolongation_matrix_device(i) = prolongation_matrix(i); });
+                team_member.team_barrier();
+              }
 
-                SharedViewScratchPad prolongation_matrix_device(team_member.team_shmem(),
-                                                                prolongation_matrix_size);
-                SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
-                SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
+            typename MGTwoLevelTransfer<dim, VectorType>::TransferCellData cell_data{
+              team_member,
+              prolongation_matrix_device,
+              values_coarse,
+              values_fine,
+              n_cells_in_batch};
+            CellProlongator<dim, VectorType> cell_prolongator(&cell_data);
 
-                if (needs_interpolation)
+            // In the identity scheme (the cell exists on both levels) the
+            // coarse values are scattered directly. The view handle is
+            // copied: a reference to one of two local views would force both
+            // into local memory.
+            const SharedViewScratchPad values_fine_result =
+              needs_interpolation ? values_fine : values_coarse;
+
+            // The shared memory holds the values of a single component of the
+            // cells of the batch, cell after cell, so the components are
+            // processed one after the other.
+            for (unsigned int component = 0; component < n_components; ++component)
+              {
+                // read coarse dof values of this component
+                Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(team_member,
+                                          n_cells_in_batch * n_scalar_dofs_per_cell_coarse),
+                  [&](const int &tid)
                   {
-                    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member,
-                                                                 prolongation_matrix_size),
-                                         [&](const int &i) {
-                                           prolongation_matrix_device(i) = prolongation_matrix(i);
-                                         });
-                    team_member.team_barrier();
-                  }
+                    const int cell_in_batch     = tid / n_scalar_dofs_per_cell_coarse;
+                    const int local_dof         = tid % n_scalar_dofs_per_cell_coarse;
+                    const int coarse_cell_index = first_cell + cell_in_batch;
 
-                typename MGTwoLevelTransfer<dim, VectorType>::TransferCellData cell_data{
-                  team_member,
-                  prolongation_matrix_device,
-                  values_coarse,
-                  values_fine,
-                  n_cells_in_batch};
-                CellRestrictor<dim, VectorType> cell_restrictor(&cell_data);
+                    const unsigned int row = coarse_cell_index * n_dofs_coarse +
+                                             component * n_scalar_dofs_per_cell_coarse + local_dof;
 
-                // In the identity scheme (the cell exists on both levels) the
-                // fine values are the coarse values. The view handle is
-                // copied, see prolongate_and_add_internal().
-                const SharedViewScratchPad values_coarse_result =
-                  needs_interpolation ? values_coarse : values_fine;
+                    if (use_crs)
+                      {
+                        Number     result = 0.;
+                        const auto begin  = coarse_constraint_offsets(row);
+                        const auto end    = coarse_constraint_offsets(row + 1);
 
-                // The shared memory holds the values of a single component
-                // of the cells of the batch, cell after cell, so the
-                // components are processed one after the other.
-                for (unsigned int component = 0; component < n_components; ++component)
+                        Kokkos::parallel_reduce(
+                          Kokkos::ThreadVectorRange(team_member, begin, end),
+                          [&](const int &k, Number &value) {
+                            value += coarse_constraint_weights(k) *
+                                     src_device[coarse_constraint_indices(k)];
+                          },
+                          Kokkos::Sum<Number>(result));
+
+                        values_coarse(tid) = result;
+                      }
+                    else
+                      {
+                        const unsigned int global_dof = coarse_constraint_indices(row);
+                        values_coarse(tid) = (global_dof != numbers::invalid_unsigned_int) ?
+                                               src_device[global_dof] :
+                                               Number(0.);
+                      }
+                  });
+                team_member.team_barrier();
+
+                // fast hanging-node interpolation on the coarse cells
+                if constexpr (dim > 1)
+                  if (has_hanging_nodes)
+                    for (int cell_in_batch = 0; cell_in_batch < n_cells_in_batch; ++cell_in_batch)
+                      {
+                        const auto mask = hanging_node_masks(first_cell + cell_in_batch);
+                        if (mask !=
+                            dealii::internal::MatrixFreeFunctions::ConstraintKinds::unconstrained)
+                          resolve_hanging_nodes<dim, degree_coarse, false, Number>(
+                            team_member,
+                            hanging_node_weights,
+                            mask,
+                            Kokkos::subview(values_coarse,
+                                            Kokkos::make_pair(cell_in_batch *
+                                                                n_scalar_dofs_per_cell_coarse,
+                                                              (cell_in_batch + 1) *
+                                                                n_scalar_dofs_per_cell_coarse)));
+                      }
+
+                // interpolate to the children
+                if constexpr (needs_interpolation)
+                  cell_prolongator.template run<degree_fine, degree_coarse>();
+
+                // apply weights and add the fine values of this component into
+                // the result vector
+                Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(team_member,
+                                          n_cells_in_batch * n_scalar_dofs_per_cell_fine),
+                  [&](const int &tid)
                   {
-                    // read fine dof values of this component and apply weights
-                    Kokkos::parallel_for(
-                      Kokkos::TeamThreadRange(team_member,
-                                              n_cells_in_batch * n_scalar_dofs_per_cell_fine),
-                      [&](const int &tid)
+                    const int cell_in_batch     = tid / n_scalar_dofs_per_cell_fine;
+                    const int local_dof         = tid % n_scalar_dofs_per_cell_fine;
+                    const int coarse_cell_index = first_cell + cell_in_batch;
+
+                    const unsigned int index = component * n_scalar_dofs_per_cell_fine + local_dof;
+
+                    const unsigned int global_dof = dof_indices_fine(index, coarse_cell_index);
+
+                    const Number weight = weights(index, coarse_cell_index);
+
+                    Kokkos::atomic_add(&dst_device[global_dof], weight * values_fine_result(tid));
+                  });
+
+                // the next component overwrites the shared arrays
+                team_member.team_barrier();
+              }
+          };
+
+          const int size_of_team = team_size(
+            exec, kernel, use_crs, n_batches, shmem_size, cells_per_batch * n_lines_per_cell);
+          TeamPolicy team_policy = use_crs ?
+                                     TeamPolicy(exec, n_batches, size_of_team, Kokkos::AUTO) :
+                                     TeamPolicy(exec, n_batches, size_of_team);
+          team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+
+          Kokkos::parallel_for("prolongate_and_add_geometric_transfer_scheme_" +
+                                 std::to_string(scheme_index),
+                               team_policy,
+                               kernel);
+        }
+
+        /**
+         * Restrict with one scheme, compiled for one pair of degrees, see
+         * prolongate_and_add_scheme().
+         */
+        template <int dim,
+                  int degree_fine,
+                  int degree_coarse,
+                  typename VectorType,
+                  typename SchemeType>
+        static void
+        restrict_and_add_scheme(const MGTwoLevelTransfer<dim, VectorType> &transfer,
+                                const SchemeType                          &scheme,
+                                const unsigned int                         scheme_index,
+                                VectorType                                &dst,
+                                const VectorType                          &src)
+        {
+          using TeamPolicy =
+            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>;
+
+          using TeamHandle =
+            Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type;
+
+          using Number = typename VectorType::value_type;
+
+          using SharedViewScratchPad =
+            Kokkos::View<Number *,
+                         MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+                         Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+          constexpr bool needs_interpolation           = degree_fine != degree_coarse;
+          constexpr int  n_scalar_dofs_per_cell_coarse = Utilities::pow(degree_coarse + 1, dim);
+          constexpr int  n_scalar_dofs_per_cell_fine   = Utilities::pow(degree_fine + 1, dim);
+
+          // one thread per line of the widest direction (Nf^(dim-1) lines per
+          // cell), or per fine dof for the identity scheme
+          constexpr int n_lines_per_cell = needs_interpolation ?
+                                             Utilities::pow(degree_fine + 1, dim - 1) :
+                                             n_scalar_dofs_per_cell_fine;
+
+          const unsigned int n_components = transfer.n_components;
+
+          Assert(scheme.n_dofs_per_cell_coarse == n_components * n_scalar_dofs_per_cell_coarse,
+                 ExcInternalError());
+          Assert(scheme.n_dofs_per_cell_fine == n_components * n_scalar_dofs_per_cell_fine,
+                 ExcInternalError());
+          Assert((scheme.prolongation_matrix.extent(0) > 0) == needs_interpolation,
+                 ExcInternalError());
+
+          MemorySpace::Default::kokkos_space::execution_space exec;
+
+          dealii::Portable::DeviceVector<Number> dst_device(dst.get_values(),
+                                                            dst.locally_owned_size());
+          dealii::Portable::DeviceVector<Number> src_device(src.get_values(),
+                                                            src.locally_owned_size());
+
+          const auto hanging_node_weights = transfer.hanging_node_constraint_weights;
+          const bool has_hanging_nodes    = scheme.hanging_node_masks.extent(0) > 0;
+
+          // One team processes a batch of coarse cells; the last batch may be
+          // shorter.
+          const unsigned int cells_per_batch =
+            n_cells_per_batch<Number>(scheme, n_components, transfer.n_cells_per_batch);
+          const unsigned int n_batches =
+            (scheme.n_coarse_cells + cells_per_batch - 1) / cells_per_batch;
+
+          unsigned int      values_coarse_size, values_fine_size, prolongation_matrix_size;
+          const std::size_t shmem_size = team_shmem_size<dim, Number>(scheme,
+                                                                      n_components,
+                                                                      cells_per_batch,
+                                                                      values_coarse_size,
+                                                                      values_fine_size,
+                                                                      prolongation_matrix_size);
+
+          const auto         coarse_constraint_offsets = scheme.coarse_constraint_offsets;
+          const auto         coarse_constraint_indices = scheme.coarse_constraint_indices;
+          const auto         coarse_constraint_weights = scheme.coarse_constraint_weights;
+          const auto         hanging_node_masks        = scheme.hanging_node_masks;
+          const auto         dof_indices_fine          = scheme.dof_indices_fine;
+          const auto         weights                   = scheme.weights;
+          const auto         prolongation_matrix       = scheme.prolongation_matrix;
+          const int          n_coarse_cells            = scheme.n_coarse_cells;
+          const unsigned int n_dofs_coarse             = scheme.n_dofs_per_cell_coarse;
+
+          const bool use_crs = scheme.use_constraint_crs;
+
+          auto kernel = KOKKOS_LAMBDA(const TeamHandle &team_member)
+          {
+            const int first_cell = team_member.league_rank() * cells_per_batch;
+            const int n_cells_in_batch =
+              (n_coarse_cells - first_cell < static_cast<int>(cells_per_batch)) ?
+                (n_coarse_cells - first_cell) :
+                static_cast<int>(cells_per_batch);
+
+            SharedViewScratchPad prolongation_matrix_device(team_member.team_shmem(),
+                                                            prolongation_matrix_size);
+            SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
+            SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
+
+            if constexpr (needs_interpolation)
+              {
+                Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, prolongation_matrix_size),
+                                     [&](const int &i)
+                                     { prolongation_matrix_device(i) = prolongation_matrix(i); });
+                team_member.team_barrier();
+              }
+
+            typename MGTwoLevelTransfer<dim, VectorType>::TransferCellData cell_data{
+              team_member,
+              prolongation_matrix_device,
+              values_coarse,
+              values_fine,
+              n_cells_in_batch};
+            CellRestrictor<dim, VectorType> cell_restrictor(&cell_data);
+
+            // In the identity scheme (the cell exists on both levels) the
+            // fine values are the coarse values. The view handle is copied,
+            // see prolongate_and_add_scheme().
+            const SharedViewScratchPad values_coarse_result =
+              needs_interpolation ? values_coarse : values_fine;
+
+            // The shared memory holds the values of a single component of the
+            // cells of the batch, cell after cell, so the components are
+            // processed one after the other.
+            for (unsigned int component = 0; component < n_components; ++component)
+              {
+                // read fine dof values of this component and apply weights
+                Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(team_member,
+                                          n_cells_in_batch * n_scalar_dofs_per_cell_fine),
+                  [&](const int &tid)
+                  {
+                    const int cell_in_batch     = tid / n_scalar_dofs_per_cell_fine;
+                    const int local_dof         = tid % n_scalar_dofs_per_cell_fine;
+                    const int coarse_cell_index = first_cell + cell_in_batch;
+
+                    const unsigned int index = component * n_scalar_dofs_per_cell_fine + local_dof;
+
+                    const Number weight = weights(index, coarse_cell_index);
+
+                    const unsigned int global_dof = dof_indices_fine(index, coarse_cell_index);
+
+                    values_fine(tid) = weight * src_device[global_dof];
+                  });
+                team_member.team_barrier();
+
+                // restrict from the children
+                if constexpr (needs_interpolation)
+                  cell_restrictor.template run<degree_fine, degree_coarse>();
+
+                // transpose hanging-node interpolation before scattering
+                if constexpr (dim > 1)
+                  if (has_hanging_nodes)
+                    for (int cell_in_batch = 0; cell_in_batch < n_cells_in_batch; ++cell_in_batch)
                       {
-                        const int cell_in_batch     = tid / n_scalar_dofs_per_cell_fine;
-                        const int local_dof         = tid % n_scalar_dofs_per_cell_fine;
-                        const int coarse_cell_index = first_cell + cell_in_batch;
+                        const auto mask = hanging_node_masks(first_cell + cell_in_batch);
+                        if (mask !=
+                            dealii::internal::MatrixFreeFunctions::ConstraintKinds::unconstrained)
+                          resolve_hanging_nodes<dim, degree_coarse, true, Number>(
+                            team_member,
+                            hanging_node_weights,
+                            mask,
+                            Kokkos::subview(values_coarse_result,
+                                            Kokkos::make_pair(cell_in_batch *
+                                                                n_scalar_dofs_per_cell_coarse,
+                                                              (cell_in_batch + 1) *
+                                                                n_scalar_dofs_per_cell_coarse)));
+                      }
 
-                        const unsigned int index =
-                          component * n_scalar_dofs_per_cell_fine + local_dof;
+                // distribute coarse dof values of this component
+                Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(team_member,
+                                          n_cells_in_batch * n_scalar_dofs_per_cell_coarse),
+                  [&](const int &tid)
+                  {
+                    const int cell_in_batch     = tid / n_scalar_dofs_per_cell_coarse;
+                    const int local_dof         = tid % n_scalar_dofs_per_cell_coarse;
+                    const int coarse_cell_index = first_cell + cell_in_batch;
 
-                        const Number weight = weights(index, coarse_cell_index);
+                    const Number       value = values_coarse_result(tid);
+                    const unsigned int row   = coarse_cell_index * n_dofs_coarse +
+                                             component * n_scalar_dofs_per_cell_coarse + local_dof;
 
-                        const unsigned int global_dof = dof_indices_fine(index, coarse_cell_index);
-
-                        values_fine(tid) = weight * src_device[global_dof];
-                      });
-                    team_member.team_barrier();
-
-                    // restrict from the children
-                    if (needs_interpolation)
-                      cell_transfer.run(cell_restrictor);
-
-                    // transpose hanging-node interpolation before scattering
-                    if (has_hanging_nodes)
-                      for (int cell_in_batch = 0; cell_in_batch < n_cells_in_batch; ++cell_in_batch)
-                        {
-                          const auto mask = hanging_node_masks(first_cell + cell_in_batch);
-                          if (mask !=
-                              dealii::internal::MatrixFreeFunctions::ConstraintKinds::unconstrained)
-                            hanging_node_factory.template run<dim, true, Number>(
-                              team_member,
-                              hanging_node_weights,
-                              mask,
-                              Kokkos::subview(values_coarse_result,
-                                              Kokkos::make_pair(cell_in_batch *
-                                                                  n_scalar_dofs_per_cell_coarse,
-                                                                (cell_in_batch + 1) *
-                                                                  n_scalar_dofs_per_cell_coarse)));
-                        }
-
-                    // distribute coarse dof values of this component
-                    Kokkos::parallel_for(
-                      Kokkos::TeamThreadRange(team_member,
-                                              n_cells_in_batch * n_scalar_dofs_per_cell_coarse),
-                      [&](const int &tid)
+                    if (use_crs)
                       {
-                        const int cell_in_batch     = tid / n_scalar_dofs_per_cell_coarse;
-                        const int local_dof         = tid % n_scalar_dofs_per_cell_coarse;
-                        const int coarse_cell_index = first_cell + cell_in_batch;
+                        const auto begin = coarse_constraint_offsets(row);
+                        const auto end   = coarse_constraint_offsets(row + 1);
 
-                        const Number       value = values_coarse_result(tid);
-                        const unsigned int row   = coarse_cell_index * n_dofs_coarse +
-                                                 component * n_scalar_dofs_per_cell_coarse +
-                                                 local_dof;
+                        Kokkos::parallel_for(Kokkos::ThreadVectorRange(team_member, begin, end),
+                                             [&](const int &k)
+                                             {
+                                               Kokkos::atomic_add(
+                                                 &dst_device[coarse_constraint_indices(k)],
+                                                 coarse_constraint_weights(k) * value);
+                                             });
+                      }
+                    else
+                      {
+                        const unsigned int global_dof = coarse_constraint_indices(row);
+                        if (global_dof != numbers::invalid_unsigned_int)
+                          Kokkos::atomic_add(&dst_device[global_dof], value);
+                      }
+                  });
 
-                        if (use_crs)
-                          {
-                            const auto begin = coarse_constraint_offsets(row);
-                            const auto end   = coarse_constraint_offsets(row + 1);
+                // the next component overwrites the shared arrays
+                team_member.team_barrier();
+              }
+          };
 
-                            Kokkos::parallel_for(Kokkos::ThreadVectorRange(team_member, begin, end),
-                                                 [&](const int &k)
-                                                 {
-                                                   Kokkos::atomic_add(
-                                                     &dst_device[coarse_constraint_indices(k)],
-                                                     coarse_constraint_weights(k) * value);
-                                                 });
-                          }
-                        else
-                          {
-                            const unsigned int global_dof = coarse_constraint_indices(row);
-                            if (global_dof != numbers::invalid_unsigned_int)
-                              Kokkos::atomic_add(&dst_device[global_dof], value);
-                          }
-                      });
+          const int size_of_team = team_size(
+            exec, kernel, use_crs, n_batches, shmem_size, cells_per_batch * n_lines_per_cell);
+          TeamPolicy team_policy = use_crs ?
+                                     TeamPolicy(exec, n_batches, size_of_team, Kokkos::AUTO) :
+                                     TeamPolicy(exec, n_batches, size_of_team);
+          team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
-                    // the next component overwrites the shared arrays
-                    team_member.team_barrier();
-                  }
-              };
-
-              // one thread per line of the widest direction (Nf^(dim-1) lines per
-              // cell), or per fine dof for the identity scheme
-              const unsigned int n_lines =
-                needs_interpolation ?
-                  cells_per_batch * Utilities::pow(scheme.degree_fine + 1, dim - 1) :
-                  cells_per_batch * n_scalar_dofs_per_cell_fine;
-              const int size_of_team =
-                team_size(exec, kernel, use_crs, n_batches, shmem_size, n_lines);
-              TeamPolicy team_policy = use_crs ?
-                                         TeamPolicy(exec, n_batches, size_of_team, Kokkos::AUTO) :
-                                         TeamPolicy(exec, n_batches, size_of_team);
-              team_policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
-
-              Kokkos::parallel_for("restrict_and_add_geometric_transfer_scheme_" +
-                                     std::to_string(scheme_index),
-                                   team_policy,
-                                   kernel);
-
-              ++scheme_index;
-            }
+          Kokkos::parallel_for("restrict_and_add_geometric_transfer_scheme_" +
+                                 std::to_string(scheme_index),
+                               team_policy,
+                               kernel);
         }
       };
     } // namespace internal
