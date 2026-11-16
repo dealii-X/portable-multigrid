@@ -63,9 +63,15 @@ namespace Copy
         }
       };
 
+// The friend declaration in the tag types below intentionally declares a
+// non-template function; silence the corresponding warning of g++ and of the
+// nvcc front end (1301-D).
 #if defined(__GNUC__) && !defined(__clang__)
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wnon-template-friend"
+#endif
+#if defined(__NVCC__)
+#  pragma nv_diag_suppress 1301
 #endif
 
       // For every member: a tag type carrying the friend declaration and two
@@ -103,6 +109,9 @@ namespace Copy
 
 #if defined(__GNUC__) && !defined(__clang__)
 #  pragma GCC diagnostic pop
+#endif
+#if defined(__NVCC__)
+#  pragma nv_diag_default 1301
 #endif
 
       // Explicit instantiations: this is where the access check is bypassed.

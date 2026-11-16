@@ -89,9 +89,15 @@ namespace Copy
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wnon-template-friend"
 #endif
+#if defined(__NVCC__)
+#  pragma nv_diag_suppress 1301
+#endif
         friend auto private_member(CopySchemesTag);
 #if defined(__GNUC__) && !defined(__clang__)
 #  pragma GCC diagnostic pop
+#endif
+#if defined(__NVCC__)
+#  pragma nv_diag_default 1301
 #endif
       };
 
