@@ -268,8 +268,12 @@ namespace Copy
 
         /**
          * Prolongation matrix in the scratch device memory.
+         *
+         * @note The views below are stored by value: a Kokkos view is a
+         * handle, and holding references to the views of the enclosing kernel
+         * forces those into addressable local memory.
          */
-        const SharedViewScratchPad &prolongation_matrix_device;
+        SharedViewScratchPad prolongation_matrix_device;
 
         /**
          * Memory for the coarse dof values of a single component of the cells
@@ -277,14 +281,14 @@ namespace Copy
          * of the sum factorization and therefore has as many entries as
          * values_fine if the scheme interpolates between different cells.
          */
-        SharedViewScratchPad &values_coarse;
+        SharedViewScratchPad values_coarse;
 
         /**
          * Memory for the fine dof values of a single component of the cells
          * of the batch, cell after cell. It also holds intermediate results
          * of the sum factorization.
          */
-        SharedViewScratchPad &values_fine;
+        SharedViewScratchPad values_fine;
 
         /**
          * Number of coarse cells in the batch processed by this team.
