@@ -23,6 +23,9 @@
 #   cmake --build build
 #   mkdir -p results && sbatch run_sbatch.sh
 #
+# Slurm opens the output file before the script runs, so results/ must exist
+# at submission; it is kept in git through results/.gitkeep.
+#
 # The job array index is the FE_Q degree (1 to 6, what deal.II's Portable
 # transfer dispatches). Override the dimension, mesh sizes and build directory
 # through the environment, e.g.
@@ -36,7 +39,10 @@ set -u
 
 DIM=${DIM:-3}
 MIN_SIZE=${MIN_SIZE:-1000}
-MAX_SIZE=${MAX_SIZE:-1000000000000}
+# Four transfers keep per-cell fine dof indices and weights (about 130 bytes
+# per fine dof each at degree 5), so about 5e8 fine dofs fit a GH200 node;
+# 1e9 was OOM-killed.
+MAX_SIZE=${MAX_SIZE:-600000000}
 MESH=${MESH:-d}          # d: doubling mesh, s: square mesh
 BUILD_DIR=${BUILD_DIR:-build}
 NTASKS=${NTASKS:-$SLURM_NTASKS_PER_NODE}
