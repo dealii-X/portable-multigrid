@@ -88,13 +88,18 @@ run(const long long target_n_dofs, const int n_repetitions, const char mesh)
   GridGenerator::hyper_cube(tria);
 
   // global refinement such that, with the local refinement below, the mesh
-  // has about target_n_dofs dofs (the ball refines about a tenth of the
-  // cells, the random mesh half of them)
-  const double fraction_refined = (mesh == 'r') ? 0.5 : 0.1;
-  const double cells_per_direction =
-    std::pow(target_n_dofs / (1. + ((1 << dim) - 1) * fraction_refined), 1. / dim) / fe_degree;
-  const unsigned int n_global_refinements =
+  // has about target_n_dofs dofs (the ball refines about a tenth of
+  // the cells, the random mesh half of them) and at most max_cells cells:
+  // at low degrees the dofs alone would give tens of millions of cells,
+  // whose setup on one rank does not fit into a job
+  constexpr double max_cells           = 1 << 24;
+  const double     fraction_refined    = (mesh == 'r') ? 0.5 : 0.1;
+  const double     growth              = 1. + ((1 << dim) - 1) * fraction_refined;
+  const double     cells_per_direction = std::pow(target_n_dofs / growth, 1. / dim) / fe_degree;
+  int              n_global_refinements =
     std::max(1, static_cast<int>(std::round(std::log2(cells_per_direction))));
+  while (n_global_refinements > 1 && std::pow(2., dim * n_global_refinements) * growth > max_cells)
+    --n_global_refinements;
   tria.refine_global(n_global_refinements);
 
   Point<dim> center;
@@ -188,7 +193,12 @@ run(const long long target_n_dofs, const int n_repetitions, const char mesh)
 
   const unsigned int n_cells = tria.n_global_active_cells();
   std::cout << "dim=" << dim << " degree=" << fe_degree
-            << " mesh=" << ((mesh == 'r') ? "random half" : "ball")
+            << " mesh=" << ((mesh == 'r') ? "random half" : "ball") << " hanging-node kernel="
+#ifdef HANGING_NODES_OVERLAY
+            << "batched (overlay)"
+#else
+            << "cell-wise"
+#endif
             << " execution space=" << MemorySpace::Default::kokkos_space::execution_space::name()
             << std::endl
             << "  cells " << n_cells << " (" << n_global_refinements
