@@ -34,15 +34,16 @@ namespace hybrid
 
 
   // How a CPU-only rank waits for its next command: microseconds of sleep
-  // between two checks, from HYBRID_IDLE_SLEEP_US (same value on all ranks).
-  // 0 (default): blocking MPI_Bcast, which polls and keeps the core busy; busy
-  // cores slow the GPU of the same GH200 at full load (job 2885286).
+  // between two checks, default 50, set with HYBRID_IDLE_SLEEP_US (same value
+  // on all ranks). 0: blocking MPI_Bcast, which polls and keeps the core busy;
+  // busy cores slow the GPU of the same GH200 at full load (jobs 2885286,
+  // 2886001).
   inline unsigned int
   idle_sleep_microseconds()
   {
     static const unsigned int value = []() {
       const char *env = std::getenv("HYBRID_IDLE_SLEEP_US");
-      return env != nullptr ? static_cast<unsigned int>(std::atoi(env)) : 0u;
+      return env != nullptr ? static_cast<unsigned int>(std::atoi(env)) : 50u;
     }();
     return value;
   }
