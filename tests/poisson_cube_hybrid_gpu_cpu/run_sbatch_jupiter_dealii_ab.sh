@@ -19,8 +19,10 @@
 # sleeping wait 50 us in both (the old hybrid binary defaults to the blocking wait).
 # Order old new new old, so that a drift of the nodes cancels in the mean.
 # Q4, doubling mesh, 5 + 5 smoothing, float V-cycle.
-# Several nodes: sbatch --nodes=<N> --time=... <this script>; the size range grows
-# with N (weak scaling) as in run_sbatch_jupiter_doubling.sh.
+# Several nodes: sbatch --nodes=<N> --time=... <this script>. 1 or 2 GPUs of one node
+# (and the Graces next to them): GPUS=1 sbatch <this script>. Sizes are DoFs per GPU
+# (MIN_PER_GPU .. MAX_PER_GPU, default 50k .. 17.5M = cycles 12..20 on one node),
+# times the GPUs used (weak scaling).
 
 REPO=${REPO:-$HOME/codes/dealiiX-cpu-tests/tests}
 BUILD=${BUILD:-build-neon}
@@ -30,9 +32,11 @@ LIB_NEW=${LIB_NEW:-/e/project1/dealii-x/ivan/sw/dealii/dealii-neon/lib}
 K=${K:-18}
 SWITCH_DOFS=${SWITCH_DOFS:-8000}
 ORDER=${ORDER:-"old new new old"}
-MIN_PER_NODE=${MIN_PER_NODE:-200000}
-MAX_PER_NODE=${MAX_PER_NODE:-70000000}
+MIN_PER_GPU=${MIN_PER_GPU:-50000}
+MAX_PER_GPU=${MAX_PER_GPU:-17500000}
 NODES=${SLURM_JOB_NUM_NODES:-1}
+GPUS=${GPUS:-4}
+if [ $GPUS -lt 4 ] && [ $NODES -gt 1 ]; then echo "GPUS=$GPUS only on one node"; exit 1; fi
 
 module --force purge
 module load Stages/2026 nvidia-compilers OpenMPI FlexiBLAS
@@ -50,8 +54,9 @@ export HYBRID_IDLE_SLEEP_US=50
 
 OUT=$PWD/dealii-ab-$SLURM_JOB_ID
 mkdir -p $OUT
-MIN=$((MIN_PER_NODE * NODES))
-MAX=$((MAX_PER_NODE * NODES))
+MIN=$((MIN_PER_GPU * GPUS * NODES))
+MAX=$((MAX_PER_GPU * GPUS * NODES))
+echo "$NODES node(s), $GPUS GPU(s) per node, K = $K, sizes $MIN .. $MAX DoFs, order: $ORDER"
 
 # binary <program dir> <variant>
 binary() {
@@ -67,8 +72,10 @@ for v in old new; do
   done
 done
 
-GPU_OPTS="--mpi=pspmix --nodes=$NODES --ntasks=$((4 * NODES)) --ntasks-per-node=4 --cpus-per-task=72 --distribution=block:block --cpu-bind=cores --gpu-bind=closest --mem-bind=local"
-HYB_OPTS="--mpi=pspmix --nodes=$NODES --ntasks=$((4 * K * NODES)) --ntasks-per-node=$((4 * K)) --cpus-per-task=$((72 / K)) --distribution=block:block --cpu-bind=cores --gpu-bind=closest --mem-bind=local"
+# the ranks fill the first GPUS Graces of each node (block placement); with fewer than
+# 4 GPUs the hybrid warns that SLURM_GPUS_ON_NODE differs, which is intended
+GPU_OPTS="--mpi=pspmix --nodes=$NODES --ntasks=$((GPUS * NODES)) --ntasks-per-node=$GPUS --cpus-per-task=72 --distribution=block:block --cpu-bind=cores --gpu-bind=closest --mem-bind=local"
+HYB_OPTS="--mpi=pspmix --nodes=$NODES --ntasks=$((GPUS * K * NODES)) --ntasks-per-node=$((GPUS * K)) --cpus-per-task=$((72 / K)) --distribution=block:block --cpu-bind=cores --gpu-bind=closest --mem-bind=local"
 
 i=0
 for v in $ORDER; do
