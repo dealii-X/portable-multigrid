@@ -64,14 +64,14 @@ reference_sipg(const Mapping<dim>             &mapping,
                                    update_values | update_gradients | update_JxW_values |
                                      update_normal_vectors);
 
-  const auto penalty_factor = [fe_degree](const double extent_minus, const double extent_plus) {
-    return fe_degree * (fe_degree + 1.) * 0.5 * (1. / extent_minus + 1. / extent_plus);
-  };
+  const auto penalty_factor = [fe_degree](const double extent_minus, const double extent_plus)
+  { return fe_degree * (fe_degree + 1.) * 0.5 * (1. / extent_minus + 1. / extent_plus); };
 
   // apply a local matrix to the local src values and scatter rows
   const auto apply_local = [&](const FullMatrix<double>                   &matrix,
                                const std::vector<types::global_dof_index> &dofs,
-                               HostVector                                 *diag) {
+                               HostVector                                 *diag)
+  {
     const unsigned int n = dofs.size();
     Vector<double>     x(n), y(n);
     for (unsigned int j = 0; j < n; ++j)
@@ -88,6 +88,8 @@ reference_sipg(const Mapping<dim>             &mapping,
 
   FullMatrix<double>                   cell_matrix(dofs_per_cell, dofs_per_cell);
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+  std::vector<Tensor<1, dim>>          grads(dofs_per_cell);
+  std::vector<double>                  values(dofs_per_cell), normal_grads(dofs_per_cell);
 
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
@@ -97,11 +99,15 @@ reference_sipg(const Mapping<dim>             &mapping,
       // cell term
       fe_values.reinit(cell);
       cell_matrix = 0.;
+      // shape data gathered once per point (the accessors are slow in Debug)
       for (unsigned int q = 0; q < cell_quadrature.size(); ++q)
-        for (unsigned int i = 0; i < dofs_per_cell; ++i)
-          for (unsigned int j = 0; j < dofs_per_cell; ++j)
-            cell_matrix(i, j) +=
-              fe_values.shape_grad(i, q) * fe_values.shape_grad(j, q) * fe_values.JxW(q);
+        {
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            grads[i] = fe_values.shape_grad(i, q);
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            for (unsigned int j = 0; j < dofs_per_cell; ++j)
+              cell_matrix(i, j) += grads[i] * grads[j] * fe_values.JxW(q);
+        }
       cell->get_dof_indices(local_dof_indices);
       apply_local(cell_matrix, local_dof_indices, &diag_cell_host);
 
@@ -121,12 +127,17 @@ reference_sipg(const Mapping<dim>             &mapping,
                 {
                   const Tensor<1, dim> &n = fe_face_values.normal_vector(q);
                   for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                    {
+                      values[i]       = fe_face_values.shape_value(i, q);
+                      normal_grads[i] = fe_face_values.shape_grad(i, q) * n;
+                    }
+                  for (unsigned int i = 0; i < dofs_per_cell; ++i)
                     for (unsigned int j = 0; j < dofs_per_cell; ++j)
                       {
-                        const double u    = fe_face_values.shape_value(j, q);
-                        const double dn_u = fe_face_values.shape_grad(j, q) * n;
-                        const double v    = fe_face_values.shape_value(i, q);
-                        const double dn_v = fe_face_values.shape_grad(i, q) * n;
+                        const double u    = values[j];
+                        const double dn_u = normal_grads[j];
+                        const double v    = values[i];
+                        const double dn_v = normal_grads[i];
                         cell_matrix(i, j) +=
                           ((2. * sigma * u - dn_u) * v - u * dn_v) * fe_face_values.JxW(q);
                       }
@@ -156,20 +167,27 @@ reference_sipg(const Mapping<dim>             &mapping,
           const double extent_plus  = neighbor->measure() / neighbor->face(nf)->measure();
           const double sigma        = penalty_factor(extent_minus, extent_plus);
 
-          fe_iv.reinit(cell, f, numbers::invalid_unsigned_int, neighbor, nf, numbers::invalid_unsigned_int);
+          fe_iv.reinit(
+            cell, f, numbers::invalid_unsigned_int, neighbor, nf, numbers::invalid_unsigned_int);
 
           const unsigned int n_iv_dofs = fe_iv.n_current_interface_dofs();
           FullMatrix<double> face_matrix(n_iv_dofs, n_iv_dofs);
           for (unsigned int q = 0; q < face_quadrature.size(); ++q)
             {
               const Tensor<1, dim> &n = fe_iv.normal_vector(q);
+              std::vector<double>   jumps(n_iv_dofs), avg_normal_grads(n_iv_dofs);
+              for (unsigned int i = 0; i < n_iv_dofs; ++i)
+                {
+                  jumps[i]            = fe_iv.jump_in_shape_values(i, q);
+                  avg_normal_grads[i] = fe_iv.average_of_shape_gradients(i, q) * n;
+                }
               for (unsigned int i = 0; i < n_iv_dofs; ++i)
                 for (unsigned int j = 0; j < n_iv_dofs; ++j)
                   {
-                    const double jump_u = fe_iv.jump_in_shape_values(j, q);
-                    const double avg_dn_u = fe_iv.average_of_shape_gradients(j, q) * n;
-                    const double jump_v = fe_iv.jump_in_shape_values(i, q);
-                    const double avg_dn_v = fe_iv.average_of_shape_gradients(i, q) * n;
+                    const double jump_u   = jumps[j];
+                    const double avg_dn_u = avg_normal_grads[j];
+                    const double jump_v   = jumps[i];
+                    const double avg_dn_v = avg_normal_grads[i];
                     face_matrix(i, j) +=
                       (sigma * jump_u * jump_v - avg_dn_u * jump_v - jump_u * avg_dn_v) *
                       fe_iv.JxW(q);
@@ -194,7 +212,6 @@ reference_sipg(const Mapping<dim>             &mapping,
     rw(i) = static_cast<Number>(diag_cell_host(i));
   diag_cell_device.import_elements(rw, VectorOperation::insert);
 }
-
 
 
 

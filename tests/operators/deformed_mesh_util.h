@@ -70,8 +70,8 @@ namespace deformed_mesh_test
 
           const double z = 0.7 * zeta;
           const double y = 1.1 * eta + 0.12 * std::sin(numbers::PI * zeta);
-          const double x = 2.3 * xi + 0.18 * y +
-                           0.15 * std::sin(numbers::PI * eta) * std::cos(numbers::PI * zeta);
+          const double x =
+            2.3 * xi + 0.18 * y + 0.15 * std::sin(numbers::PI * eta) * std::cos(numbers::PI * zeta);
           return Point<dim>(x, y, z);
         }
     }
@@ -219,6 +219,7 @@ namespace deformed_mesh_test
     FullMatrix<double>                   cell_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double>                       x_local(dofs_per_cell), y_local(dofs_per_cell);
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+    std::vector<Tensor<1, dim>>          grads(dofs_per_cell * n_components);
 
     for (const auto &cell : dof_handler.active_cell_iterators())
       if (cell->is_locally_owned())
@@ -227,15 +228,22 @@ namespace deformed_mesh_test
           cell_matrix = 0.;
 
           for (unsigned int q = 0; q < n_q_points; ++q)
-            for (unsigned int i = 0; i < dofs_per_cell; ++i)
-              for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                {
-                  double grad_i_dot_grad_j = 0.;
-                  for (unsigned int c = 0; c < n_components; ++c)
-                    grad_i_dot_grad_j +=
-                      fe_values.shape_grad_component(i, q, c) * fe_values.shape_grad_component(j, q, c);
-                  cell_matrix(i, j) += grad_i_dot_grad_j * fe_values.JxW(q);
-                }
+            {
+              // gradients gathered once per point (shape_grad_component() is slow in Debug)
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int c = 0; c < n_components; ++c)
+                  grads[i * n_components + c] = fe_values.shape_grad_component(i, q, c);
+
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                  {
+                    double grad_i_dot_grad_j = 0.;
+                    for (unsigned int c = 0; c < n_components; ++c)
+                      grad_i_dot_grad_j +=
+                        grads[i * n_components + c] * grads[j * n_components + c];
+                    cell_matrix(i, j) += grad_i_dot_grad_j * fe_values.JxW(q);
+                  }
+            }
 
           cell->get_dof_indices(local_dof_indices);
 
