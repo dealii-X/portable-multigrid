@@ -2,6 +2,8 @@
 #define portable_bnn_preconditioner_h
 
 
+#include <deal.II/base/timer.h>
+
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "domain_decomposition/portable_schur_interface_operator.h"
 #include "domain_decomposition/subdomain_dof_handler.h"

@@ -5,6 +5,8 @@
 
 #include <deal.II/lac/lapack_full_matrix.h>
 
+#include <deal.II/matrix_free/portable_matrix_free.h>
+
 #include "base/portable_mg_transfer_base.h"
 #include "base/portable_subdomain_laplace_operator_base.h"
 #include "base/portable_v_cycle_multigrid_base.h"

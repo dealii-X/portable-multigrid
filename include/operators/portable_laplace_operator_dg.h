@@ -1,6 +1,8 @@
 #ifndef portable_laplace_operator_dg_h
 #define portable_laplace_operator_dg_h
 
+#include <deal.II/base/quadrature_lib.h>
+
 #include <deal.II/dofs/dof_handler.h>
 
 #include <deal.II/fe/mapping.h>
