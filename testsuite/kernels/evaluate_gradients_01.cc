@@ -1,639 +1,379 @@
 // Custom::Parallel::FEEvaluationImplTransformToCollocation
-// (matrix_free/portable_evaluation_kernels.h) on the host: evaluate_gradients()
-// against evaluate_gradients_and_multiply_symmetric_tensor() with G = I, the
-// add variants of evaluate/integrate against their two-step forms, and
-// evaluate()/integrate() against values + gradients separately.
+// (matrix_free/portable_evaluation_kernels.h) against dense sums with the
+// FEValues shape values and gradients of FE_Q on the unit cell, for a batch
+// of two cells with different DoF values:
+//   evaluate() and evaluate_values() + evaluate_gradients(): u(x_q), grad u(x_q)
+//   evaluate_gradients_and_multiply_symmetric_tensor(): G(x_q) grad u(x_q)
+//   integrate() and integrate_gradients<true>() + integrate_values():
+//     sum_q (phi_i v_q + grad phi_i . w_q)
+// The 1D shape tables come from deal.II's ShapeInfo, as in
+// LaplaceOperatorBK3.
 
-#include "../tests.h"
+#include <deal.II/base/quadrature_lib.h>
 
-#include <deal.II/base/mpi.h>
-#include <deal.II/base/utilities.h>
+#include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_tools.h>
+#include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/mapping_q.h>
+
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/tria.h>
+
+#include <deal.II/matrix_free/shape_info.h>
 
 #include <Kokkos_Core.hpp>
 
-#include <cmath>
-#include <iostream>
 #include <random>
+
+#include "../tests.h"
 
 #include "matrix_free/portable_evaluation_kernels.h"
 
 using namespace dealii;
 
-using Number = double;
+using Number    = double;
+using View      = Kokkos::View<Number *, MemorySpace::Default::kokkos_space>;
+using HostTable = std::vector<double>;
 
-template <int dim, int nq>
-bool
-run_evaluate_gradients_test()
+constexpr int n_cells = 2;
+
+// phi[q][i] and dphi[q][i][d] at the Gauss points of the unit cell, DoFs in
+// lexicographic order (the kernel's numbering)
+template <int dim>
+void
+reference_shape_data(const unsigned int                        fe_degree,
+                     const unsigned int                        n_q_points_1d,
+                     std::vector<std::vector<double>>         &phi,
+                     std::vector<std::vector<Tensor<1, dim>>> &dphi)
 {
-  constexpr int nq_total                   = Utilities::pow(nq, dim);
-  constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
+  Triangulation<dim> triangulation;
+  GridGenerator::hyper_cube(triangulation, 0., 1.);
 
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients(
-    "co_shape_gradients", nq * nq);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values("values", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> d_G_identity(
-    "d_G_identity", symmetric_tensor_dimension * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> grad_a("grad_a", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> grad_b("grad_b", dim * nq_total);
+  const FE_Q<dim>     fe(fe_degree);
+  const MappingQ<dim> mapping(1);
+  const QGauss<dim>   quadrature(n_q_points_1d);
+  FEValues<dim>       fe_values(mapping, fe, quadrature, update_values | update_gradients);
+  fe_values.reinit(triangulation.begin_active());
 
-  {
-    std::mt19937                           gen(11);
-    std::uniform_real_distribution<double> dist(-1., 1.);
+  const std::vector<unsigned int> hierarchic_of_lexicographic =
+    FETools::lexicographic_to_hierarchic_numbering<dim>(fe_degree);
 
-    auto co_shape_gradients_host = Kokkos::create_mirror_view(co_shape_gradients);
-    for (int i = 0; i < nq * nq; ++i)
-      co_shape_gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(co_shape_gradients, co_shape_gradients_host);
-
-    auto values_host = Kokkos::create_mirror_view(values);
-    for (int i = 0; i < nq_total; ++i)
-      values_host(i) = dist(gen);
-    Kokkos::deep_copy(values, values_host);
-
-    auto d_G_identity_host = Kokkos::create_mirror_view(d_G_identity);
-    int  component_index   = 0;
-    for (int d1 = 0; d1 < dim; ++d1)
-      for (int d2 = d1; d2 < dim; ++d2)
-        {
-          for (int q = 0; q < nq_total; ++q)
-            d_G_identity_host(component_index * nq_total + q) = (d1 == d2) ? 1. : 0.;
-          ++component_index;
-        }
-    Kokkos::deep_copy(d_G_identity, d_G_identity_host);
-  }
-
-  const bool is_serial =
-    std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  const int threadsPerBlock = is_serial ? 1 : Utilities::pow(nq, dim - 1);
-
-  Kokkos::TeamPolicy<> policy(1, threadsPerBlock);
-  policy.set_scratch_size(0, Kokkos::PerTeam(0));
-
-  Kokkos::parallel_for(
-    policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int thread_id = team_member.team_rank();
-      const int block_size = team_member.team_size();
-      const int batch_index  = team_member.league_rank();
-
-      const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nq, nq, Number> fe_eval(
-        team_member, nullptr, co_shape_gradients.data(), 1, 1, batch_index, thread_id, block_size);
-
-      fe_eval.evaluate_gradients(values.data(), grad_a.data());
-      fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(
-        d_G_identity, Custom::Parallel::CellRangeIdView(), values.data(), grad_b.data());
-    });
-  Kokkos::fence();
-
-  auto grad_a_host = Kokkos::create_mirror_view(grad_a);
-  auto grad_b_host = Kokkos::create_mirror_view(grad_b);
-  Kokkos::deep_copy(grad_a_host, grad_a);
-  Kokkos::deep_copy(grad_b_host, grad_b);
-
-  double max_abs_diff = 0.;
-  double max_abs_val  = 0.;
-  for (int i = 0; i < dim * nq_total; ++i)
-    {
-      max_abs_diff = std::max(max_abs_diff, std::abs(grad_a_host(i) - grad_b_host(i)));
-      max_abs_val  = std::max(max_abs_val, std::abs(grad_a_host(i)));
-    }
-
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
-
-  deallog << "evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: "
-            << "dim = " << dim << ", nq = " << nq << std::endl;
-  if (pass)
-    deallog << "OK" << std::endl;
-  else
-    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
-
-  return pass;
-}
-
-// Isolates the `add` template parameter on evaluate_gradients() and
-// evaluate_gradients_and_multiply_symmetric_tensor(): the <true> result
-// should equal out_before + the <false> result, for both methods, checked
-// together since they share the same reference-space contraction.
-template <int dim, int nq>
-bool
-run_evaluate_gradients_add_test()
-{
-  constexpr int nq_total                   = Utilities::pow(nq, dim);
-  constexpr int symmetric_tensor_dimension = (dim * (dim + 1)) / 2;
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients(
-    "co_shape_gradients", nq * nq);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values("values", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> d_G_identity(
-    "d_G_identity", symmetric_tensor_dimension * nq_total);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_preexisting(
-    "out_preexisting", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_noadd("out_noadd", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_add("out_add", dim * nq_total);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_mult_preexisting(
-    "out_mult_preexisting", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_mult_noadd(
-    "out_mult_noadd", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> out_mult_add(
-    "out_mult_add", dim * nq_total);
-
-  {
-    std::mt19937                           gen(13);
-    std::uniform_real_distribution<double> dist(-1., 1.);
-
-    auto co_shape_gradients_host = Kokkos::create_mirror_view(co_shape_gradients);
-    for (int i = 0; i < nq * nq; ++i)
-      co_shape_gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(co_shape_gradients, co_shape_gradients_host);
-
-    auto values_host = Kokkos::create_mirror_view(values);
-    for (int i = 0; i < nq_total; ++i)
-      values_host(i) = dist(gen);
-    Kokkos::deep_copy(values, values_host);
-
-    auto d_G_identity_host = Kokkos::create_mirror_view(d_G_identity);
-    int  component_index   = 0;
-    for (int d1 = 0; d1 < dim; ++d1)
-      for (int d2 = d1; d2 < dim; ++d2)
-        {
-          for (int q = 0; q < nq_total; ++q)
-            d_G_identity_host(component_index * nq_total + q) = (d1 == d2) ? 1. : 0.;
-          ++component_index;
-        }
-    Kokkos::deep_copy(d_G_identity, d_G_identity_host);
-
-    auto out_preexisting_host      = Kokkos::create_mirror_view(out_preexisting);
-    auto out_add_host              = Kokkos::create_mirror_view(out_add);
-    auto out_mult_preexisting_host = Kokkos::create_mirror_view(out_mult_preexisting);
-    auto out_mult_add_host         = Kokkos::create_mirror_view(out_mult_add);
-    for (int i = 0; i < dim * nq_total; ++i)
+  phi.assign(quadrature.size(), std::vector<double>(fe.n_dofs_per_cell()));
+  dphi.assign(quadrature.size(), std::vector<Tensor<1, dim>>(fe.n_dofs_per_cell()));
+  for (unsigned int q = 0; q < quadrature.size(); ++q)
+    for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i)
       {
-        const Number v                  = dist(gen);
-        out_add_host(i)                 = out_preexisting_host(i) = v;
-        out_mult_add_host(i) = out_mult_preexisting_host(i) = v;
+        phi[q][i]  = fe_values.shape_value(hierarchic_of_lexicographic[i], q);
+        dphi[q][i] = fe_values.shape_grad(hierarchic_of_lexicographic[i], q);
       }
-    Kokkos::deep_copy(out_preexisting, out_preexisting_host);
-    Kokkos::deep_copy(out_add, out_add_host);
-    Kokkos::deep_copy(out_mult_preexisting, out_mult_preexisting_host);
-    Kokkos::deep_copy(out_mult_add, out_mult_add_host);
-  }
-
-  const bool is_serial =
-    std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  const int threadsPerBlock = is_serial ? 1 : Utilities::pow(nq, dim - 1);
-
-  Kokkos::TeamPolicy<> policy(1, threadsPerBlock);
-  policy.set_scratch_size(0, Kokkos::PerTeam(0));
-
-  Kokkos::parallel_for(
-    policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int thread_id = team_member.team_rank();
-      const int block_size = team_member.team_size();
-      const int batch_index  = team_member.league_rank();
-
-      const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nq, nq, Number> fe_eval(
-        team_member, nullptr, co_shape_gradients.data(), 1, 1, batch_index, thread_id, block_size);
-
-      fe_eval.template evaluate_gradients<false>(values.data(), out_noadd.data());
-      fe_eval.template evaluate_gradients<true>(values.data(), out_add.data());
-
-      fe_eval.template evaluate_gradients_and_multiply_symmetric_tensor<false>(
-        d_G_identity, Custom::Parallel::CellRangeIdView(), values.data(), out_mult_noadd.data());
-      fe_eval.template evaluate_gradients_and_multiply_symmetric_tensor<true>(
-        d_G_identity, Custom::Parallel::CellRangeIdView(), values.data(), out_mult_add.data());
-    });
-  Kokkos::fence();
-
-  auto out_preexisting_host      = Kokkos::create_mirror_view(out_preexisting);
-  auto out_add_host              = Kokkos::create_mirror_view(out_add);
-  auto out_noadd_host             = Kokkos::create_mirror_view(out_noadd);
-  auto out_mult_preexisting_host = Kokkos::create_mirror_view(out_mult_preexisting);
-  auto out_mult_add_host         = Kokkos::create_mirror_view(out_mult_add);
-  auto out_mult_noadd_host        = Kokkos::create_mirror_view(out_mult_noadd);
-  Kokkos::deep_copy(out_preexisting_host, out_preexisting);
-  Kokkos::deep_copy(out_add_host, out_add);
-  Kokkos::deep_copy(out_noadd_host, out_noadd);
-  Kokkos::deep_copy(out_mult_preexisting_host, out_mult_preexisting);
-  Kokkos::deep_copy(out_mult_add_host, out_mult_add);
-  Kokkos::deep_copy(out_mult_noadd_host, out_mult_noadd);
-
-  double max_abs_diff = 0., max_abs_val = 0.;
-  for (int i = 0; i < dim * nq_total; ++i)
-    {
-      const double expected = out_preexisting_host(i) + out_noadd_host(i);
-      max_abs_diff = std::max(max_abs_diff, std::abs(out_add_host(i) - expected));
-      max_abs_val  = std::max(max_abs_val, std::abs(expected));
-
-      const double expected_mult = out_mult_preexisting_host(i) + out_mult_noadd_host(i);
-      max_abs_diff = std::max(max_abs_diff, std::abs(out_mult_add_host(i) - expected_mult));
-      max_abs_val  = std::max(max_abs_val, std::abs(expected_mult));
-    }
-
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
-
-  deallog << "evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> "
-            << "vs out_before + <false>: dim = " << dim << ", nq = " << nq << std::endl;
-  if (pass)
-    deallog << "OK" << std::endl;
-  else
-    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
-
-  return pass;
 }
 
-// Isolated check for FEEvaluationImplTransformToCollocation::
-// integrate_gradients() (also lightly hand-edited recently): isolates the
-// `add` template parameter -- integrate_gradients<true>(..., values) should
-// equal values_before + integrate_gradients<false>(..., values) -- same
-// technique as the (now removed/stale-binary) copy of this test in
-// check_correctness_batched_fe_evaluation/program.cc, rebuilt fresh here so
-// it isn't shadowed by that target's own unrelated build failure.
-template <int dim, int nq>
-bool
-run_integrate_add_test()
+
+
+View
+to_device(const HostTable &host, const std::string &name)
 {
-  constexpr int nq_total = Utilities::pow(nq, dim);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients(
-    "co_shape_gradients", nq * nq);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> gradients("gradients", dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_preexisting(
-    "values_preexisting", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_add("values_add", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_noadd("values_noadd", nq_total);
-
-  {
-    std::mt19937                           gen(7);
-    std::uniform_real_distribution<double> dist(-1., 1.);
-
-    auto co_shape_gradients_host = Kokkos::create_mirror_view(co_shape_gradients);
-    for (int i = 0; i < nq * nq; ++i)
-      co_shape_gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(co_shape_gradients, co_shape_gradients_host);
-
-    auto gradients_host = Kokkos::create_mirror_view(gradients);
-    for (int i = 0; i < dim * nq_total; ++i)
-      gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(gradients, gradients_host);
-
-    auto values_preexisting_host = Kokkos::create_mirror_view(values_preexisting);
-    auto values_add_host         = Kokkos::create_mirror_view(values_add);
-    for (int i = 0; i < nq_total; ++i)
-      values_add_host(i) = values_preexisting_host(i) = dist(gen);
-    Kokkos::deep_copy(values_preexisting, values_preexisting_host);
-    Kokkos::deep_copy(values_add, values_add_host);
-  }
-
-  const bool is_serial =
-    std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  const int threadsPerBlock = is_serial ? 1 : Utilities::pow(nq, dim - 1);
-
-  Kokkos::TeamPolicy<> policy(1, threadsPerBlock);
-  policy.set_scratch_size(0, Kokkos::PerTeam(0));
-
-  Kokkos::parallel_for(
-    policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int thread_id = team_member.team_rank();
-      const int block_size = team_member.team_size();
-      const int batch_index  = team_member.league_rank();
-
-      const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, nq, nq, Number> fe_eval(
-        team_member, nullptr, co_shape_gradients.data(), 1, 1, batch_index, thread_id, block_size);
-
-      fe_eval.template integrate_gradients<false>(gradients.data(), values_noadd.data());
-      fe_eval.template integrate_gradients<true>(gradients.data(), values_add.data());
-    });
-  Kokkos::fence();
-
-  auto values_preexisting_host = Kokkos::create_mirror_view(values_preexisting);
-  auto values_add_host         = Kokkos::create_mirror_view(values_add);
-  auto values_noadd_host       = Kokkos::create_mirror_view(values_noadd);
-  Kokkos::deep_copy(values_preexisting_host, values_preexisting);
-  Kokkos::deep_copy(values_add_host, values_add);
-  Kokkos::deep_copy(values_noadd_host, values_noadd);
-
-  double max_abs_diff = 0.;
-  double max_abs_val  = 0.;
-  for (int i = 0; i < nq_total; ++i)
-    {
-      const double expected = values_preexisting_host(i) + values_noadd_host(i);
-      max_abs_diff          = std::max(max_abs_diff, std::abs(values_add_host(i) - expected));
-      max_abs_val           = std::max(max_abs_val, std::abs(expected));
-    }
-
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
-
-  deallog << "integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = "
-            << dim << ", nq = " << nq << std::endl;
-  if (pass)
-    deallog << "OK" << std::endl;
-  else
-    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
-
-  return pass;
+  View view(name, host.size());
+  auto mirror = Kokkos::create_mirror_view(view);
+  for (std::size_t i = 0; i < host.size(); ++i)
+    mirror(i) = host[i];
+  Kokkos::deep_copy(view, mirror);
+  return view;
 }
 
-// Cross-checks the new unified evaluate() (mirroring real deal.II's
-// FEEvaluationImplTransformToCollocation::evaluate(), using
-// EvaluatorTensorProduct's in_place values<>/co_gradients<> machinery)
-// against the already-validated hand-written primitives
-// evaluate_values()/evaluate_gradients(). fe_degree may differ from
-// nq - 1 (over-integration); nq must be >= fe_degree + 1 so a single
-// buffer sized to the quadrature-point count can hold every intermediate
-// stage of both paths.
-template <int dim, int fe_degree, int nq>
-bool
-run_evaluate_roundtrip_test(bool use_gradients_flag)
+
+
+HostTable
+to_host(const View &view)
 {
-  static_assert(nq >= fe_degree + 1, "test buffers assume nq >= fe_degree + 1");
-
-  constexpr int n_dofs_1d    = fe_degree + 1;
-  constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
-  constexpr int nq_total     = Utilities::pow(nq, dim);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> shape_values("shape_values",
-                                                                          n_dofs_1d * nq);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients(
-    "co_shape_gradients", nq * nq);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_a("values_a", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> gradients_a("gradients_a",
-                                                                          dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> scratch_a("scratch_a", 2 * nq_total);
-
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_b("values_b", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> gradients_b("gradients_b",
-                                                                          dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> scratch_b("scratch_b", nq_total);
-
-  {
-    std::mt19937                           gen(23);
-    std::uniform_real_distribution<double> dist(-1., 1.);
-
-    auto shape_values_host = Kokkos::create_mirror_view(shape_values);
-    for (int i = 0; i < n_dofs_1d * nq; ++i)
-      shape_values_host(i) = dist(gen);
-    Kokkos::deep_copy(shape_values, shape_values_host);
-
-    auto co_shape_gradients_host = Kokkos::create_mirror_view(co_shape_gradients);
-    for (int i = 0; i < nq * nq; ++i)
-      co_shape_gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(co_shape_gradients, co_shape_gradients_host);
-
-    auto values_a_host = Kokkos::create_mirror_view(values_a);
-    auto values_b_host = Kokkos::create_mirror_view(values_b);
-    for (int i = 0; i < n_dofs_total; ++i)
-      values_a_host(i) = values_b_host(i) = dist(gen);
-    Kokkos::deep_copy(values_a, values_a_host);
-    Kokkos::deep_copy(values_b, values_b_host);
-  }
-
-  const bool is_serial =
-    std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  const int threadsPerBlock = is_serial ? 1 : Utilities::pow(nq, dim - 1);
-
-  Kokkos::TeamPolicy<> policy(1, threadsPerBlock);
-  policy.set_scratch_size(0, Kokkos::PerTeam(0));
-
-  Kokkos::parallel_for(
-    policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int thread_id = team_member.team_rank();
-      const int block_size = team_member.team_size();
-      const int batch_index  = team_member.league_rank();
-
-      const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, fe_degree, nq, Number>
-        fe_eval(team_member,
-                shape_values.data(),
-                co_shape_gradients.data(),
-                1,
-                1,
-                batch_index,
-                thread_id,
-                block_size);
-
-      // Path A: existing, already-validated hand-written primitives.
-      fe_eval.evaluate_values(values_a.data(), values_a.data(), scratch_a.data());
-      if (use_gradients_flag)
-        fe_eval.evaluate_gradients(values_a.data(), gradients_a.data());
-
-      // Path B: new unified evaluate(), mirroring real deal.II.
-      fe_eval.evaluate(values_b.data(),
-                       gradients_b.data(),
-                       scratch_b.data(),
-                       use_gradients_flag ? (EvaluationFlags::values | EvaluationFlags::gradients) :
-                                            EvaluationFlags::values);
-    });
-  Kokkos::fence();
-
-  auto values_a_host    = Kokkos::create_mirror_view(values_a);
-  auto values_b_host    = Kokkos::create_mirror_view(values_b);
-  auto gradients_a_host = Kokkos::create_mirror_view(gradients_a);
-  auto gradients_b_host = Kokkos::create_mirror_view(gradients_b);
-  Kokkos::deep_copy(values_a_host, values_a);
-  Kokkos::deep_copy(values_b_host, values_b);
-  Kokkos::deep_copy(gradients_a_host, gradients_a);
-  Kokkos::deep_copy(gradients_b_host, gradients_b);
-
-  double max_abs_diff = 0., max_abs_val = 0.;
-  for (int i = 0; i < nq_total; ++i)
-    {
-      max_abs_diff = std::max(max_abs_diff, std::abs(values_a_host(i) - values_b_host(i)));
-      max_abs_val  = std::max(max_abs_val, std::abs(values_a_host(i)));
-    }
-  if (use_gradients_flag)
-    for (int i = 0; i < dim * nq_total; ++i)
-      {
-        max_abs_diff =
-          std::max(max_abs_diff, std::abs(gradients_a_host(i) - gradients_b_host(i)));
-        max_abs_val = std::max(max_abs_val, std::abs(gradients_a_host(i)));
-      }
-
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
-
-  deallog << "evaluate() vs evaluate_values()+evaluate_gradients(): dim = " << dim
-            << ", fe_degree = " << fe_degree << ", nq = " << nq
-            << ", gradients_flag = " << (use_gradients_flag ? "true" : "false") << std::endl;
-  if (pass)
-    deallog << "OK" << std::endl;
-  else
-    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
-
-  return pass;
+  auto mirror = Kokkos::create_mirror_view(view);
+  Kokkos::deep_copy(mirror, view);
+  return HostTable(mirror.data(), mirror.data() + mirror.size());
 }
 
-// Cross-checks the new unified integrate() against the already-validated
-// hand-written integrate_gradients()/integrate_values() composition, for
-// both integration_flag == gradients and integration_flag == gradients |
-// values (the latter accumulating a pre-existing quadrature-space
-// "values" contribution, e.g. a mass-matrix term, on top of the gradient
-// contribution -- matches integrate_gradients<true>()'s add semantics).
-template <int dim, int fe_degree, int nq>
-bool
-run_integrate_roundtrip_test(bool use_values_flag)
+
+
+HostTable
+random_table(const std::size_t size, std::mt19937 &gen)
 {
-  static_assert(nq >= fe_degree + 1, "test buffers assume nq >= fe_degree + 1");
+  std::uniform_real_distribution<double> dist(-1., 1.);
+  HostTable                              table(size);
+  for (auto &entry : table)
+    entry = dist(gen);
+  return table;
+}
 
-  constexpr int n_dofs_1d    = fe_degree + 1;
-  constexpr int n_dofs_total = Utilities::pow(n_dofs_1d, dim);
-  constexpr int nq_total     = Utilities::pow(nq, dim);
 
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> shape_values("shape_values",
-                                                                          n_dofs_1d * nq);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients(
-    "co_shape_gradients", nq * nq);
 
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> gradients("gradients",
-                                                                        dim * nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> gradients_b("gradients_b",
-                                                                          dim * nq_total);
+// max |a - b| relative to max |b| over the first b.size() entries
+double
+relative_difference(const HostTable &a, const HostTable &b)
+{
+  double diff = 0., norm = 0.;
+  for (std::size_t i = 0; i < b.size(); ++i)
+    {
+      diff = std::max(diff, std::abs(a[i] - b[i]));
+      norm = std::max(norm, std::abs(b[i]));
+    }
+  return diff / std::max(norm, 1e-300);
+}
 
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_a("values_a", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> scratch_a("scratch_a", 2 * nq_total);
 
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> values_b("values_b", nq_total);
-  Kokkos::View<Number *, MemorySpace::Default::kokkos_space> scratch_b("scratch_b", nq_total);
 
-  {
-    std::mt19937                           gen(29);
-    std::uniform_real_distribution<double> dist(-1., 1.);
+void
+report(const std::string &name, const double err)
+{
+  if (err < 1e-12)
+    deallog << name << ": OK" << std::endl;
+  else
+    deallog << name << ": rel_err = " << err << std::endl;
+}
 
-    auto shape_values_host = Kokkos::create_mirror_view(shape_values);
-    for (int i = 0; i < n_dofs_1d * nq; ++i)
-      shape_values_host(i) = dist(gen);
-    Kokkos::deep_copy(shape_values, shape_values_host);
 
-    auto co_shape_gradients_host = Kokkos::create_mirror_view(co_shape_gradients);
-    for (int i = 0; i < nq * nq; ++i)
-      co_shape_gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(co_shape_gradients, co_shape_gradients_host);
 
-    auto gradients_host = Kokkos::create_mirror_view(gradients);
-    for (int i = 0; i < dim * nq_total; ++i)
-      gradients_host(i) = dist(gen);
-    Kokkos::deep_copy(gradients, gradients_host);
-    Kokkos::deep_copy(gradients_b, gradients_host);
+using Policy = Kokkos::TeamPolicy<>;
+using Member = Policy::member_type;
 
-    auto values_a_host = Kokkos::create_mirror_view(values_a);
-    auto values_b_host = Kokkos::create_mirror_view(values_b);
-    for (int i = 0; i < nq_total; ++i)
-      values_a_host(i) = values_b_host(i) = use_values_flag ? dist(gen) : 0.;
-    Kokkos::deep_copy(values_a, values_a_host);
-    Kokkos::deep_copy(values_b, values_b_host);
-  }
+template <int dim, int fe_degree, int n_q_points_1d>
+using FEEval =
+  Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>;
 
-  const bool is_serial =
-    std::is_same<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  const int threadsPerBlock = is_serial ? 1 : Utilities::pow(nq, dim - 1);
-
-  Kokkos::TeamPolicy<> policy(1, threadsPerBlock);
-  policy.set_scratch_size(0, Kokkos::PerTeam(0));
+// Runs `body(fe_eval, team_member)` once on a team of the default execution
+// space.
+template <int dim, int fe_degree, int n_q_points_1d, typename Body>
+void
+run_on_team(const View &shape_values, const View &co_shape_gradients, const Body &body)
+{
+  constexpr bool is_serial =
+    std::is_same_v<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>;
+  const int team_size = is_serial ? 1 : Utilities::pow(n_q_points_1d, dim - 1) * n_cells;
 
   Kokkos::parallel_for(
-    policy, KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type team_member) {
-      const int thread_id = team_member.team_rank();
-      const int block_size = team_member.team_size();
-      const int batch_index  = team_member.league_rank();
-
-      const Custom::Parallel::FEEvaluationImplTransformToCollocation<dim, fe_degree, nq, Number>
-        fe_eval(team_member,
-                shape_values.data(),
-                co_shape_gradients.data(),
-                1,
-                1,
-                batch_index,
-                thread_id,
-                block_size);
-
-      // Path A: existing, already-validated hand-written primitives.
-      if (use_values_flag)
-        fe_eval.template integrate_gradients<true>(gradients.data(), values_a.data());
-      else
-        fe_eval.template integrate_gradients<false>(gradients.data(), values_a.data());
-      fe_eval.integrate_values(values_a.data(), values_a.data(), scratch_a.data());
-
-      // Path B: new unified integrate(), mirroring real deal.II.
-      fe_eval.integrate(values_b.data(),
-                        gradients_b.data(),
-                        scratch_b.data(),
-                        use_values_flag ? (EvaluationFlags::values | EvaluationFlags::gradients) :
-                                          EvaluationFlags::gradients);
+    Policy(1, team_size), KOKKOS_LAMBDA(const Member &team_member) {
+      const FEEval<dim, fe_degree, n_q_points_1d> fe_eval(team_member,
+                                                          shape_values.data(),
+                                                          co_shape_gradients.data(),
+                                                          n_cells,
+                                                          n_cells,
+                                                          team_member.league_rank(),
+                                                          team_member.team_rank(),
+                                                          team_member.team_size());
+      body(fe_eval, team_member);
     });
   Kokkos::fence();
+}
 
-  auto values_a_host = Kokkos::create_mirror_view(values_a);
-  auto values_b_host = Kokkos::create_mirror_view(values_b);
-  Kokkos::deep_copy(values_a_host, values_a);
-  Kokkos::deep_copy(values_b_host, values_b);
 
-  double max_abs_diff = 0., max_abs_val = 0.;
-  for (int i = 0; i < n_dofs_total; ++i)
+
+template <int dim, int fe_degree, int n_q_points_1d>
+void
+test()
+{
+  constexpr int n_dofs     = Utilities::pow(fe_degree + 1, dim);
+  constexpr int n_q_points = Utilities::pow(n_q_points_1d, dim);
+  constexpr int n_qp_batch = n_cells * n_q_points;
+  constexpr int n_sym      = dim * (dim + 1) / 2;
+
+  using FE = FEEval<dim, fe_degree, n_q_points_1d>;
+
+  deallog << "dim = " << dim << ", fe_degree = " << fe_degree
+          << ", n_q_points_1d = " << n_q_points_1d << std::endl;
+
+  // 1D tables as LaplaceOperatorBK3 builds them
+  const QGauss<1>                                        quadrature_1d(n_q_points_1d);
+  const FE_Q<dim>                                        fe(fe_degree);
+  const internal::MatrixFreeFunctions::ShapeInfo<Number> shape_info(quadrature_1d, fe);
+  const auto                                            &univariate = shape_info.data.front();
+  const View                                             shape_values =
+    to_device(HostTable(univariate.shape_values.begin(), univariate.shape_values.end()),
+              "shape_values");
+  const View co_shape_gradients =
+    to_device(HostTable(univariate.shape_gradients_collocation.begin(),
+                        univariate.shape_gradients_collocation.end()),
+              "co_shape_gradients");
+
+  std::vector<std::vector<double>>         phi;
+  std::vector<std::vector<Tensor<1, dim>>> dphi;
+  reference_shape_data<dim>(fe_degree, n_q_points_1d, phi, dphi);
+
+  std::mt19937 gen(42);
+
+  // inputs: DoF values packed per cell, quadrature-point values and
+  // gradients ([d][cell][q]), G as [cell][component][q]
+  const HostTable u = random_table(n_cells * n_dofs, gen);
+  const HostTable v = random_table(n_qp_batch, gen);
+  const HostTable w = random_table(dim * n_qp_batch, gen);
+  const HostTable G = random_table(n_cells * n_sym * n_q_points, gen);
+
+  // dense references
+  HostTable u_q(n_qp_batch), grad_q(dim * n_qp_batch), G_grad_q(dim * n_qp_batch),
+    r(n_cells * n_dofs);
+  for (int c = 0; c < n_cells; ++c)
     {
-      max_abs_diff = std::max(max_abs_diff, std::abs(values_a_host(i) - values_b_host(i)));
-      max_abs_val  = std::max(max_abs_val, std::abs(values_a_host(i)));
+      for (int q = 0; q < n_q_points; ++q)
+        {
+          Tensor<1, dim> grad;
+          double         value = 0.;
+          for (int i = 0; i < n_dofs; ++i)
+            {
+              value += u[c * n_dofs + i] * phi[q][i];
+              grad += u[c * n_dofs + i] * dphi[q][i];
+            }
+          u_q[c * n_q_points + q] = value;
+
+          // symmetric G from its packed upper triangle (d1 <= d2)
+          Tensor<2, dim> G_q;
+          int            component = 0;
+          for (int d1 = 0; d1 < dim; ++d1)
+            for (int d2 = d1; d2 < dim; ++d2, ++component)
+              G_q[d1][d2] = G_q[d2][d1] = G[c * n_sym * n_q_points + component * n_q_points + q];
+          const Tensor<1, dim> G_grad = G_q * grad;
+
+          for (int d = 0; d < dim; ++d)
+            {
+              grad_q[d * n_qp_batch + c * n_q_points + q]   = grad[d];
+              G_grad_q[d * n_qp_batch + c * n_q_points + q] = G_grad[d];
+            }
+        }
+
+      for (int i = 0; i < n_dofs; ++i)
+        {
+          double sum = 0.;
+          for (int q = 0; q < n_q_points; ++q)
+            {
+              sum += phi[q][i] * v[c * n_q_points + q];
+              for (int d = 0; d < dim; ++d)
+                sum += dphi[q][i][d] * w[d * n_qp_batch + c * n_q_points + q];
+            }
+          r[c * n_dofs + i] = sum;
+        }
     }
 
-  const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
+  // the kernels work in place on buffers of n_qp_batch entries per field
+  const auto u_buffer = [&]()
+  {
+    HostTable buffer(n_qp_batch, 0.);
+    std::copy(u.begin(), u.end(), buffer.begin());
+    return buffer;
+  };
+  const View d_G = to_device(G, "G");
 
-  deallog << "integrate() vs integrate_gradients()+integrate_values(): dim = " << dim
-            << ", fe_degree = " << fe_degree << ", nq = " << nq
-            << ", values_flag = " << (use_values_flag ? "true" : "false") << std::endl;
-  if (pass)
-    deallog << "OK" << std::endl;
-  else
-    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
+  // evaluate() with values and gradients
+  {
+    const View values  = to_device(u_buffer(), "values");
+    const View grads   = to_device(HostTable(dim * n_qp_batch), "gradients");
+    const View scratch = to_device(HostTable(2 * n_qp_batch), "scratch");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.evaluate(values.data(),
+                         grads.data(),
+                         scratch.data(),
+                         EvaluationFlags::values | EvaluationFlags::gradients);
+      });
+    report("evaluate: values", relative_difference(to_host(values), u_q));
+    report("evaluate: gradients", relative_difference(to_host(grads), grad_q));
+  }
 
-  return pass;
+  // evaluate_values() + evaluate_gradients<false>() / <true>()
+  {
+    const View values  = to_device(u_buffer(), "values");
+    const View grads   = to_device(HostTable(dim * n_qp_batch), "gradients");
+    const View scratch = to_device(HostTable(2 * n_qp_batch), "scratch");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.evaluate_values(values.data(), values.data(), scratch.data());
+        team_member.team_barrier();
+        fe_eval.evaluate_gradients(values.data(), grads.data());
+      });
+    report("evaluate_values", relative_difference(to_host(values), u_q));
+    report("evaluate_gradients", relative_difference(to_host(grads), grad_q));
+
+    const View grads_add = to_device(w, "gradients_add");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.template evaluate_gradients<true>(values.data(), grads_add.data());
+      });
+    HostTable expected(dim * n_qp_batch);
+    for (int i = 0; i < dim * n_qp_batch; ++i)
+      expected[i] = w[i] + grad_q[i];
+    report("evaluate_gradients<add>", relative_difference(to_host(grads_add), expected));
+  }
+
+  // evaluate_values() + evaluate_gradients_and_multiply_symmetric_tensor()
+  {
+    const View values  = to_device(u_buffer(), "values");
+    const View grads   = to_device(HostTable(dim * n_qp_batch), "gradients");
+    const View scratch = to_device(HostTable(2 * n_qp_batch), "scratch");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.evaluate_values(values.data(), values.data(), scratch.data());
+        team_member.team_barrier();
+        fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(
+          d_G, Custom::Parallel::CellRangeIdView(), values.data(), grads.data());
+      });
+    report("evaluate_gradients_and_multiply_symmetric_tensor",
+           relative_difference(to_host(grads), G_grad_q));
+  }
+
+  // integrate() with values and gradients
+  {
+    const View values  = to_device(v, "values");
+    const View grads   = to_device(w, "gradients");
+    const View scratch = to_device(HostTable(2 * n_qp_batch), "scratch");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.integrate(values.data(),
+                          grads.data(),
+                          scratch.data(),
+                          EvaluationFlags::values | EvaluationFlags::gradients);
+      });
+    report("integrate", relative_difference(to_host(values), r));
+  }
+
+  // integrate_gradients<true>() + integrate_values()
+  {
+    const View values  = to_device(v, "values");
+    const View grads   = to_device(w, "gradients");
+    const View scratch = to_device(HostTable(2 * n_qp_batch), "scratch");
+    run_on_team<dim, fe_degree, n_q_points_1d>(
+      shape_values,
+      co_shape_gradients,
+      KOKKOS_LAMBDA(const FE &fe_eval, const Member &team_member) {
+        fe_eval.template integrate_gradients<true>(grads.data(), values.data());
+        team_member.team_barrier();
+        fe_eval.integrate_values(values.data(), values.data(), scratch.data());
+      });
+    report("integrate_gradients<add> + integrate_values", relative_difference(to_host(values), r));
+  }
 }
+
+
 
 int
 main(int argc, char *argv[])
 {
-  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+  Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
   initlog();
 
-  bool all_passed = true;
-  all_passed &= run_evaluate_gradients_test<3, 4>();
-  all_passed &= run_evaluate_gradients_test<2, 5>();
-  all_passed &= run_evaluate_gradients_test<1, 3>();
-  all_passed &= run_evaluate_gradients_test<3, 2>();
-  all_passed &= run_evaluate_gradients_test<2, 2>();
-
-  all_passed &= run_evaluate_gradients_add_test<3, 4>();
-  all_passed &= run_evaluate_gradients_add_test<2, 5>();
-  all_passed &= run_evaluate_gradients_add_test<1, 3>();
-  all_passed &= run_evaluate_gradients_add_test<3, 2>();
-  all_passed &= run_evaluate_gradients_add_test<2, 2>();
-
-  all_passed &= run_integrate_add_test<3, 4>();
-  all_passed &= run_integrate_add_test<2, 5>();
-  all_passed &= run_integrate_add_test<1, 3>();
-  all_passed &= run_integrate_add_test<3, 2>();
-  all_passed &= run_integrate_add_test<2, 2>();
-
-  // dim, fe_degree, nq: square cases (nq == fe_degree + 1) ...
-  all_passed &= run_evaluate_roundtrip_test<3, 3, 4>(true);
-  all_passed &= run_evaluate_roundtrip_test<3, 3, 4>(false);
-  all_passed &= run_evaluate_roundtrip_test<2, 4, 5>(true);
-  all_passed &= run_evaluate_roundtrip_test<2, 4, 5>(false);
-  all_passed &= run_evaluate_roundtrip_test<1, 2, 3>(true);
-  all_passed &= run_evaluate_roundtrip_test<1, 2, 3>(false);
-  all_passed &= run_evaluate_roundtrip_test<2, 1, 2>(true);
-  all_passed &= run_evaluate_roundtrip_test<2, 1, 2>(false);
-  // ... and one over-integrated case (nq > fe_degree + 1).
-  all_passed &= run_evaluate_roundtrip_test<3, 2, 4>(true);
-  all_passed &= run_evaluate_roundtrip_test<3, 2, 4>(false);
-
-  all_passed &= run_integrate_roundtrip_test<3, 3, 4>(true);
-  all_passed &= run_integrate_roundtrip_test<3, 3, 4>(false);
-  all_passed &= run_integrate_roundtrip_test<2, 4, 5>(true);
-  all_passed &= run_integrate_roundtrip_test<2, 4, 5>(false);
-  all_passed &= run_integrate_roundtrip_test<1, 2, 3>(true);
-  all_passed &= run_integrate_roundtrip_test<1, 2, 3>(false);
-  all_passed &= run_integrate_roundtrip_test<2, 1, 2>(true);
-  all_passed &= run_integrate_roundtrip_test<2, 1, 2>(false);
-  all_passed &= run_integrate_roundtrip_test<3, 2, 4>(true);
-  all_passed &= run_integrate_roundtrip_test<3, 2, 4>(false);
-
-  (void)all_passed;
+  test<1, 1, 2>();
+  test<1, 3, 4>();
+  test<1, 2, 4>();
+  test<2, 1, 2>();
+  test<2, 2, 3>();
+  test<2, 4, 5>();
+  test<2, 2, 4>();
+  test<3, 1, 2>();
+  test<3, 2, 3>();
+  test<3, 3, 4>();
+  test<3, 2, 4>();
 }
