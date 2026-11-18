@@ -56,6 +56,21 @@ if(NOT DEFINED DEAL_II_WITH_KOKKOS_CUDA)
 endif()
 message(STATUS "Kokkos CUDA backend: ${DEAL_II_WITH_KOKKOS_CUDA}")
 
+# Portable::internal::batched in deal.II: tests with
+# "with_portable_batched=on" in the name of their output file only run then
+# (Copy::Portable::MGTwoLevelTransfer)
+if(NOT DEFINED DEAL_II_WITH_PORTABLE_BATCHED)
+  set(DEAL_II_WITH_PORTABLE_BATCHED OFF)
+  set(_header "${DEAL_II_PATH}/${DEAL_II_INCLUDE_RELDIR}/deal.II/matrix_free/portable_tensor_product_kernels.h")
+  if(EXISTS "${_header}")
+    file(STRINGS "${_header}" _batched REGEX "namespace batched")
+    if(_batched)
+      set(DEAL_II_WITH_PORTABLE_BATCHED ON)
+    endif()
+  endif()
+endif()
+message(STATUS "Portable::internal::batched: ${DEAL_II_WITH_PORTABLE_BATCHED}")
+
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../include
