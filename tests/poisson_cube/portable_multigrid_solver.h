@@ -50,14 +50,16 @@ namespace multigrid
   class MultigridSolver
   {
   public:
+    using LevelMatrixType = Portable::LaplaceOperatorBase<
+      dim,
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>;
+
     MultigridSolver(
       const MGLevelObject<DoFHandler<dim>>           &level_dof_handlers,
       const MGLevelObject<AffineConstraints<number>> &level_constraints,
       const MGLevelObject<
         std::unique_ptr<Portable::MGTransferBase<dim, number>>> &mg_transfers,
-      const MGLevelObject<
-        std::unique_ptr<Portable::LaplaceOperatorBase<dim, number>>>
-                                        &level_matrices,
+      const MGLevelObject<std::unique_ptr<LevelMatrixType>> &level_matrices,
       const MGLevelObject<SmootherType> &smoothers,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
                         &right_hand_side,
@@ -277,8 +279,7 @@ namespace multigrid
     /**
      * The matrix for each level.
      */
-    const MGLevelObject<
-      std::unique_ptr<Portable::LaplaceOperatorBase<dim, number>>> &matrix;
+    const MGLevelObject<std::unique_ptr<LevelMatrixType>> &matrix;
 
     /**
      * The smoother object.

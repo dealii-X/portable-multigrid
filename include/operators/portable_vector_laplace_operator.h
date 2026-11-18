@@ -64,7 +64,9 @@ namespace Portable
             int n_components,
             typename number,
             int n_q_points_1d = fe_degree + 1>
-  class VectorLaplaceOperator : public LaplaceOperatorBase<dim, number>
+  class VectorLaplaceOperator
+    : public LaplaceOperatorBase<dim,
+                                 LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
   {
   public:
     VectorLaplaceOperator(const DoFHandler<dim>           &dof_handler,

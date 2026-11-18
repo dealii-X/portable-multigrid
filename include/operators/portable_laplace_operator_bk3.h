@@ -35,7 +35,9 @@ namespace Portable
   // 1-D shape tables, Dirichlet masks and per-cell G tensors
   // (G = JxW * J^{-1} J^{-T}, symmetric part only) from the DoFHandler.
   template <int dim, int fe_degree, typename number, int n_q_points_1d = fe_degree + 1>
-  class LaplaceOperatorBK3 : public LaplaceOperatorBase<dim, number>
+  class LaplaceOperatorBK3
+    : public LaplaceOperatorBase<dim,
+                                 LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
   {
   public:
     using VectorType   = LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;

@@ -15,7 +15,7 @@
 
 #include <memory>
 
-#include "cpu_laplace_operator_base.h"
+#include "base/portable_laplace_operator_base.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -66,10 +66,21 @@ namespace CPU
     el(const types::global_dof_index row, const types::global_dof_index col) const override;
 
     const MatrixFree<dim, number> &
-    get_matrix_free() const override;
+    get_matrix_free() const;
 
     const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const override;
+
+    const DoFHandler<dim> &
+    get_dof_handler() const override;
+
+    // One color with all locally owned cells, hence no 3-color overlap; the
+    // CPU cell loop does its own scheduling.
+    const typename Portable::OperatorInfoBase<dim>::ColoredGraph &
+    get_colored_graph() const override;
+
+    bool
+    use_overlap_communication_computation() const override;
 
   private:
     void
@@ -85,6 +96,8 @@ namespace CPU
     copy_constrained_values(const VectorType &src, VectorType &dst) const;
 
     MatrixFree<dim, number> matrix_free;
+
+    typename Portable::OperatorInfoBase<dim>::ColoredGraph colored_graph;
 
     std::shared_ptr<DiagonalMatrix<VectorType>> inverse_diagonal_entries;
   };
@@ -105,6 +118,11 @@ namespace CPU
 
     const QGauss<1> quadrature_1d(n_q_points_1d);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
+
+    colored_graph.resize(1);
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        colored_graph[0].push_back(cell);
   }
 
   template <int dim, int fe_degree, typename number, int n_q_points_1d>
@@ -276,6 +294,28 @@ namespace CPU
   LaplaceOperator<dim, fe_degree, number, n_q_points_1d>::get_vector_partitioner() const
   {
     return matrix_free.get_vector_partitioner();
+  }
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  const DoFHandler<dim> &
+  LaplaceOperator<dim, fe_degree, number, n_q_points_1d>::get_dof_handler() const
+  {
+    return matrix_free.get_dof_handler();
+  }
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  const typename Portable::OperatorInfoBase<dim>::ColoredGraph &
+  LaplaceOperator<dim, fe_degree, number, n_q_points_1d>::get_colored_graph() const
+  {
+    return colored_graph;
+  }
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  bool
+  LaplaceOperator<dim, fe_degree, number, n_q_points_1d>::use_overlap_communication_computation()
+    const
+  {
+    return false;
   }
 
 } // namespace CPU

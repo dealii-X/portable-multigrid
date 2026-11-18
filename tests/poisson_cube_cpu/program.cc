@@ -33,8 +33,8 @@
 #include <memory>
 #include <type_traits>
 
-#include "cpu_laplace_operator.h"
-#include "cpu_multigrid_solver.h"
+#include "operators/cpu_laplace_operator.h"
+#include "portable_multigrid_solver.h"
 
 
 namespace multigrid

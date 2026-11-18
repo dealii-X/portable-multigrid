@@ -67,7 +67,9 @@ namespace Portable
 
 
   template <int dim, int fe_degree, typename number>
-  class LaplaceOperator : public LaplaceOperatorBase<dim, number>
+  class LaplaceOperator
+    : public LaplaceOperatorBase<dim,
+                                 LinearAlgebra::distributed::Vector<number, MemorySpace::Default>>
   {
   public:
     LaplaceOperator(const DoFHandler<dim>           &dof_handler,

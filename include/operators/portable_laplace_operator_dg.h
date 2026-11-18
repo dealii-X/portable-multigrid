@@ -22,7 +22,9 @@ namespace Portable
 {
 
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>
-  class LaplaceOperatorDG : public LaplaceOperatorBase<dim, Number>
+  class LaplaceOperatorDG
+    : public LaplaceOperatorBase<dim,
+                                 LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>
   {
   public:
     LaplaceOperatorDG() = default;

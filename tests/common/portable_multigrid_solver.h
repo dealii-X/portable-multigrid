@@ -12,6 +12,8 @@
 
 #include <deal.II/multigrid/mg_base.h>
 
+#include <type_traits>
+
 #include "multigrid/portable_geometric_transfer.h"
 #include "multigrid/portable_polynomial_transfer.h"
 #include "operators/portable_laplace_operator.h"
@@ -46,29 +48,39 @@ namespace multigrid
     const bool          is_empty;
   };
 
-  template <int dim,
-            int fe_degree,
-            typename number,
-            typename number2,
-            typename SmootherType>
+  // VectorType/TransferType: V-cycle (number) types, VectorTypeFine: outer CG
+  // (number2) type. Defaults are the MemorySpace::Default ones.
+  template <
+    int dim,
+    int fe_degree,
+    typename number,
+    typename number2,
+    typename SmootherType,
+    typename VectorType =
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>,
+    typename VectorTypeFine =
+      LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>,
+    typename TransferType = Portable::MGTransferBase<dim, number>>
   class MultigridSolver
   {
+    static_assert(std::is_same_v<typename VectorType::value_type, number>);
+    static_assert(std::is_same_v<typename VectorTypeFine::value_type, number2>);
+
   public:
+    using LevelMatrixType = Portable::LaplaceOperatorBase<dim, VectorType>;
+    using FineMatrixType  = Portable::LaplaceOperatorBase<dim, VectorTypeFine>;
+
     MultigridSolver(
-      const std::unique_ptr<Portable::LaplaceOperatorBase<dim, number2>>
-                                                     &fine_matrix,
-      const MGLevelObject<DoFHandler<dim>>           &level_dof_handlers,
-      const MGLevelObject<AffineConstraints<number>> &level_constraints,
-      const MGLevelObject<
-        std::unique_ptr<Portable::MGTransferBase<dim, number>>> &mg_transfers,
-      const MGLevelObject<
-        std::unique_ptr<Portable::LaplaceOperatorBase<dim, number>>>
-                                        &level_matrices,
-      const MGLevelObject<SmootherType> &smoothers,
-      const LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>
-                        &right_hand_side,
-      const unsigned int degree_pre,
-      const unsigned int degree_post)
+      const std::unique_ptr<FineMatrixType>                 &fine_matrix,
+      const MGLevelObject<DoFHandler<dim>>                  &level_dof_handlers,
+      const MGLevelObject<AffineConstraints<number>>        &level_constraints,
+      const MGLevelObject<std::unique_ptr<TransferType>>    &mg_transfers,
+      const MGLevelObject<std::unique_ptr<LevelMatrixType>> &level_matrices,
+      const MGLevelObject<SmootherType>                     &smoothers,
+      const VectorTypeFine                                  &right_hand_side,
+      const unsigned int                                     degree_pre,
+      const unsigned int                                     degree_post,
+      const MGCoarseGridBase<VectorType>                    *coarse_solver = nullptr)
       : minlevel(level_dof_handlers.min_level())
       , maxlevel(level_dof_handlers.max_level())
       , fine_matrix(fine_matrix)
@@ -82,6 +94,7 @@ namespace multigrid
       , defect(minlevel, maxlevel)
       , t(minlevel, maxlevel)
       , coarse(smooth, false)
+      , external_coarse(coarse_solver)
       , degree_pre(degree_pre)
       , degree_post(degree_post)
       , timings(maxlevel + 1)
@@ -151,10 +164,8 @@ namespace multigrid
 
 
 
-      using VectorTypeSolve =
-        LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>;
-      ReductionControl          solver_control(100, 1e-16, 1e-9);
-      SolverCG<VectorTypeSolve> solver_cg(solver_control);
+      ReductionControl         solver_control(100, 1e-16, 1e-9);
+      SolverCG<VectorTypeFine> solver_cg(solver_control);
 
 
       solution_fine = 0;
@@ -169,11 +180,9 @@ namespace multigrid
     }
 
     void
-    vmult(
-      LinearAlgebra::distributed::Vector<number2, MemorySpace::Default> &dst,
-      const LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>
-        &src) const
+    vmult(VectorTypeFine &dst, const VectorTypeFine &src) const
     {
+      fence();
       Timer time;
 
 
@@ -189,6 +198,11 @@ namespace multigrid
 
 
       dst.copy_locally_owned_data_from(solution[maxlevel]);
+      fence();
+
+      // number of V-cycles and their total time, see print_wall_times()
+      timings[minlevel][1] += 1;
+      timings[minlevel][2] += time.wall_time();
     }
 
     void
@@ -205,6 +219,17 @@ namespace multigrid
 
   private:
     /**
+     * Kokkos::fence() for device vectors, no-op for host vectors.
+     */
+    static void
+    fence()
+    {
+      if constexpr (!std::is_same_v<typename VectorType::memory_space,
+                                    MemorySpace::Host>)
+        Kokkos::fence();
+    }
+
+    /**
      * Implements the v-cycle
      */
     void
@@ -213,10 +238,13 @@ namespace multigrid
       // std::cout << "Entering v-cycle level " << level << std::endl;
       if (level == minlevel)
         {
-          Kokkos::fence();
+          fence();
           Timer time;
-          (coarse)(level, solution[level], defect[level]);
-          Kokkos::fence();
+          if (external_coarse != nullptr)
+            (*external_coarse)(level, solution[level], defect[level]);
+          else
+            (coarse)(level, solution[level], defect[level]);
+          fence();
           timings[level][0] += time.wall_time();
 
           // std::cout << "After coarse solve "  << level << std::endl;
@@ -226,25 +254,25 @@ namespace multigrid
 
       Timer time;
 
-      Kokkos::fence();
+      fence();
       time.restart();
       (smooth)[level].vmult(solution[level], defect[level]);
       // (smooth)[level].step(solution[level], defect[level]);
-      Kokkos::fence();
+      fence();
       timings[level][5] += time.wall_time();
 
-      Kokkos::fence();
+      fence();
       time.restart();
       (matrix)[level]->vmult(t[level], solution[level]);
       t[level].sadd(-1.0, 1.0, defect[level]);
-      Kokkos::fence();
+      fence();
       timings[level][0] += time.wall_time();
 
-      Kokkos::fence();
+      fence();
       time.restart();
       defect[level - 1] = 0;
       transfer[level]->restrict_and_add(defect[level - 1], t[level]);
-      Kokkos::fence();
+      fence();
       timings[level][1] += time.wall_time();
 
       // std::cout << "After restrict_and_add " << level << std::endl;
@@ -253,18 +281,18 @@ namespace multigrid
       v_cycle(level - 1);
 
 
-      Kokkos::fence();
+      fence();
       time.restart();
       transfer[level]->prolongate_and_add(solution[level], solution[level - 1]);
-      Kokkos::fence();
+      fence();
       timings[level][2] += time.wall_time();
 
         // std::cout << "After prolongate_and_add " << level << std::endl;
 
-      Kokkos::fence();
+      fence();
       time.restart();
       (smooth)[level].step(solution[level], defect[level]);
-      Kokkos::fence();
+      fence();
       timings[level][5] += time.wall_time();
 
         // std::cout << "After post smooth " << level << std::endl;
@@ -280,60 +308,55 @@ namespace multigrid
      */
     unsigned int maxlevel;
 
-    const std::unique_ptr<Portable::LaplaceOperatorBase<dim, number2>>
-      &fine_matrix;
+    const std::unique_ptr<FineMatrixType> &fine_matrix;
 
     const MGLevelObject<DoFHandler<dim>>           &level_dof_handlers;
     const MGLevelObject<AffineConstraints<number>> &level_constraints;
 
-    MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, number>>>
-      transfer;
+    MGLevelObject<std::unique_ptr<TransferType>> transfer;
 
     /**
      * The matrix for each level.
      */
-    const MGLevelObject<
-      std::unique_ptr<Portable::LaplaceOperatorBase<dim, number>>> &matrix;
+    const MGLevelObject<std::unique_ptr<LevelMatrixType>> &matrix;
 
     /**
      * The smoother object.
      */
     const MGLevelObject<SmootherType> &smooth;
 
-    LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>
-      solution_fine;
-
-    typedef LinearAlgebra::distributed::Vector<number, MemorySpace::Default>
-      VectorTypeDevice;
-    typedef LinearAlgebra::distributed::Vector<number, MemorySpace::Host>
-      VectorTypeHost;
+    VectorTypeFine solution_fine;
 
     /**
      * The solution update after the multigrid step.
      */
-    mutable MGLevelObject<VectorTypeDevice> solution;
+    mutable MGLevelObject<VectorType> solution;
 
     /**
      * Right hand side vector
      */
-    const LinearAlgebra::distributed::Vector<number2, MemorySpace::Default>
-      &rhs;
+    const VectorTypeFine &rhs;
 
     /**
      * Input vector for the cycle. Contains the defect of the outer method
      * projected to the multilevel vectors.
      */
-    mutable MGLevelObject<VectorTypeDevice> defect;
+    mutable MGLevelObject<VectorType> defect;
 
     /**
      * Auxiliary vector.
      */
-    mutable MGLevelObject<VectorTypeDevice> t;
+    mutable MGLevelObject<VectorType> t;
 
     /**
      * The coarse solver
      */
-    MGCoarseFromSmoother<VectorTypeDevice, MGLevelObject<SmootherType>> coarse;
+    MGCoarseFromSmoother<VectorType, MGLevelObject<SmootherType>> coarse;
+
+    /**
+     * Coarse solver passed to the constructor; replaces `coarse` if not null.
+     */
+    const MGCoarseGridBase<VectorType> *external_coarse;
 
     /**
      * Chebyshev degree for pre-smoothing

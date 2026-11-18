@@ -96,8 +96,7 @@ private:
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
   using SmootherType =
-    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, double>,
-                          VectorTypeMG>;
+    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, VectorTypeMG>, VectorTypeMG>;
 
   SmootherType smoother;
 

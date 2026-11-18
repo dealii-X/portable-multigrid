@@ -82,7 +82,7 @@ namespace multigrid
     using VectorTypeMG = LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>;
 
     using SmootherType =
-      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, vcycle_number>, VectorTypeMG>;
+      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, VectorTypeMG>, VectorTypeMG>;
 
   private:
     void
@@ -142,7 +142,9 @@ namespace multigrid
 
     MGLevelObject<std::unique_ptr<FE_Q<dim>>> p_level_fes;
 
-    MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, vcycle_number>>>
+    MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<
+      dim,
+      LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>>>>
       level_matrices;
 
     MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, vcycle_number>>> mg_transfers;
@@ -151,7 +153,10 @@ namespace multigrid
 
     AffineConstraints<full_number> fine_level_constraints;
 
-    std::unique_ptr<Portable::LaplaceOperatorBase<dim, full_number>> fine_level_matrix;
+    std::unique_ptr<Portable::LaplaceOperatorBase<
+      dim,
+      LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default>>>
+      fine_level_matrix;
 
     const unsigned int refinement_cycles = 10;
 
@@ -696,6 +701,7 @@ namespace multigrid
                 << "    mv smooth " << best_mvs << "   cg-mg " << time_cg << std::endl;
 
 
+    convergence_table.add_value("n_proc", Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD));
     convergence_table.add_value("cells", triangulation.n_global_active_cells());
     convergence_table.add_value("dofs", dof_handler.n_dofs());
     convergence_table.add_value("mv_outer", best_mv);

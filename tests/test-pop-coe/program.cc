@@ -79,8 +79,7 @@ namespace multigrid
       LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>;
 
     using SmootherType =
-      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, vcycle_number>,
-                            VectorTypeMG>;
+      PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, VectorTypeMG>, VectorTypeMG>;
 
 
   private:
@@ -143,8 +142,9 @@ namespace multigrid
 
     MGLevelObject<std::unique_ptr<FE_Q<dim>>> p_level_fes;
 
-    MGLevelObject<
-      std::unique_ptr<Portable::LaplaceOperatorBase<dim, vcycle_number>>>
+    MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<
+      dim,
+      LinearAlgebra::distributed::Vector<vcycle_number, MemorySpace::Default>>>>
       level_matrices;
 
     MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, vcycle_number>>>
@@ -154,7 +154,9 @@ namespace multigrid
 
     AffineConstraints<full_number> fine_level_constraints;
 
-    std::unique_ptr<Portable::LaplaceOperatorBase<dim, full_number>>
+    std::unique_ptr<Portable::LaplaceOperatorBase<
+      dim,
+      LinearAlgebra::distributed::Vector<full_number, MemorySpace::Default>>>
       fine_level_matrix;
 
     const unsigned int refinement_cycles = 10;

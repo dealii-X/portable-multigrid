@@ -24,8 +24,8 @@ deal_ii_invoke_autopilot()
 
 # 6. Include Directories
 # This points to where your "multigrid/" and "operators/" folders are
-# self-contained: the CPU operator, its base class and the multigrid solver
-# live in this directory (copies of the cpu-tests branch versions)
 target_include_directories(${TARGET} PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
