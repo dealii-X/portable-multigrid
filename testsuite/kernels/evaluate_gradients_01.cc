@@ -1,21 +1,10 @@
-// Isolated correctness check for
-// Custom::Parallel::FEEvaluationImplTransformToCollocation::evaluate_gradients()
-// (include/matrix_free/portable_evaluation_kernels.h) -- the raw
-// reference-space directional-derivative method (no geometric multiply),
-// which has no caller anywhere in this codebase yet, so nothing else
-// exercises it. Deliberately only includes portable_evaluation_kernels.h
-// directly (not portable_batched_fe_evaluation.h/portable_laplace_operator.h),
-// since those pull in a separate, pre-existing, deliberately-untouched
-// argument-order mismatch on the generic Portable::LaplaceOperator/
-// Custom::Parallel::FEEvaluation path unrelated to what's being checked
-// here.
-//
-// Cross-checks evaluate_gradients() against
-// evaluate_gradients_and_multiply_symmetric_tensor() with an identity d_G
-// (built the same way the kernel itself unpacks G's packed
-// upper-triangular storage, so it's valid for any dim): with G == I, the
-// tensor multiply is a no-op, so both should produce exactly the same dim
-// raw directional derivatives.
+// Custom::Parallel::FEEvaluationImplTransformToCollocation
+// (matrix_free/portable_evaluation_kernels.h) on the host: evaluate_gradients()
+// against evaluate_gradients_and_multiply_symmetric_tensor() with G = I, the
+// add variants of evaluate/integrate against their two-step forms, and
+// evaluate()/integrate() against values + gradients separately.
+
+#include "../tests.h"
 
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/utilities.h>
@@ -110,11 +99,12 @@ run_evaluate_gradients_test()
 
   const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
 
-  std::cout << "evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: "
+  deallog << "evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: "
             << "dim = " << dim << ", nq = " << nq << std::endl;
-  std::cout << "  max |grad|            = " << max_abs_val << std::endl;
-  std::cout << "  max |grad_a - grad_b| = " << max_abs_diff << std::endl;
-  std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
+  if (pass)
+    deallog << "OK" << std::endl;
+  else
+    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
 
   return pass;
 }
@@ -242,11 +232,12 @@ run_evaluate_gradients_add_test()
 
   const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
 
-  std::cout << "evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> "
+  deallog << "evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> "
             << "vs out_before + <false>: dim = " << dim << ", nq = " << nq << std::endl;
-  std::cout << "  max |expected|    = " << max_abs_val << std::endl;
-  std::cout << "  max |add - expected| = " << max_abs_diff << std::endl;
-  std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
+  if (pass)
+    deallog << "OK" << std::endl;
+  else
+    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
 
   return pass;
 }
@@ -333,11 +324,12 @@ run_integrate_add_test()
 
   const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
 
-  std::cout << "integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = "
+  deallog << "integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = "
             << dim << ", nq = " << nq << std::endl;
-  std::cout << "  max |expected|       = " << max_abs_val << std::endl;
-  std::cout << "  max |add - expected| = " << max_abs_diff << std::endl;
-  std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
+  if (pass)
+    deallog << "OK" << std::endl;
+  else
+    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
 
   return pass;
 }
@@ -459,12 +451,13 @@ run_evaluate_roundtrip_test(bool use_gradients_flag)
 
   const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
 
-  std::cout << "evaluate() vs evaluate_values()+evaluate_gradients(): dim = " << dim
+  deallog << "evaluate() vs evaluate_values()+evaluate_gradients(): dim = " << dim
             << ", fe_degree = " << fe_degree << ", nq = " << nq
             << ", gradients_flag = " << (use_gradients_flag ? "true" : "false") << std::endl;
-  std::cout << "  max |ref|        = " << max_abs_val << std::endl;
-  std::cout << "  max |A - B|      = " << max_abs_diff << std::endl;
-  std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
+  if (pass)
+    deallog << "OK" << std::endl;
+  else
+    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
 
   return pass;
 }
@@ -582,12 +575,13 @@ run_integrate_roundtrip_test(bool use_values_flag)
 
   const bool pass = max_abs_diff < 1e-10 * std::max(1., max_abs_val);
 
-  std::cout << "integrate() vs integrate_gradients()+integrate_values(): dim = " << dim
+  deallog << "integrate() vs integrate_gradients()+integrate_values(): dim = " << dim
             << ", fe_degree = " << fe_degree << ", nq = " << nq
             << ", values_flag = " << (use_values_flag ? "true" : "false") << std::endl;
-  std::cout << "  max |ref|        = " << max_abs_val << std::endl;
-  std::cout << "  max |A - B|      = " << max_abs_diff << std::endl;
-  std::cout << "  " << (pass ? "PASS" : "FAIL") << std::endl;
+  if (pass)
+    deallog << "OK" << std::endl;
+  else
+    deallog << "max diff = " << max_abs_diff << ", max value = " << max_abs_val << std::endl;
 
   return pass;
 }
@@ -596,6 +590,7 @@ int
 main(int argc, char *argv[])
 {
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+  initlog();
 
   bool all_passed = true;
   all_passed &= run_evaluate_gradients_test<3, 4>();
@@ -640,7 +635,5 @@ main(int argc, char *argv[])
   all_passed &= run_integrate_roundtrip_test<3, 2, 4>(true);
   all_passed &= run_integrate_roundtrip_test<3, 2, 4>(false);
 
-  std::cout << (all_passed ? "ALL PASS" : "SOME FAILED") << std::endl;
-
-  return all_passed ? 0 : 1;
+  (void)all_passed;
 }

@@ -1,0 +1,71 @@
+
+DEAL::evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: dim = 3, nq = 4
+DEAL::OK
+DEAL::evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: dim = 2, nq = 5
+DEAL::OK
+DEAL::evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: dim = 1, nq = 3
+DEAL::OK
+DEAL::evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: dim = 3, nq = 2
+DEAL::OK
+DEAL::evaluate_gradients() vs evaluate_gradients_and_multiply_symmetric_tensor()+identity: dim = 2, nq = 2
+DEAL::OK
+DEAL::evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> vs out_before + <false>: dim = 3, nq = 4
+DEAL::OK
+DEAL::evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> vs out_before + <false>: dim = 2, nq = 5
+DEAL::OK
+DEAL::evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> vs out_before + <false>: dim = 1, nq = 3
+DEAL::OK
+DEAL::evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> vs out_before + <false>: dim = 3, nq = 2
+DEAL::OK
+DEAL::evaluate_gradients<true>/evaluate_gradients_and_multiply_symmetric_tensor<true> vs out_before + <false>: dim = 2, nq = 2
+DEAL::OK
+DEAL::integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = 3, nq = 4
+DEAL::OK
+DEAL::integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = 2, nq = 5
+DEAL::OK
+DEAL::integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = 1, nq = 3
+DEAL::OK
+DEAL::integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = 3, nq = 2
+DEAL::OK
+DEAL::integrate_gradients<true> vs values_before + integrate_gradients<false>: dim = 2, nq = 2
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 3, fe_degree = 3, nq = 4, gradients_flag = true
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 3, fe_degree = 3, nq = 4, gradients_flag = false
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 2, fe_degree = 4, nq = 5, gradients_flag = true
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 2, fe_degree = 4, nq = 5, gradients_flag = false
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 1, fe_degree = 2, nq = 3, gradients_flag = true
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 1, fe_degree = 2, nq = 3, gradients_flag = false
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 2, fe_degree = 1, nq = 2, gradients_flag = true
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 2, fe_degree = 1, nq = 2, gradients_flag = false
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 3, fe_degree = 2, nq = 4, gradients_flag = true
+DEAL::OK
+DEAL::evaluate() vs evaluate_values()+evaluate_gradients(): dim = 3, fe_degree = 2, nq = 4, gradients_flag = false
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 3, fe_degree = 3, nq = 4, values_flag = true
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 3, fe_degree = 3, nq = 4, values_flag = false
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 2, fe_degree = 4, nq = 5, values_flag = true
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 2, fe_degree = 4, nq = 5, values_flag = false
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 1, fe_degree = 2, nq = 3, values_flag = true
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 1, fe_degree = 2, nq = 3, values_flag = false
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 2, fe_degree = 1, nq = 2, values_flag = true
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 2, fe_degree = 1, nq = 2, values_flag = false
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 3, fe_degree = 2, nq = 4, values_flag = true
+DEAL::OK
+DEAL::integrate() vs integrate_gradients()+integrate_values(): dim = 3, fe_degree = 2, nq = 4, values_flag = false
+DEAL::OK

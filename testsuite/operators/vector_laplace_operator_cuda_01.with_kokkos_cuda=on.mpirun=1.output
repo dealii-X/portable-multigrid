@@ -1,0 +1,10 @@
+
+DEAL:0::dim = 3, fe_degree = 2, n_components = 3
+DEAL:0::n_dofs = 14739
+DEAL:0::vmult_cuda: OK
+DEAL:0::dim = 3, fe_degree = 3, n_components = 2
+DEAL:0::n_dofs = 31250
+DEAL:0::vmult_cuda: OK
+DEAL:0::dim = 3, fe_degree = 4, n_components = 2
+DEAL:0::n_dofs = 71874
+DEAL:0::vmult_cuda: OK

@@ -301,6 +301,55 @@ namespace deformed_mesh_test
 
 
 
+  // Right-hand side of a unit load in every component, assembled with
+  // FEValues and distributed with the constraints.
+  template <int dim, typename Number>
+  void
+  reference_unit_rhs(const Mapping<dim>              &mapping,
+                     const DoFHandler<dim>           &dof_handler,
+                     const AffineConstraints<Number> &constraints,
+                     const unsigned int               n_q_points_1d,
+                     const IndexSet                  &locally_owned_dofs,
+                     const IndexSet                  &locally_relevant_dofs,
+                     const MPI_Comm                   mpi_communicator,
+                     DeviceVectorType<Number>        &rhs_device)
+  {
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Host> rhs_host(locally_owned_dofs,
+                                                                           locally_relevant_dofs,
+                                                                           mpi_communicator);
+
+    const FiniteElement<dim> &fe = dof_handler.get_fe();
+    const QGauss<dim>         quadrature(n_q_points_1d);
+    FEValues<dim>             fe_values(mapping, fe, quadrature, update_values | update_JxW_values);
+
+    AffineConstraints<double> constraints_double;
+    constraints_double.copy_from(constraints);
+
+    Vector<double>                       cell_rhs(fe.n_dofs_per_cell());
+    std::vector<types::global_dof_index> local_dof_indices(fe.n_dofs_per_cell());
+
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          cell_rhs = 0.;
+          for (const unsigned int q : fe_values.quadrature_point_indices())
+            for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i)
+              for (unsigned int c = 0; c < fe.n_components(); ++c)
+                cell_rhs(i) += fe_values.shape_value_component(i, q, c) * fe_values.JxW(q);
+          cell->get_dof_indices(local_dof_indices);
+          constraints_double.distribute_local_to_global(cell_rhs, local_dof_indices, rhs_host);
+        }
+    rhs_host.compress(VectorOperation::add);
+
+    LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+    for (const auto i : locally_owned_dofs)
+      rw(i) = static_cast<Number>(rhs_host(i));
+    rhs_device.import_elements(rw, VectorOperation::insert);
+  }
+
+
+
   // One deallog line per compared variant: OK below the tolerance,
   // otherwise the error, so that the output only changes on a failure.
   inline void
