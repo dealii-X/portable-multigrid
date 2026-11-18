@@ -1337,9 +1337,15 @@ namespace Portable
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
     AssertDimension(dst.size(), src.size());
-    Assert(dst.get_partitioner() == matrix_free.get_vector_partitioner(),
+    // no partitioner on the serial subdomain triangulation: every vector has
+    // its own one then
+    Assert(matrix_free.get_vector_partitioner() == nullptr ||
+             partitioners_are_compatible(dst.get_partitioner(),
+                                         matrix_free.get_vector_partitioner()),
            ExcMessage("Vector is not correctly initialized."));
-    Assert(src.get_partitioner() == matrix_free.get_vector_partitioner(),
+    Assert(matrix_free.get_vector_partitioner() == nullptr ||
+             partitioners_are_compatible(src.get_partitioner(),
+                                         matrix_free.get_vector_partitioner()),
            ExcMessage("Vector is not correctly initialized."));
 
     vmult(dst, src);
