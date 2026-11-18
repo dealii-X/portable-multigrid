@@ -12,6 +12,10 @@
 
 
 
+// From deal.II tests/matrix_free_kokkos, applied to the copy
+// Copy::Portable::internal::resolve_hanging_nodes()
+// (matrix_free_dealii/portable_hanging_nodes_internal.h).
+//
 // Compare the result of Portable::internal::resolve_hanging_nodes() with
 // FEEvaluationImplHangingNodes. Same as
 // tests/matrix_free/hanging_node_kernels_01.cc, but all constraint masks of
@@ -30,7 +34,7 @@
 #include <deal.II/matrix_free/evaluation_kernels_hanging_nodes.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 #include <deal.II/matrix_free/matrix_free.h>
-#include <deal.II/matrix_free/portable_hanging_nodes_internal.h>
+#include "matrix_free_dealii/portable_hanging_nodes_internal.h"
 
 #include <deal.II/numerics/vector_tools.h>
 
@@ -83,7 +87,7 @@ struct ResolveCell
     team_member.team_barrier();
 
     if (masks(cell) != ConstraintKinds::unconstrained)
-      Portable::internal::resolve_hanging_nodes<dim, fe_degree, transpose>(
+      Copy::Portable::internal::resolve_hanging_nodes<dim, fe_degree, transpose>(
         team_member, weights, masks(cell), shared_values);
 
     Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_dofs),

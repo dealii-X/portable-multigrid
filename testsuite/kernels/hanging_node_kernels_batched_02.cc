@@ -11,20 +11,29 @@
 // -----------------------------------------------------------------------------
 
 
-// Test Portable::internal::resolve_hanging_nodes(), which resolves the
-// hanging-node constraints with one thread per constrained line of degrees
-// of freedom, against the kernels it replaced (one thread per degree of
-// freedom, copied into this file as namespace reference). Every combination
-// of the ConstraintKinds bits (subcell, face and, in 3d, edge flags) is one
-// cell with random values, resolved by one team like in
-// Portable::FEEvaluation; the 1d interpolation weights are random as well.
-// The expected output was recorded with the reference kernels.
+
+// From deal.II tests/matrix_free_kokkos, applied to the copy
+// Copy::Portable::internal::batched::resolve_hanging_nodes()
+// (multigrid_dealii/portable_hanging_nodes_batched.h).
+//
+// Test Portable::internal::batched::resolve_hanging_nodes() against the
+// cell-wise kernels with one thread per degree of freedom, copied into this
+// file as namespace reference like in hanging_node_kernels_02. Every
+// combination of the ConstraintKinds bits (subcell, face and, in 3d, edge
+// flags) is one cell with random values, the 1d interpolation weights are
+// random as well. The reference kernels resolve one cell per team, like in
+// Portable::FEEvaluation; the batched kernel resolves batches of 1, 3 and 8
+// cells per team, where batches of 3 and 8 cells mix constrained and
+// unconstrained cells and the last batch is shorter. The checksums are the
+// same as in hanging_node_kernels_02.
 
 #include <deal.II/base/memory_space.h>
 #include <deal.II/base/utilities.h>
 
 #include <deal.II/matrix_free/hanging_nodes_internal.h>
 #include <deal.II/matrix_free/portable_hanging_nodes_internal.h>
+
+#include "multigrid_dealii/portable_hanging_nodes_batched.h"
 
 #include <Kokkos_Core.hpp>
 
@@ -387,6 +396,8 @@ namespace reference
   }
 } // namespace reference
 
+
+
 using TeamHandle = Kokkos::TeamPolicy<
   MemorySpace::Default::kokkos_space::execution_space>::member_type;
 
@@ -400,53 +411,86 @@ using ScratchView = Kokkos::View<
 
 
 
-// One team resolves the hanging nodes of one cell twice, with
-// reference::resolve_hanging_nodes() and with
-// Portable::internal::resolve_hanging_nodes(). Both are called also for
-// unconstrained cells, like in MatrixFreeTools::compute_diagonal().
-template <int dim, int fe_degree, bool transpose>
-struct ResolveCell
+// One team resolves the hanging nodes of the cells [first_cell, first_cell +
+// n_cells_in_batch), staged cell after cell in shared memory, either with the
+// batched kernel, which gets the masks of the batch as a subview of masks,
+// or, for cells_per_team == 1 only, with the reference kernels.
+// Both are called also for unconstrained cells, like in
+// MatrixFreeTools::compute_diagonal().
+template <int dim, int fe_degree, bool transpose, bool batched>
+struct ResolveBatch
 {
   static constexpr int n_dofs = Utilities::pow(fe_degree + 1, dim);
 
   DeviceView<double *>          weights;
   DeviceView<ConstraintKinds *> masks;
   DeviceView<double *>          src;
-  DeviceView<double *>          dst_reference;
   DeviceView<double *>          dst;
+  int                           n_cells;
+  int                           cells_per_team;
 
   DEAL_II_HOST_DEVICE void
   operator()(const TeamHandle &team_member) const
   {
-    const int cell   = team_member.league_rank();
-    const int offset = cell * n_dofs;
+    const int first_cell       = team_member.league_rank() * cells_per_team;
+    const int n_cells_in_batch = (n_cells - first_cell < cells_per_team) ?
+                                   (n_cells - first_cell) :
+                                   cells_per_team;
+    const int n_values         = n_cells_in_batch * n_dofs;
+    const int offset           = first_cell * n_dofs;
 
-    ScratchView values(team_member.team_shmem(), n_dofs);
+    ScratchView values(team_member.team_shmem(), cells_per_team * n_dofs);
 
-    const auto copy = [&](const auto from,
-                          auto       to,
-                          const int  offset_from,
-                          const int  offset_to) {
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_dofs),
-                           [&](const int i) {
-                             to(offset_to + i) = from(offset_from + i);
-                           });
-      team_member.team_barrier();
-    };
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_values),
+                         [&](const int i) { values(i) = src(offset + i); });
+    team_member.team_barrier();
 
-    copy(src, values, offset, 0);
-    reference::resolve_hanging_nodes<dim, fe_degree, transpose>(team_member,
-                                                                weights,
-                                                                masks(cell),
-                                                                values);
-    copy(values, dst_reference, 0, offset);
+    if constexpr (batched)
+      Copy::Portable::internal::batched::resolve_hanging_nodes<dim,
+                                                         fe_degree,
+                                                         transpose>(
+        team_member,
+        weights,
+        Kokkos::subview(
+          masks, Kokkos::make_pair(first_cell, first_cell + n_cells_in_batch)),
+        n_cells_in_batch,
+        values);
+    else
+      reference::resolve_hanging_nodes<dim, fe_degree, transpose>(
+        team_member, weights, masks(first_cell), values);
 
-    copy(src, values, offset, 0);
-    Portable::internal::resolve_hanging_nodes<dim, fe_degree, transpose>(
-      team_member, weights, masks(cell), values);
-    copy(values, dst, 0, offset);
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, n_values),
+                         [&](const int i) { dst(offset + i) = values(i); });
   }
 };
+
+
+
+template <int dim, int fe_degree, bool transpose, bool batched>
+Kokkos::View<double *, Kokkos::HostSpace>
+run(const DeviceView<double *>          &weights,
+    const DeviceView<ConstraintKinds *> &masks,
+    const DeviceView<double *>          &src,
+    const int                            cells_per_team)
+{
+  constexpr int n_dofs  = Utilities::pow(fe_degree + 1, dim);
+  const int     n_cells = masks.size();
+  const int     n_teams = (n_cells + cells_per_team - 1) / cells_per_team;
+
+  DeviceView<double *> dst("dst", n_cells * n_dofs);
+
+  MemorySpace::Default::kokkos_space::execution_space exec;
+  Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>
+    team_policy(exec, n_teams, Kokkos::AUTO);
+  team_policy.set_scratch_size(
+    0, Kokkos::PerTeam(ScratchView::shmem_size(cells_per_team * n_dofs)));
+
+  Kokkos::parallel_for(team_policy,
+                       ResolveBatch<dim, fe_degree, transpose, batched>{
+                         weights, masks, src, dst, n_cells, cells_per_team});
+
+  return Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, dst);
+}
 
 
 
@@ -466,11 +510,11 @@ test()
       {
         // bits: subcell_x, subcell_y, face_x, face_y
         mask |= (bits & 1) ?
-                              static_cast<unsigned int>(ConstraintKinds::subcell_x) :
-                              0;
+                  static_cast<unsigned int>(ConstraintKinds::subcell_x) :
+                  0;
         mask |= (bits & 2) ?
-                              static_cast<unsigned int>(ConstraintKinds::subcell_y) :
-                              0;
+                  static_cast<unsigned int>(ConstraintKinds::subcell_y) :
+                  0;
         mask |=
           (bits & 4) ? static_cast<unsigned int>(ConstraintKinds::face_x) : 0;
         mask |=
@@ -488,9 +532,6 @@ test()
   DeviceView<double *>          weights("weights", n_dofs_1d * n_dofs_1d);
   DeviceView<ConstraintKinds *> masks("masks", n_cells);
   DeviceView<double *>          src("src", n_cells * n_dofs);
-  DeviceView<double *> dst_reference("dst_reference", n_cells * n_dofs);
-  DeviceView<double *> dst("dst", n_cells * n_dofs);
-
   {
     auto weights_host = Kokkos::create_mirror_view(weights);
     for (unsigned int i = 0; i < weights_host.size(); ++i)
@@ -509,44 +550,44 @@ test()
     Kokkos::deep_copy(src, src_host);
   }
 
-  MemorySpace::Default::kokkos_space::execution_space exec;
-  Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>
-    team_policy(exec, n_cells, Kokkos::AUTO);
-  team_policy.set_scratch_size(
-    0, Kokkos::PerTeam(ScratchView::shmem_size(n_dofs)));
+  const auto reference_values =
+    run<dim, fe_degree, transpose, false>(weights, masks, src, 1);
 
-  Kokkos::parallel_for(team_policy,
-                       ResolveCell<dim, fe_degree, transpose>{
-                         weights, masks, src, dst_reference, dst});
-  Kokkos::fence();
-
-  auto reference_host =
-    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, dst_reference);
-  auto host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, dst);
-
-  double sum = 0., sum_of_squares = 0., max_difference = 0.;
+  double sum = 0., sum_of_squares = 0.;
   for (unsigned int i = 0; i < n_cells * n_dofs; ++i)
     {
-      sum += reference_host(i);
-      sum_of_squares += reference_host(i) * reference_host(i);
-      max_difference =
-        std::max(max_difference, std::abs(host(i) - reference_host(i)));
+      sum += reference_values(i);
+      sum_of_squares += reference_values(i) * reference_values(i);
     }
-
   deallog << "  checksum reference: " << sum << " " << sum_of_squares
           << std::endl;
-  deallog << "  max |new - reference|: " << max_difference << std::endl;
 
-  // the smallest case in full
-  if (dim == 2 && fe_degree == 1)
-    for (unsigned int cell = 0; cell < n_cells; ++cell)
-      {
-        deallog << "  mask " << static_cast<unsigned int>(make_mask(cell))
-                << ":";
-        for (unsigned int i = 0; i < n_dofs; ++i)
-          deallog << " " << host(cell * n_dofs + i);
-        deallog << std::endl;
-      }
+  for (const int cells_per_team : {1, 3, 8})
+    {
+      const auto batched = run<dim, fe_degree, transpose, true>(weights,
+                                                                masks,
+                                                                src,
+                                                                cells_per_team);
+
+      double max_difference = 0.;
+      for (unsigned int i = 0; i < n_cells * n_dofs; ++i)
+        max_difference =
+          std::max(max_difference, std::abs(batched(i) - reference_values(i)));
+      deallog << "  batches of " << cells_per_team
+              << " cells, max |batched - reference|: " << max_difference
+              << std::endl;
+
+      // the smallest case in full
+      if (dim == 2 && fe_degree == 1 && cells_per_team == 3)
+        for (unsigned int cell = 0; cell < n_cells; ++cell)
+          {
+            deallog << "  mask " << static_cast<unsigned int>(make_mask(cell))
+                    << ":";
+            for (unsigned int i = 0; i < n_dofs; ++i)
+              deallog << " " << batched(cell * n_dofs + i);
+            deallog << std::endl;
+          }
+    }
 }
 
 

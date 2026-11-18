@@ -1,7 +1,8 @@
 
 DEAL::dim=2 degree=1 transpose=0: n_cells=16
 DEAL::  checksum reference: 0.477743125422 17.1475528713
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
 DEAL::  mask 0: 0.823294715874 -0.604897261413 -0.329554488570 0.536459189624
 DEAL::  mask 1: -0.444450578394 0.107939911591 -0.0452058962757 0.257741849524
 DEAL::  mask 2: -0.270431054416 0.0268018203912 0.904459450349 0.832390136007
@@ -18,9 +19,11 @@ DEAL::  mask 24: -0.615572308011 -0.0149113861625 0.294730952930 -0.321023672337
 DEAL::  mask 25: -0.448355946744 -0.959953902271 0.270545601091 -0.569457191919
 DEAL::  mask 26: 0.220513672461 0.362698734645 0.804416146970 0.844120153619
 DEAL::  mask 27: -0.174733356667 -0.216762671247 -0.338257192436 0.520497472733
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=2 degree=1 transpose=1: n_cells=16
 DEAL::  checksum reference: 4.52998477125 17.3794774985
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
 DEAL::  mask 0: -0.124724806810 0.863670112502 0.861619590717 0.441904686131
 DEAL::  mask 1: -0.431413193900 0.477068629804 0.279957633130 -0.291902640505
 DEAL::  mask 2: 0.375722780533 -0.668051667357 -0.119790944792 0.760150472522
@@ -37,33 +40,54 @@ DEAL::  mask 24: -0.793657623135 0.693285700407 0.183147571924 -0.0469607021850
 DEAL::  mask 25: -0.895190038769 0.870007973104 0.0611467044568 0.339012975295
 DEAL::  mask 26: -0.548410399632 -0.0332224629004 -0.411679275991 0.501793014764
 DEAL::  mask 27: -0.0446507732177 0.527699222922 0.631185253533 0.464297031734
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=2 degree=2 transpose=0: n_cells=16
 DEAL::  checksum reference: -3.15553270659 60.0672265164
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=2 degree=2 transpose=1: n_cells=16
 DEAL::  checksum reference: -1.73678644863 45.3336246319
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=2 degree=3 transpose=0: n_cells=16
 DEAL::  checksum reference: 5.39648864032 75.8419491239
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=2 degree=3 transpose=1: n_cells=16
 DEAL::  checksum reference: 2.01232068755 83.9281284196
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=1 transpose=0: n_cells=512
 DEAL::  checksum reference: -21.1390964937 580.321261926
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=1 transpose=1: n_cells=512
 DEAL::  checksum reference: 21.3058611540 575.428224998
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=2 transpose=0: n_cells=512
 DEAL::  checksum reference: -118.367645322 4303.90840401
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=2 transpose=1: n_cells=512
 DEAL::  checksum reference: -71.3711956145 4710.30083079
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=3 transpose=0: n_cells=512
 DEAL::  checksum reference: 5.27005894835 14705.9689772
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
 DEAL::dim=3 degree=3 transpose=1: n_cells=512
 DEAL::  checksum reference: 80.9029464607 8650.80878656
-DEAL::  max |new - reference|: 0.00000000000
+DEAL::  batches of 1 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 3 cells, max |batched - reference|: 0.00000000000
+DEAL::  batches of 8 cells, max |batched - reference|: 0.00000000000
