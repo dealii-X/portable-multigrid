@@ -1,0 +1,19 @@
+
+DEAL:0::dim = 2, fe_degree = 1, n_refinements = 5
+DEAL:0::n_levels = 6, n_dofs = 1089
+DEAL:0::Solver stopped within 7 - 9 iterations
+DEAL:0::dim = 2, fe_degree = 2, n_refinements = 5
+DEAL:0::n_levels = 6, n_dofs = 4225
+DEAL:0::Solver stopped within 7 - 9 iterations
+DEAL:0::dim = 2, fe_degree = 4, n_refinements = 4
+DEAL:0::n_levels = 5, n_dofs = 4225
+DEAL:0::Solver stopped within 7 - 9 iterations
+DEAL:0::dim = 3, fe_degree = 1, n_refinements = 4
+DEAL:0::n_levels = 5, n_dofs = 4913
+DEAL:0::Solver stopped within 6 - 8 iterations
+DEAL:0::dim = 3, fe_degree = 2, n_refinements = 3
+DEAL:0::n_levels = 4, n_dofs = 4913
+DEAL:0::Solver stopped within 7 - 9 iterations
+DEAL:0::dim = 3, fe_degree = 3, n_refinements = 3
+DEAL:0::n_levels = 4, n_dofs = 15625
+DEAL:0::Solver stopped within 7 - 9 iterations

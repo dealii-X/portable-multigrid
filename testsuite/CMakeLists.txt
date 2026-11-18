@@ -61,6 +61,6 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-foreach(category kernels operators)
+foreach(category kernels multigrid operators)
   add_subdirectory(${category})
 endforeach()
