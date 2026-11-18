@@ -8,14 +8,12 @@
 # (LD_LIBRARY_PATH beats RUNPATH) and sets the thread/pinning variables.
 # DEAL_II_DIR defaults to $WORK/dealii/dealii-master.
 #
-# Correctness tests inside an allocation, from the repo root:
+# Testsuite inside an allocation, from the repo root:
 #
-#   for t in laplace_bk3_deformed laplace_dg_deformed subdomain_laplace_deformed laplace_deformed vector_laplace_deformed; do
-#     for np in 1 2; do
-#       srun -n $np --cpu-bind=cores --gpu-bind=closest correctness_tests/$t/build-kokkos5/program > $t.np$np.out 2>&1
-#       echo "$t np=$np exit=$? $(grep -E '^(PASSED|FAILED)' $t.np$np.out)"
-#     done
-#   done
+#   cmake -S testsuite -B testsuite/build-jupiter -DDEAL_II_DIR=$DEAL_II_DIR \
+#     -DTESTSUITE_MPIEXEC=srun \
+#     -DTESTSUITE_MPIEXEC_PREFLAGS="--mpi=pspmix;--cpu-bind=cores;--gpu-bind=closest"
+#   ctest --test-dir testsuite/build-jupiter
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "source this file, do not execute it: source ${BASH_SOURCE[0]}" >&2
