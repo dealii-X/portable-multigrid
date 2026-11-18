@@ -527,7 +527,7 @@ LaplaceProblem<dim, fe_degree>::solve()
   const auto &system_matrix = *level_matrices.back();
 
   Portable::VCycleMultigrid<dim, double, Portable::MGTransferBase<dim, double>>
-    mg_preconditioner(level_matrices, mg_transfers, mg_smoothers, 2, 2);
+    mg_preconditioner(level_matrices, mg_transfers, mg_smoothers);
 
   SolverControl solver_control(system_rhs_device.size(),
                                1e-12 * system_rhs_device.l2_norm());
