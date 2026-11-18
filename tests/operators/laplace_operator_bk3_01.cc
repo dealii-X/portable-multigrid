@@ -129,7 +129,7 @@ main(int argc, char *argv[])
   test_both_overlap_modes<3, 3, double>();
   test_both_overlap_modes<3, 4, double>();
 
-  // over-integration as in tests/bp3
+  // over-integration as in performance_tests/bp3
   test_both_overlap_modes<3, 2, double, 4>();
   test_both_overlap_modes<3, 3, double, 5>();
 

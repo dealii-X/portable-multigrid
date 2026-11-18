@@ -1,5 +1,5 @@
-// BP3-style benchmark (scalar Poisson -- the scalar counterpart of tests/
-// bp4's vector Poisson benchmark, same overall structure as tests/bp_35's
+// BP3-style benchmark (scalar Poisson -- the scalar counterpart of performance_tests/
+// bp4's vector Poisson benchmark, same overall structure as performance_tests/bp_35's
 // older single-backend version): doubling-mesh refinement cycles, one
 // accumulating convergence_table re-printed after every cycle, RHS
 // assembled on the GPU via compute_rhs() (BK3::Parallel::
@@ -13,7 +13,7 @@
 //                       n_components == 1), dim == 3 + double only, and
 //                       only actually runs when this translation unit is
 //                       compiled by nvcc against a CUDA-enabled Kokkos --
-//                       see tests/vector_laplace_tensor_core/ for the same
+//                       see performance_tests/vector_laplace_tensor_core/ for the same
 //                       graceful-degradation pattern. On a Serial/OpenMP-
 //                       only Kokkos build (such as this project's own dev
 //                       box), the tensor_core columns are simply left out
@@ -320,7 +320,7 @@ namespace BP3
 
         pcout << "Cycle " << cycle << std::endl;
 
-        // Same doubling-mesh sizing as tests/bp4/program.cc::run() -- two-
+        // Same doubling-mesh sizing as performance_tests/bp4/program.cc::run() -- two-
         // out-of-three dimensions get subdivided each step, so cell count
         // roughly doubles per cycle instead of jumping by 8x on every
         // dimension at once.

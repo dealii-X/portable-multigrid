@@ -10,10 +10,10 @@
 #
 # Testsuite inside an allocation, from the repo root:
 #
-#   cmake -S testsuite -B testsuite/build-jupiter -DDEAL_II_DIR=$DEAL_II_DIR \
+#   cmake -S . -B build-tests-jupiter -DDEAL_II_DIR=$DEAL_II_DIR \
 #     -DTESTSUITE_MPIEXEC=srun \
 #     -DTESTSUITE_MPIEXEC_PREFLAGS="--mpi=pspmix;--cpu-bind=cores;--gpu-bind=closest"
-#   ctest --test-dir testsuite/build-jupiter
+#   ctest --test-dir build-tests-jupiter
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "source this file, do not execute it: source ${BASH_SOURCE[0]}" >&2

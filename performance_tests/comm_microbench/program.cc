@@ -1,5 +1,5 @@
 // MPI latency / bandwidth microbenchmarks for the crossover study (see
-// tests/poisson_cube_hybrid_gpu_cpu/PLAN.md, Phase 2B).
+// performance_tests/poisson_cube_hybrid_gpu_cpu/PLAN.md, Phase 2B).
 //
 //   mpirun -n <ranks> ./program <test> [options]
 //

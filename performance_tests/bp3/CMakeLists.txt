@@ -11,8 +11,8 @@ set(TARGET_SRC ${TARGET}.cc)
 # The tensor-core columns in this benchmark's table only fill in when this
 # ends up pointed at a deal.II built against a CUDA-enabled Kokkos -- with
 # a Serial/OpenMP-only Kokkos, program.cc still builds and runs, it just
-# reports the Kokkos (vmult_bk4) columns only. See tests/
-# vector_laplace_tensor_core/CMakeLists.txt for the same note.
+# reports the Kokkos (bk3, vmult()) columns only. See performance_tests/bp4/
+# CMakeLists.txt for the same note.
 find_package(deal.II 9.8.0
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../ ../../ $ENV{DEAL_II_DIR}
 )

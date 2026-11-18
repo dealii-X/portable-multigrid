@@ -1,6 +1,6 @@
 // Performance and correctness comparison of three GPU two-level transfer
 // kernels for geometric (h-)coarsening between globally refined meshes, in
-// the style of tests/abstracted_batched_laplace:
+// the style of performance_tests/abstracted_batched_laplace:
 //
 //   dealii    the installed deal.II Portable::MGTwoLevelTransfer, one team per
 //             coarse cell, the unbatched tensor-product evaluator;
@@ -23,7 +23,7 @@
 //
 // Usage: ./program dimension degree minsize maxsize doubling [cells_per_batch]
 //                  [n_applications]
-// (as for tests/abstracted_batched_laplace; degree is the FE_Q degree of
+// (as for performance_tests/abstracted_batched_laplace; degree is the FE_Q degree of
 // both levels, 1 to maximal_degree). The optional cells_per_batch fixes the
 // number of coarse cells per team of the `copy` column; 0 or absent selects
 // the automatic choice from the shared memory budget. The optional
@@ -393,7 +393,7 @@ namespace multigrid
           << (cells_per_batch > 0 ? std::to_string(cells_per_batch) : std::string("automatic"))
           << " coarse cells per team" << std::endl;
 
-    // same mesh sequence as tests/abstracted_batched_laplace; the fine mesh
+    // same mesh sequence as performance_tests/abstracted_batched_laplace; the fine mesh
     // is the mesh of that sequence and the coarse mesh the same base mesh
     // refined one time less
     const unsigned int sizes[] = {1,   2,   3,   4,   5,   6,   7,   8,   10,  12,   14,   16,  20,

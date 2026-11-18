@@ -522,7 +522,7 @@ namespace multigrid
     Timer time;
 
     // (f, phi_i) with f = 1, assembled on the device by the fine operator's own
-    // per-cell kernel as tests/bp3 does, instead of a host FEValues loop plus a
+    // per-cell kernel as performance_tests/bp3 does, instead of a host FEValues loop plus a
     // host-to-device copy. The kernel skips constrained DoFs, which is what
     // distribute_local_to_global() with homogeneous constraints did. The fine
     // operator is always a LaplaceOperatorBK3 (see its construction above); it

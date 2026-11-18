@@ -10,8 +10,8 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=comm-bench-%j.out
 
-# Phase 2B of tests/poisson_cube_hybrid_gpu_cpu/PLAN.md. Submit from the build dir of
-# tests/comm_microbench (binary ./program). CSV lines: test,mem,idle,nranks,group,...
+# Phase 2B of performance_tests/poisson_cube_hybrid_gpu_cpu/PLAN.md. Submit from the build dir of
+# performance_tests/comm_microbench (binary ./program). CSV lines: test,mem,idle,nranks,group,...
 # Rank layout as in the hybrid runs: k ranks per Grace, ranks 0..k-1 on Grace 0, ...;
 # the "GPU ranks" are 0, k, 2k, 3k. Compare the same pair in jobs with 4, 16 and 72 ranks
 # to see the effect of extra (idle) ranks.

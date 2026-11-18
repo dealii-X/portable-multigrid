@@ -10,11 +10,11 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=gpu-vs-cpu-%j.out
 
-# GPU multigrid (tests/poisson_cube_bk3 = float V-cycle under double CG, and its
+# GPU multigrid (performance_tests/poisson_cube_bk3 = float V-cycle under double CG, and its
 # fp64 twin, 1 rank per GH200 GPU) against CPU multigrid
-# (tests/poisson_cube_cpu, 1 rank per Grace core), same deal.II install, same node,
+# (performance_tests/poisson_cube_cpu, 1 rank per Grace core), same deal.II install, same node,
 # 5+5 Chebyshev smoothing steps, 1, 2 and 4 GPUs against 72, 144 and 288 cores.
-# Run from tests/poisson_cube_cpu of a gpu-vs-cpu checkout on JUPITER; the GPU programs
+# Run from performance_tests/poisson_cube_cpu of a gpu-vs-cpu checkout on JUPITER; the GPU programs
 # are built in ../poisson_cube_bk3/build-neon and ../poisson_cube_bk3_fp64/build-neon.
 
 module --force purge

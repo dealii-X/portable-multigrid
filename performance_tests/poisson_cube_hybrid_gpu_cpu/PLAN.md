@@ -85,7 +85,7 @@ Outputs: time per matvec and DoFs/s vs DoFs per module for GPU and CPU (per Grac
 
 ### 2B. Communication
 
-Ready to run: `tests/comm_microbench/` (MPI + Kokkos, tested locally) and the job `scripts/comm_microbench_jupiter.sbatch`
+Ready to run: `performance_tests/comm_microbench/` (MPI + Kokkos, tested locally) and the job `scripts/comm_microbench_jupiter.sbatch`
 (k = 1, 4, 18; host / staged / device buffers; pingpong, halo, allreduce; spin vs sleep idle ranks). Build it
 like the other tests, submit from its build dir. Coverage:
 

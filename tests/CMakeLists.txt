@@ -4,15 +4,17 @@ cmake_minimum_required(VERSION 3.13.4)
 # matching name[.variant].output is a test; deal.II's run_test.sh runs it
 # (mpirun=N variants included) and compares the output with numdiff.
 #
-#   cmake -S testsuite -B build-testsuite -DDEAL_II_DIR=<deal.II install>
-#   cd build-testsuite && ctest -j<N>
+# Configured from the top-level CMakeLists.txt, or on its own:
 #
-# To be moved to tests/ once the benchmark drivers there have moved to
-# performance_tests/ (#43).
+#   cmake -S tests -B build-tests -DDEAL_II_DIR=<deal.II install>
+#   ctest --test-dir build-tests -j<N>
 
-find_package(deal.II 9.8.0 REQUIRED
-  HINTS ${deal.II_DIR} ${DEAL_II_DIR} $ENV{DEAL_II_DIR}
-)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(TESTSUITE_STANDALONE TRUE)
+  find_package(deal.II 9.8.0 REQUIRED
+    HINTS ${deal.II_DIR} ${DEAL_II_DIR} $ENV{DEAL_II_DIR}
+  )
+endif()
 
 # MPI launcher of the mpirun=N variants; deal.II's (mpiexec) by default.
 # JUPITER: -DTESTSUITE_MPIEXEC=srun
@@ -24,9 +26,11 @@ if(NOT "${TESTSUITE_MPIEXEC}" STREQUAL "")
   set(DEAL_II_MPIEXEC_PREFLAGS ${TESTSUITE_MPIEXEC_PREFLAGS})
 endif()
 
-deal_ii_initialize_cached_variables()
-project(portable_multigrid_testsuite CXX)
-enable_testing()
+if(TESTSUITE_STANDALONE)
+  deal_ii_initialize_cached_variables()
+  project(portable_multigrid_testsuite CXX)
+  enable_testing()
+endif()
 
 # Kokkos CUDA backend: tests with "with_kokkos_cuda=on" in the name of
 # their output file only run then (nvcc kernels, tensor cores)
