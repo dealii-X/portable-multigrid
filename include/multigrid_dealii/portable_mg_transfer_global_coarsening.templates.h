@@ -1057,6 +1057,11 @@ namespace Copy
                                                             prolongation_matrix_size);
             SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
             SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
+            // nvcc: an extended lambda must not first capture inside if constexpr
+            (void)prolongation_matrix;
+            (void)has_hanging_nodes;
+            (void)hanging_node_masks;
+            (void)hanging_node_weights;
 
             if constexpr (needs_interpolation)
               {
@@ -1283,6 +1288,12 @@ namespace Copy
                                                             prolongation_matrix_size);
             SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
             SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
+            // nvcc: an extended lambda must not first capture inside if constexpr
+            (void)prolongation_matrix;
+            (void)has_hanging_nodes;
+            (void)hanging_node_masks;
+            (void)hanging_node_weights;
+            (void)n_scalar_dofs_per_cell_coarse;
 
             if constexpr (needs_interpolation)
               {
