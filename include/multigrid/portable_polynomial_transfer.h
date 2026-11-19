@@ -1052,12 +1052,15 @@ namespace Portable
       lex_numbering_coarse = shape_info.lexicographic_numbering;
     }
 
+    // lexicographic fine DoF indices, cell after cell in colored-graph order
+    std::vector<types::global_dof_index> fine_indices_lex;
+
     // setup weights
     {
+      // the colored graph holds the locally owned cells
       unsigned int n_cells_fine = 0;
-      for (const auto &cell : dof_handler_fine.active_cell_iterators())
-        if (cell->is_locally_owned())
-          ++n_cells_fine;
+      for (const auto &graph : colored_graph_fine)
+        n_cells_fine += graph.size();
 
       dealii::internal::MatrixFreeFunctions::
         ConstraintInfo<dim, VectorizedArray<number>, types::global_dof_index>
@@ -1071,6 +1074,9 @@ namespace Portable
       std::vector<types::global_dof_index> local_dof_indices_fine(n_dofs_per_cell_fine);
       std::vector<types::global_dof_index> local_dof_indices_lex_fine(n_dofs_per_cell_fine);
 
+      // the fine cells are visited once; the later loops read these indices
+      fine_indices_lex.resize(static_cast<std::size_t>(n_cells_fine) * n_dofs_per_cell_fine);
+
       int cell_counter = 0;
 
       for (unsigned int color = 0; color < n_colors; ++color)
@@ -1080,6 +1086,11 @@ namespace Portable
 
             for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
               local_dof_indices_lex_fine[i] = local_dof_indices_fine[lex_numbering_fine[i]];
+
+            std::copy(local_dof_indices_lex_fine.begin(),
+                      local_dof_indices_lex_fine.end(),
+                      fine_indices_lex.begin() +
+                        static_cast<std::size_t>(cell_counter) * n_dofs_per_cell_fine);
 
             constraint_info_fine.read_dof_indices(cell_counter, local_dof_indices_lex_fine, {});
             ++cell_counter;
@@ -1110,6 +1121,7 @@ namespace Portable
       weights_view_kokkos.clear();
       weights_view_kokkos.resize(n_colors);
 
+      std::size_t first_cell = 0;
       for (unsigned int color = 0; color < n_colors; ++color)
         {
           if (colored_graph_fine[color].size() > 0)
@@ -1125,22 +1137,14 @@ namespace Portable
 
               auto weights_view_host = Kokkos::create_mirror_view(weights_view_kokkos[color]);
 
-              auto cell = graph.cbegin(), end_cell = graph.cend();
-
-              for (unsigned int cell_id = 0; cell != end_cell; ++cell, ++cell_id)
-                {
-                  (*cell)->get_dof_indices(local_dof_indices_fine);
-
-                  for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-                    {
-                      types::global_dof_index dof_index_lex =
-                        local_dof_indices_fine[lex_numbering_fine[i]];
-                      weights_view_host(i, cell_id) = weight_vector[dof_index_lex];
-                    }
-                }
+              for (unsigned int cell_id = 0; cell_id < graph.size(); ++cell_id)
+                for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
+                  weights_view_host(i, cell_id) =
+                    weight_vector[fine_indices_lex[(first_cell + cell_id) * n_dofs_per_cell_fine + i]];
               Kokkos::deep_copy(weights_view_kokkos[color], weights_view_host);
               Kokkos::fence();
             }
+          first_cell += colored_graph_fine[color].size();
         }
     }
     // setup coarse dof indices
@@ -1206,13 +1210,12 @@ namespace Portable
 
     // setup fine plain dof indices
     {
-      std::vector<types::global_dof_index> local_dof_indices_fine(n_dofs_per_cell_fine);
-
       this->plain_dof_indices_fine.clear();
       this->plain_dof_indices_fine.resize(n_colors);
 
       const auto &partitioner_fine = operator_info_fine->get_vector_partitioner();
 
+      std::size_t first_cell = 0;
       for (unsigned int color = 0; color < n_colors; ++color)
         {
           if (colored_graph_fine[color].size() > 0)
@@ -1231,28 +1234,17 @@ namespace Portable
                 Kokkos::create_mirror_view(this->plain_dof_indices_fine[color]);
 
               for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
-                {
-                  auto triacell = graph[cell_id];
-
-                  typename DoFHandler<dim>::cell_iterator cell =
-                    triacell->as_dof_handler_iterator(dof_handler_fine);
-
-                  cell->get_dof_indices(local_dof_indices_fine);
-
-                  if (partitioner_fine)
-                    for (auto &index : local_dof_indices_fine)
-                      index = partitioner_fine->global_to_local(index);
-
-                  for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-                    {
-                      const auto global_dof = local_dof_indices_fine[lex_numbering_fine[i]];
-
-                      plain_dof_indices_fine_host(i, cell_id) = global_dof;
-                    }
-                }
+                for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
+                  {
+                    const types::global_dof_index index =
+                      fine_indices_lex[(first_cell + cell_id) * n_dofs_per_cell_fine + i];
+                    plain_dof_indices_fine_host(i, cell_id) =
+                      partitioner_fine ? partitioner_fine->global_to_local(index) : index;
+                  }
               Kokkos::deep_copy(this->plain_dof_indices_fine[color], plain_dof_indices_fine_host);
               Kokkos::fence();
             }
+          first_cell += colored_graph_fine[color].size();
         }
     }
   }
