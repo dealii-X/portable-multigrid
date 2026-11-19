@@ -1058,12 +1058,13 @@ namespace Copy
             SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
             SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
             // nvcc: an extended lambda must not first capture inside if constexpr
+            // (the conditions use the template parameters, which are not captured)
             (void)prolongation_matrix;
             (void)has_hanging_nodes;
             (void)hanging_node_masks;
             (void)hanging_node_weights;
 
-            if constexpr (needs_interpolation)
+            if constexpr (degree_fine != degree_coarse)
               {
                 Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, prolongation_matrix_size),
                                      [&](const int &i)
@@ -1084,7 +1085,7 @@ namespace Copy
             // copied: a reference to one of two local views would force both
             // into local memory.
             const SharedViewScratchPad values_fine_result =
-              needs_interpolation ? values_fine : values_coarse;
+              (degree_fine != degree_coarse) ? values_fine : values_coarse;
 
             // The shared memory holds the values of a single component of the
             // cells of the batch, cell after cell, so the components are
@@ -1150,7 +1151,7 @@ namespace Copy
                       }
 
                 // interpolate to the children
-                if constexpr (needs_interpolation)
+                if constexpr (degree_fine != degree_coarse)
                   cell_prolongator.template run<degree_fine, degree_coarse>();
 
                 // apply weights and add the fine values of this component into
@@ -1289,13 +1290,14 @@ namespace Copy
             SharedViewScratchPad values_coarse(team_member.team_shmem(), values_coarse_size);
             SharedViewScratchPad values_fine(team_member.team_shmem(), values_fine_size);
             // nvcc: an extended lambda must not first capture inside if constexpr
+            // (the conditions use the template parameters, which are not captured)
             (void)prolongation_matrix;
             (void)has_hanging_nodes;
             (void)hanging_node_masks;
             (void)hanging_node_weights;
             (void)n_scalar_dofs_per_cell_coarse;
 
-            if constexpr (needs_interpolation)
+            if constexpr (degree_fine != degree_coarse)
               {
                 Kokkos::parallel_for(Kokkos::TeamThreadRange(team_member, prolongation_matrix_size),
                                      [&](const int &i)
@@ -1315,7 +1317,7 @@ namespace Copy
             // fine values are the coarse values. The view handle is copied,
             // see prolongate_and_add_scheme().
             const SharedViewScratchPad values_coarse_result =
-              needs_interpolation ? values_coarse : values_fine;
+              (degree_fine != degree_coarse) ? values_coarse : values_fine;
 
             // The shared memory holds the values of a single component of the
             // cells of the batch, cell after cell, so the components are
@@ -1343,7 +1345,7 @@ namespace Copy
                 team_member.team_barrier();
 
                 // restrict from the children
-                if constexpr (needs_interpolation)
+                if constexpr (degree_fine != degree_coarse)
                   cell_restrictor.template run<degree_fine, degree_coarse>();
 
                 // transpose hanging-node interpolation before scattering
