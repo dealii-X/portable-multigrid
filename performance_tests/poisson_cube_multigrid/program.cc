@@ -32,6 +32,7 @@
 
 #include <deal.II/numerics/vector_tools.h>
 
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -922,7 +923,13 @@ namespace multigrid
             << "\": " << setup_phases[i].second;
     cycle << "},\n     \"mv_outer\": " << result_mv_outer << ", \"mv_inner\": " << result_mv_inner
           << ", \"cg_time\": " << result_cg_time << ", \"cg_its\": " << result_cg_its
-          << ", \"cg_reduction\": " << result_cg_reduction << ",\n     \"levels\": [";
+          << ", \"cg_reduction\": ";
+    // 0/0 when CG takes no iteration; JSON has no nan
+    if (std::isfinite(result_cg_reduction))
+      cycle << result_cg_reduction;
+    else
+      cycle << "null";
+    cycle << ",\n     \"levels\": [";
     for (unsigned int level = 1; level <= level_matrices.max_level(); ++level)
       cycle << (level > 1 ? ", " : "") << "{\"level\": " << level
             << ", \"dofs\": " << level_dof_handlers[level].n_dofs()
