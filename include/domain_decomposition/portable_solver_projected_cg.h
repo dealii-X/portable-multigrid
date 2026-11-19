@@ -6,6 +6,8 @@
 #include <deal.II/base/enable_observer_pointer.h>
 #include <deal.II/base/exceptions.h>
 
+#include <deal.II/lac/precondition.h>
+
 #include <deal.II/lac/solver.h>
 #include <deal.II/lac/solver_control.h>
 

@@ -13,35 +13,36 @@ DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-  template <int dim, typename Number>
+  // Operator interface for both backends: VectorType is a distributed vector
+  // in MemorySpace::Default (portable operators) or MemorySpace::Host (CPU
+  // operators).
+  template <int dim, typename VectorType>
   class LaplaceOperatorBase : public OperatorInfoBase<dim>
   {
   public:
+    using value_type = typename VectorType::value_type;
+
     virtual ~LaplaceOperatorBase() = default;
 
     virtual void
-    vmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-          const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
+    vmult(VectorType &dst, const VectorType &src) const = 0;
 
     virtual void
-    vmult_dummy(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-                const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src,
-                const bool ghost_exchange_on,
-                const bool computation_on) const = 0;
+    vmult_dummy(VectorType       &dst,
+                const VectorType &src,
+                const bool        ghost_exchange_on,
+                const bool        computation_on) const = 0;
 
     virtual void
-    Tvmult(LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
-           const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const = 0;
+    Tvmult(VectorType &dst, const VectorType &src) const = 0;
 
     virtual void
-    initialize_dof_vector(
-      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &vec) const = 0;
+    initialize_dof_vector(VectorType &vec) const = 0;
 
     virtual void
     compute_diagonal() = 0;
 
-    virtual std::shared_ptr<
-      DiagonalMatrix<LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>>>
+    virtual std::shared_ptr<DiagonalMatrix<VectorType>>
     get_matrix_diagonal_inverse() const = 0;
 
     virtual types::global_dof_index
@@ -50,7 +51,7 @@ namespace Portable
     virtual types::global_dof_index
     n() const = 0;
 
-    virtual Number
+    virtual value_type
     el(const types::global_dof_index row, const types::global_dof_index col) const = 0;
 
     // get_dof_handler(), get_colored_graph(), get_vector_partitioner() and

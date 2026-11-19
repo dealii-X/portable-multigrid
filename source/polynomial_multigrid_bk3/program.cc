@@ -84,11 +84,14 @@ private:
 
   std::vector<AffineConstraints<double>> constraints_collection;
 
-  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>>
+  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<
+    dim,
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>>>
     mg_matrices;
 
   using SmootherType = PreconditionChebyshev<
-    Portable::LaplaceOperatorBase<dim, double>,
+    Portable::LaplaceOperatorBase<dim,
+                                  LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>,
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>;
 
   MGLevelObject<SmootherType> mg_smoothers;

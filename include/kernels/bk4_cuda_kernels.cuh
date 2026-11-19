@@ -470,12 +470,14 @@ namespace BK4
                         const size_t g_base = eb * nelmtPerBatch * 6 * nq * nq * nq +
                                               e * 6 * nq * nq * nq + p * nq * nq + q * nq + r;
 
-                        const T Grr = d_G[g_base + 0 * nq * nq * nq];
-                        const T Grs = d_G[g_base + 1 * nq * nq * nq];
+                        // (r, s, t) = reference directions (2, 1, 0); G is
+                        // stored as G00, G01, G02, G11, G12, G22
+                        const T Grr = d_G[g_base + 5 * nq * nq * nq];
+                        const T Grs = d_G[g_base + 4 * nq * nq * nq];
                         const T Grt = d_G[g_base + 2 * nq * nq * nq];
                         const T Gss = d_G[g_base + 3 * nq * nq * nq];
-                        const T Gst = d_G[g_base + 4 * nq * nq * nq];
-                        const T Gtt = d_G[g_base + 5 * nq * nq * nq];
+                        const T Gst = d_G[g_base + 1 * nq * nq * nq];
+                        const T Gtt = d_G[g_base + 0 * nq * nq * nq];
 
                         const T qr = r_p[p];
                         const T qs = r_q[p];

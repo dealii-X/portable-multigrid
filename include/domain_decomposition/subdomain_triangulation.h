@@ -41,6 +41,11 @@ public:
   void
   refine_global(unsigned int n_refinement_cycles);
 
+  // The copied cells keep their manifold ids, but the manifolds have to be
+  // attached again.
+  void
+  set_manifold(const types::manifold_id number, const Manifold<dim> &manifold);
+
 
 private:
   Triangulation<dim> subdomain_triangulation;
@@ -77,6 +82,14 @@ void
 SubdomainTriangulation<dim>::refine_global(unsigned int n_refinement_cycles)
 {
   subdomain_triangulation.refine_global(n_refinement_cycles);
+}
+
+template <int dim>
+void
+SubdomainTriangulation<dim>::set_manifold(const types::manifold_id number,
+                                          const Manifold<dim>     &manifold)
+{
+  subdomain_triangulation.set_manifold(number, manifold);
 }
 
 template <int dim>

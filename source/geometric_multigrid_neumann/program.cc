@@ -31,7 +31,7 @@
 #include <iostream>
 
 #include "multigrid/portable_geometric_transfer.h"
-#include "multigrid/portable_polynomial_tranfer.h"
+#include "multigrid/portable_polynomial_transfer.h"
 #include "multigrid/portable_subdomain_v_cycle_multigrid.h"
 #include "multigrid/portable_v_cycle_multigrid.h"
 #include "operators/portable_laplace_operator.h"
@@ -102,7 +102,9 @@ private:
   MGLevelObject<DoFHandler<dim>>           level_dof_handlers;
   MGLevelObject<AffineConstraints<double>> level_constraints;
 
-  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>>
+  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<
+    dim,
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>>>
     level_matrices;
 
   MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, double>>>
@@ -112,13 +114,13 @@ private:
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
   using SmootherType =
-    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, double>,
-                          VectorTypeMG>;
+    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, VectorTypeMG>, VectorTypeMG>;
 
   std::unique_ptr<Portable::SubdomainVCycleMultigrid<
     dim,
     double,
-    typename Portable::LaplaceOperatorBase<dim, double>,
+    typename Portable::
+      LaplaceOperatorBase<dim, LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>,
     Portable::MGTransferBase<dim, double>,
     SmootherType>>
     mg_preconditioner;
@@ -297,7 +299,8 @@ LaplaceProblem<dim, fe_degree>::setup_smoothers()
     new Portable::SubdomainVCycleMultigrid<
       dim,
       double,
-      typename Portable::LaplaceOperatorBase<dim, double>,
+      typename Portable::
+        LaplaceOperatorBase<dim, LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>,
       Portable::MGTransferBase<dim, double>,
       SmootherType>(level_matrices, mg_transfers, mg_smoothers));
 }

@@ -1,0 +1,49 @@
+
+DEAL:0::dim = 2, fe_degree = 1
+DEAL:0::subdomain n_dofs = 81, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK
+DEAL:0::dim = 2, fe_degree = 2
+DEAL:0::subdomain n_dofs = 289, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK
+DEAL:0::dim = 2, fe_degree = 3
+DEAL:0::subdomain n_dofs = 625, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK
+DEAL:0::dim = 3, fe_degree = 1
+DEAL:0::subdomain n_dofs = 125, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK
+DEAL:0::dim = 3, fe_degree = 2
+DEAL:0::subdomain n_dofs = 729, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK
+DEAL:0::dim = 3, fe_degree = 3
+DEAL:0::subdomain n_dofs = 2197, interface n_dofs (all ranks) = 0
+DEAL:0::vmult (Dirichlet): OK
+DEAL:0::Tvmult (Dirichlet): OK
+DEAL:0::vmult_bk3 (Dirichlet): OK
+DEAL:0::vmult_neumann: OK
+DEAL:0::compute_diagonal (Dirichlet): OK
+DEAL:0::compute_diagonal (Neumann): OK

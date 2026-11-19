@@ -158,11 +158,9 @@ namespace Portable
     constexpr int n_1d     = fe_degree + 1;
     constexpr int nq_total = Utilities::pow(n_q_points_1d, dim);
 
-    // 1 values slot + dim gradients-pool slots + (dim - 1) dedicated
-    // evaluate_values()/integrate_values() scratch slots (0 for dim == 1, 1
-    // for dim == 2, 2 for dim == 3 -- see their own doc comments) -- always
-    // exactly 2 * dim.
-    constexpr int n_scratch_arrays = 2 * dim;
+    // 1 values slot + dim gradients slots + evaluate_values()/
+    // integrate_values() scratch: dim - 1 slots, 1 in 1D
+    constexpr int n_scratch_arrays = 1 + dim + std::max(dim - 1, 1);
 
     if (cell_range_ids.size() > 0)
       AssertDimension(cell_range_ids.size(), static_cast<unsigned int>(nelmt));

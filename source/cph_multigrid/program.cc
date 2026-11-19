@@ -105,14 +105,17 @@ private:
 
   MGLevelObject<std::unique_ptr<FiniteElement<dim>>> p_level_fes;
 
-  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<dim, double>>> level_matrices;
+  MGLevelObject<std::unique_ptr<Portable::LaplaceOperatorBase<
+    dim,
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Default>>>>
+    level_matrices;
 
   MGLevelObject<std::unique_ptr<Portable::MGTransferBase<dim, double>>> mg_transfers;
 
   using VectorTypeMG = LinearAlgebra::distributed::Vector<double, MemorySpace::Default>;
 
   using SmootherType =
-    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, double>, VectorTypeMG>;
+    PreconditionChebyshev<Portable::LaplaceOperatorBase<dim, VectorTypeMG>, VectorTypeMG>;
 
   MGLevelObject<SmootherType> mg_smoothers;
 

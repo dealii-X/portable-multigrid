@@ -4,6 +4,7 @@
 #include <deal.II/dofs/dof_handler.h>
 
 #include <deal.II/matrix_free/constraint_info.h>
+#include <deal.II/matrix_free/portable_matrix_free.h>
 #include <deal.II/matrix_free/shape_info.h>
 
 #include <deal.II/multigrid/mg_transfer_matrix_free.h>

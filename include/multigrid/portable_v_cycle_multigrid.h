@@ -30,7 +30,7 @@ namespace Portable
   {
   public:
     using VectorType      = LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
-    using LevelMatrixType = LaplaceOperatorBase<dim, number>;
+    using LevelMatrixType = LaplaceOperatorBase<dim, VectorType>;
     using SmootherType    = PreconditionChebyshev<LevelMatrixType, VectorType>;
 
     VCycleMultigrid(

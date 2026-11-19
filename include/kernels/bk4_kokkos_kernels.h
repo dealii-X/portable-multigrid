@@ -207,11 +207,8 @@ namespace BK4
 
       constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
 
-      // 1 values slot + (dim - 1) integrate_values() scratch slots (see the
-      // scratch-sizing note in FEEvaluationImplTransformToCollocation::
-      // integrate_values(), portable_evaluation_kernels.h) -- no gradients
-      // slot needed here, unlike KokkosKernelAbstracted() above.
-      constexpr int n_scratch_arrays = dim;
+      // 1 values slot + integrate_values() scratch: dim - 1 slots, 1 in 1D
+      constexpr int n_scratch_arrays = 1 + std::max(dim - 1, 1);
 
       if (cell_range_ids.size() > 0)
         AssertDimension(cell_range_ids.size(), n_cells);

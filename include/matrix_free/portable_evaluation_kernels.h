@@ -283,14 +283,15 @@ namespace Custom
                     shape_values,
                     nullptr, // no gradients
                     nullptr, // no co-gradients
-                    nullptr, // no temp
+                    scratch, // temp of the 1D in-place step
                     n_elements_in_current_batch,
                     thread_id,
                     block_size);
 
         if constexpr (dim == 1)
           {
-            evaluator.template values<0, true, false>(in, out);
+            // in and out may alias (callers pass the same buffer)
+            evaluator.template values<0, true, false, true>(in, out);
           }
         else if constexpr (dim == 2)
           {
@@ -319,14 +320,15 @@ namespace Custom
                     shape_values,
                     nullptr, // no gradients
                     nullptr, // no co-gradients
-                    nullptr, // no temp
+                    scratch, // temp of the 1D in-place step
                     n_elements_in_current_batch,
                     thread_id,
                     block_size);
 
         if constexpr (dim == 1)
           {
-            evaluator.template values<0, false, false>(in, out);
+            // in and out may alias (callers pass the same buffer)
+            evaluator.template values<0, false, false, true>(in, out);
           }
         else if constexpr (dim == 2)
           {

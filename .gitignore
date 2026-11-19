@@ -3,8 +3,7 @@
 # ----------------------------------------------------------------------
 
 # Ignore all 'build' directories, regardless of where they appear,
-# including variants like build-debug/build-release (this project's
-# correctness_tests/ commonly has both alongside a plain build/).
+# including variants like build-debug/build-release.
 # This covers /project/build/, /project/src/sub/build-debug/, etc.
 **/build/
 **/build-*/
