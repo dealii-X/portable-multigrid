@@ -39,6 +39,12 @@ add_subdirectory(poisson_cube_multigrid)
 
 set(_baselines "${CMAKE_CURRENT_SOURCE_DIR}/baselines/${PERFORMANCE_MACHINE}")
 foreach(_variant ${PERFORMANCE_VARIANTS})
+  # ctest does not build targets: build the driver before its runs
+  add_test(NAME performance/${_variant}.build
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_variant})
+  set_tests_properties(performance/${_variant}.build PROPERTIES
+    LABELS performance FIXTURES_SETUP ${_variant}_build)
+
   foreach(_degree ${PERFORMANCE_DEGREES})
     set(_case "${_variant}_p${_degree}_np${PERFORMANCE_N_RANKS}")
     set(_json "${CMAKE_CURRENT_BINARY_DIR}/${_case}.json")
@@ -53,7 +59,8 @@ foreach(_variant ${PERFORMANCE_VARIANTS})
               ${_json} ${_baselines}/${_case}.json --tolerance ${PERFORMANCE_TOLERANCE})
 
     set_tests_properties(performance/${_case}.run PROPERTIES
-      LABELS performance RUN_SERIAL TRUE FIXTURES_SETUP ${_case})
+      LABELS performance RUN_SERIAL TRUE FIXTURES_SETUP ${_case}
+      FIXTURES_REQUIRED ${_variant}_build)
     set_tests_properties(performance/${_case}.compare PROPERTIES
       LABELS performance FIXTURES_REQUIRED ${_case})
   endforeach()
