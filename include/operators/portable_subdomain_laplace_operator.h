@@ -1418,7 +1418,43 @@ namespace Portable
 
     matrix_free.cell_loop(cell_action, dummy, inverse_diagonal_dirichlet);
 
-    inverse_diagonal_neumann = inverse_diagonal_dirichlet;
+    // The cell loop skips the Dirichlet-constrained DoFs (dealii/dealii#20390),
+    // which include the interface: the Neumann diagonal uses the plain indices
+    // as vmult_neumann() does.
+    {
+      MemorySpace::Default::kokkos_space::execution_space exec;
+
+      DeviceVector<number> diagonal_device(inverse_diagonal_neumann.get_values(),
+                                           inverse_diagonal_neumann.size());
+      Kokkos::deep_copy(exec, diagonal_device, number(0));
+
+      constexpr bool is_serial =
+        std::is_same_v<Kokkos::DefaultExecutionSpace, Kokkos::DefaultHostExecutionSpace>;
+      const unsigned int numBlocks       = is_serial ? 1u : numbers::invalid_unsigned_int;
+      const unsigned int threadsPerBlock = is_serial ? 1u : numbers::invalid_unsigned_int;
+
+      const auto &colored_graph = matrix_free.get_colored_graph();
+      for (unsigned int color = 0; color < colored_graph.size(); ++color)
+        {
+          const unsigned int n_cells = colored_graph[color].size();
+          if (n_cells == 0)
+            continue;
+
+          const auto &precomputed_data = matrix_free.get_data(color);
+
+          BK3::Parallel::KokkosDiagonalAbstracted<dim, fe_degree, fe_degree + 1, number>(
+            exec,
+            precomputed_data.shape_values,
+            precomputed_data.co_shape_gradients,
+            G_tensors[color],
+            diagonal_device,
+            plain_dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
+        }
+      exec.fence();
+    }
 
     matrix_free.set_constrained_values(number(1.), inverse_diagonal_dirichlet, 0);
 
