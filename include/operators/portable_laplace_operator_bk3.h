@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "base/portable_laplace_operator_base.h"
+#include "base/portable_linear_geometry.h"
 #include "kernels/bk3_kokkos_kernels.h"
 #include "kernels/bk4_cuda_kernels.cuh"
 
@@ -107,6 +108,11 @@ namespace Portable
     bool
     use_overlap_communication_computation() const override;
 
+    // G tensors computed on the device from the cell vertices (only flat
+    // manifolds), else with FEValues on the host
+    bool
+    geometry_on_device() const;
+
   private:
     static constexpr unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
     static constexpr unsigned int n_q_points   = Utilities::pow(n_q_points_1d, dim);
@@ -174,6 +180,8 @@ namespace Portable
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> JxW_per_color;
 
     std::shared_ptr<DiagonalMatrix<VectorType>> inverse_diagonal_entries;
+
+    bool geometry_computed_on_device = false;
   };
 
 
@@ -475,6 +483,36 @@ namespace Portable
     // the device transfer never hold more than max_tile_cells cells at once.
     constexpr unsigned int max_tile_cells = 4096;
 
+    // With flat manifolds only, MappingQ is the (bi/tri)linear map of the
+    // vertices: evaluate it on the device.
+    const auto &tria = dof_handler->get_triangulation();
+    {
+      const auto ids  = tria.get_manifold_ids();
+      const bool flat = std::all_of(ids.begin(), ids.end(), [](const types::manifold_id id) {
+        return id == numbers::flat_manifold_id;
+      });
+      geometry_computed_on_device = Utilities::MPI::min(flat ? 1u : 0u, tria.get_mpi_communicator()) == 1u;
+    }
+
+    constexpr unsigned int n_vertices = GeometryInfo<dim>::vertices_per_cell;
+
+    Kokkos::View<double *, MemorySpace::Default::kokkos_space> points_1d, weights_1d;
+    if (geometry_computed_on_device)
+      {
+        const QGauss<1> quadrature_1d(n_q_points_1d);
+        Kokkos::View<double *, Kokkos::HostSpace> points_host("bk3_points_1d", n_q_points_1d),
+          weights_host("bk3_weights_1d", n_q_points_1d);
+        for (unsigned int q = 0; q < n_q_points_1d; ++q)
+          {
+            points_host(q)  = quadrature_1d.point(q)[0];
+            weights_host(q) = quadrature_1d.weight(q);
+          }
+        points_1d  = Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(),
+                                                        points_host);
+        weights_1d = Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(),
+                                                         weights_host);
+      }
+
     for (unsigned int color = 0; color < n_colors; ++color)
       {
         const auto        &graph   = colored_graph[color];
@@ -492,6 +530,26 @@ namespace Portable
           Kokkos::view_alloc("bk3_JxW_color_" + std::to_string(color),
                              Kokkos::WithoutInitializing),
           static_cast<std::size_t>(n_q_points) * n_cells);
+
+        if (geometry_computed_on_device)
+          {
+            Kokkos::View<double *, Kokkos::HostSpace> vertices_host(
+              Kokkos::view_alloc("bk3_vertices_host", Kokkos::WithoutInitializing),
+              static_cast<std::size_t>(n_cells) * n_vertices * dim);
+            for (unsigned int t = 0; t < n_cells; ++t)
+              for (unsigned int v = 0; v < n_vertices; ++v)
+                for (unsigned int d = 0; d < dim; ++d)
+                  vertices_host((static_cast<std::size_t>(t) * n_vertices + v) * dim + d) =
+                    graph[t]->vertex(v)[d];
+            const auto vertices =
+              Kokkos::create_mirror_view_and_copy(MemorySpace::Default::kokkos_space(),
+                                                  vertices_host);
+
+            internal::compute_linear_geometry<dim, n_q_points_1d, number>(
+              exec, vertices, points_1d, weights_1d, n_cells, G_tensors[color], JxW_per_color[color]);
+            exec.fence();
+            continue;
+          }
 
         const unsigned int tile_cells = std::min(n_cells, max_tile_cells);
 
@@ -561,6 +619,15 @@ namespace Portable
             exec.fence();
           }
       }
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, int n_q_points_1d>
+  bool
+  LaplaceOperatorBK3<dim, fe_degree, number, n_q_points_1d>::geometry_on_device() const
+  {
+    return geometry_computed_on_device;
   }
 
 

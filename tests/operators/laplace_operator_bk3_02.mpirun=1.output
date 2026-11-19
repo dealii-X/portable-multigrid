@@ -1,0 +1,61 @@
+
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 2, double
+DEAL:0::n_dofs = 81, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 3, double
+DEAL:0::n_dofs = 289, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 2, fe_degree = 3, n_q_points_1d = 4, double
+DEAL:0::n_dofs = 625, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 2, fe_degree = 4, n_q_points_1d = 5, double
+DEAL:0::n_dofs = 1089, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 4, double
+DEAL:0::n_dofs = 289, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2, double
+DEAL:0::n_dofs = 125, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3, double
+DEAL:0::n_dofs = 729, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 4, double
+DEAL:0::n_dofs = 2197, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 4, n_q_points_1d = 5, double
+DEAL:0::n_dofs = 4913, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4, double
+DEAL:0::n_dofs = 729, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 5, double
+DEAL:0::n_dofs = 2197, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3, float
+DEAL:0::n_dofs = 729, geometry on device = true
+DEAL:0::vmult: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::compute_rhs: OK

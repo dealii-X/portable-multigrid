@@ -59,6 +59,8 @@ test(const bool overlap)
   Operator op(dof_handler, constraints, overlap);
   AssertThrow(op.m() == dof_handler.n_dofs() && op.n() == dof_handler.n_dofs(),
               ExcInternalError());
+  // curved manifold: G tensors with FEValues on the host
+  AssertThrow(!op.geometry_on_device(), ExcInternalError());
 
   VectorType src, dst, dst_ref, diag_ref;
   op.initialize_dof_vector(src);
