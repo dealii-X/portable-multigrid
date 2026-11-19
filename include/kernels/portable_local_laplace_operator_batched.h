@@ -199,9 +199,7 @@ namespace Portable
       precomputed_data.shape_values;
     const Kokkos::View<Number *, MemorySpace::Default::kokkos_space> co_shape_gradients_global =
       precomputed_data.co_shape_gradients;
-    const Kokkos::View<Number **[dim][dim], MemorySpace::Default::kokkos_space> inv_jacobian =
-      precomputed_data.inv_jacobian;
-    const Kokkos::View<Number **, MemorySpace::Default::kokkos_space> JxW = precomputed_data.JxW;
+    const MappingDataAccessor<dim, Number> mapping_data(precomputed_data);
 
     const int ssize = n_1d * n_q_points_1d +          // shape values
                       n_q_points_1d * n_q_points_1d + // co-shape gradients
@@ -253,8 +251,7 @@ namespace Portable
                                                           s_shape_values,
                                                           s_co_shape_gradients,
                                                           G_tensor,
-                                                          inv_jacobian,
-                                                          JxW,
+                                                          mapping_data,
                                                           dof_indices,
                                                           batch_index,
                                                           n_elements_per_batch,

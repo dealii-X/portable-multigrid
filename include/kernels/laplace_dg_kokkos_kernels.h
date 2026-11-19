@@ -1166,36 +1166,40 @@ namespace BK3
                                   qv += scratch_values_plus[e * nq * nq + q * nq + n] * r_r[n];
                                 }
 
+                              // face point (q, p): q runs along tangent_direction_1 (slow),
+                              // p along tangent_direction_0 (fast); qt/qv are the
+                              // derivatives along p, qr/qs along q
+                              const int q_idx = q * nq + p;
+
                               jac_per_n[0][0] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
                                                          tangent_direction_0 * nq_total_per_face +
-                                                         q,
+                                                         q_idx,
                                                        0);
                               jac_per_n[0][1] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
                                                          tangent_direction_0 * nq_total_per_face +
-                                                         q,
+                                                         q_idx,
                                                        1);
                               jac_per_n[1][0] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
                                                          tangent_direction_1 * nq_total_per_face +
-                                                         q,
+                                                         q_idx,
                                                        0);
                               jac_per_n[1][1] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
                                                          tangent_direction_1 * nq_total_per_face +
-                                                         q,
+                                                         q_idx,
                                                        1);
 
                               scratch_gradients_minus[e * dim * nq_total_per_face +
                                                       normal_direction * nq_total_per_face +
-                                                      q * nq + p] +=
-                                qr * jac_per_n[0][0] + qt * jac_per_n[1][0];
+                                                      q_idx] +=
+                                qt * jac_per_n[0][0] + qr * jac_per_n[1][0];
 
                               scratch_gradients_plus[e * dim * nq_total_per_face +
-                                                     normal_direction * nq_total_per_face + q * nq +
-                                                     p] +=
-                                qs * jac_per_n[0][1] + qv * jac_per_n[1][1];
+                                                     normal_direction * nq_total_per_face + q_idx] +=
+                                qv * jac_per_n[0][1] + qs * jac_per_n[1][1];
                             }
                         }
                     }
@@ -1602,16 +1606,23 @@ namespace BK3
                                   qs += scratch_values[e * nq * nq + q * nq + n] * r_q[n];
                                 }
 
+                              // face point (q, p): q runs along tangent_direction_1 (slow),
+                              // p along tangent_direction_0 (fast); qs is the derivative
+                              // along p, qr along q
+                              const int q_idx = q * nq + p;
+
                               jac_per_n[0] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
-                                                       tangent_direction_0 * nq_total_per_face + q);
+                                                       tangent_direction_0 * nq_total_per_face +
+                                                       q_idx);
                               jac_per_n[1] =
                                 jacobians_times_normal(e_global * dim * nq_total_per_face +
-                                                       tangent_direction_1 * nq_total_per_face + q);
+                                                       tangent_direction_1 * nq_total_per_face +
+                                                       q_idx);
 
                               scratch_gradients[e * dim * nq_total_per_face +
-                                                normal_direction * nq_total_per_face + q * nq +
-                                                p] += qr * jac_per_n[0] + qs * jac_per_n[1];
+                                                normal_direction * nq_total_per_face + q_idx] +=
+                                qs * jac_per_n[0] + qr * jac_per_n[1];
                             }
                         }
                     }

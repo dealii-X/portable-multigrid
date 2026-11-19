@@ -1,6 +1,7 @@
 #ifndef kernels_portable_evaluation_kernels_view_h
 #define kernels_portable_evaluation_kernels_view_h
 
+#include "base/portable_mapping_data_accessor.h"
 #include "matrix_free/portable_evaluation_kernels.h"
 
 
@@ -18,6 +19,21 @@ namespace Custom
 
       const Custom::Parallel::DoFIndicesView  &dof_indices;
       const Custom::Parallel::CellRangeIdView &cell_range_ids;
+
+      DEAL_II_HOST_DEVICE Number
+      inverse_jacobian(const unsigned int cell,
+                       const unsigned int q,
+                       const unsigned int d1,
+                       const unsigned int d2) const
+      {
+        return Portable::inverse_jacobian(data, cell, q, d1, d2);
+      }
+
+      DEAL_II_HOST_DEVICE Number
+      JxW_value(const unsigned int cell, const unsigned int q) const
+      {
+        return Portable::JxW_value(data, cell, q);
+      }
     };
 
     template <typename Number>
@@ -92,9 +108,7 @@ namespace Custom
         AssertIndexRange(cell, precomputed_data.data.n_cells);
         AssertIndexRange(q_point, static_cast<unsigned int>(n_q_points));
 
-        return (precomputed_data.data.row_start / precomputed_data.data.padding_length + cell) *
-                 n_q_points +
-               q_point;
+        return (Portable::first_cell_index(precomputed_data.data) + cell) * n_q_points + q_point;
       }
 
       DEAL_II_HOST_DEVICE

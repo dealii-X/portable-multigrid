@@ -75,6 +75,13 @@ namespace BP35
     void
     setup_matrix_free();
 
+    // Frees the previous cycle's device allocations before the next cycle
+    // allocates its own (and before the DoFHandler and Triangulation they
+    // were built on are cleared), so peak device memory stays at one
+    // cycle's worth instead of two.
+    void
+    release_cycle_memory();
+
     void
     compute_rhs();
 
@@ -222,6 +229,16 @@ namespace BP35
                  << 's' << std::endl;
   }
 
+
+  template <int dim, int fe_degree>
+  void
+  LaplaceProblem<dim, fe_degree>::release_cycle_memory()
+  {
+    system_rhs_device.reinit(0);
+    solution_device.reinit(0);
+    system_matrix.reset();
+    Kokkos::fence();
+  }
 
   template <int dim, int fe_degree>
   void
@@ -440,6 +457,7 @@ namespace BP35
 
     for (unsigned int cycle = 0; cycle < sizeof(sizes) / sizeof(unsigned int); ++cycle)
       {
+        release_cycle_memory();
         triangulation.clear();
 
         setup_time = 0.;

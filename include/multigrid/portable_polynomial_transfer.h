@@ -4,6 +4,7 @@
 #include <deal.II/dofs/dof_handler.h>
 
 #include <deal.II/matrix_free/constraint_info.h>
+#include <deal.II/matrix_free/portable_matrix_free.h> // DeviceVector
 #include <deal.II/matrix_free/shape_info.h>
 
 #include <Kokkos_Core.hpp>
@@ -679,9 +680,11 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
+    using MGTransferBase<dim, number>::reinit;
+
     void
-    reinit(const MatrixFree<dim, number>   &mf_coarse,
-           const MatrixFree<dim, number>   &mf_fine,
+    reinit(const OperatorInfoBase<dim>     &op_coarse,
+           const OperatorInfoBase<dim>     &op_fine,
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) override;
 
@@ -699,8 +702,8 @@ namespace Portable
     void
     setup_weights_and_dof_indices();
 
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
+    ObserverPointer<const OperatorInfoBase<dim>> operator_info_coarse;
+    ObserverPointer<const OperatorInfoBase<dim>> operator_info_fine;
 
     ObserverPointer<const AffineConstraints<number>> constraints_fine;
     ObserverPointer<const AffineConstraints<number>> constraints_coarse;
@@ -752,7 +755,7 @@ namespace Portable
     DeviceVector<number> src_device(src.get_values(), src.locally_owned_size()),
       dst_device(dst.get_values(), dst.locally_owned_size());
 
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+    const auto &colored_graph = operator_info_fine->get_colored_graph();
 
     const unsigned int n_colors = colored_graph.size();
 
@@ -787,7 +790,7 @@ namespace Portable
           }
       };
 
-    if (matrix_free_fine->use_overlap_communication_computation())
+    if (operator_info_fine->use_overlap_communication_computation())
       {
         src.update_ghost_values_start(0);
 
@@ -810,11 +813,14 @@ namespace Portable
             Kokkos::fence();
           }
 
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells; see buffered_ghost_exchange for the ordering
+        if (buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
         dst.compress_start(0, VectorOperation::add);
 
-        // When the mesh is coarse it is possible that some processors do
-        // not own any cells
-        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+        if (!buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
           do_color(2);
 
         dst.compress_finish(VectorOperation::add);
@@ -846,7 +852,7 @@ namespace Portable
     MemorySpace::Default::kokkos_space::execution_space exec;
     using Functor = p_mg_transfer::CellRestrictionKernel<dim, p_coarse, p_fine, number>;
 
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+    const auto &colored_graph = operator_info_fine->get_colored_graph();
 
     const unsigned int n_colors = colored_graph.size();
 
@@ -884,7 +890,7 @@ namespace Portable
       };
 
 
-    if (matrix_free_fine->use_overlap_communication_computation())
+    if (operator_info_fine->use_overlap_communication_computation())
       {
         src.update_ghost_values_start(0);
 
@@ -907,11 +913,14 @@ namespace Portable
             Kokkos::fence();
           }
 
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells; see buffered_ghost_exchange for the ordering
+        if (buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
         dst.compress_start(0, VectorOperation::add);
 
-        // When the mesh is coarse it is possible that some processors do
-        // not own any cells
-        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+        if (!buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
           do_color(2);
 
         dst.compress_finish(VectorOperation::add);
@@ -935,20 +944,20 @@ namespace Portable
   template <int dim, int p_coarse, int p_fine, typename number>
   void
   PolynomialTransfer<dim, p_coarse, p_fine, number>::reinit(
-    const MatrixFree<dim, number>   &mf_coarse,
-    const MatrixFree<dim, number>   &mf_fine,
+    const OperatorInfoBase<dim>     &op_coarse,
+    const OperatorInfoBase<dim>     &op_fine,
     const AffineConstraints<number> &constraints_coarse,
     const AffineConstraints<number> &constraints_fine)
   {
-    this->matrix_free_coarse = &mf_coarse;
-    this->matrix_free_fine   = &mf_fine;
+    this->operator_info_coarse = &op_coarse;
+    this->operator_info_fine   = &op_fine;
 
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
 
-    auto &colored_graph_coarse = this->matrix_free_coarse->get_colored_graph();
+    auto &colored_graph_coarse = this->operator_info_coarse->get_colored_graph();
 
-    const auto &colored_graph_fine = this->matrix_free_fine->get_colored_graph();
+    const auto &colored_graph_fine = this->operator_info_fine->get_colored_graph();
 
     const unsigned int n_colors = colored_graph_fine.size();
 
@@ -1008,13 +1017,13 @@ namespace Portable
   void
   PolynomialTransfer<dim, p_coarse, p_fine, number>::setup_weights_and_dof_indices()
   {
-    const auto &dof_handler_fine   = matrix_free_fine->get_dof_handler();
-    const auto &dof_handler_coarse = matrix_free_coarse->get_dof_handler();
+    const auto &dof_handler_fine   = operator_info_fine->get_dof_handler();
+    const auto &dof_handler_coarse = operator_info_coarse->get_dof_handler();
     const auto &fe_fine            = dof_handler_fine.get_fe();
     const auto &fe_coarse          = dof_handler_coarse.get_fe();
 
-    const auto &colored_graph_fine   = matrix_free_fine->get_colored_graph();
-    const auto &colored_graph_coarse = matrix_free_coarse->get_colored_graph();
+    const auto &colored_graph_fine   = operator_info_fine->get_colored_graph();
+    const auto &colored_graph_coarse = operator_info_coarse->get_colored_graph();
 
     const unsigned int n_colors = colored_graph_fine.size();
 
@@ -1105,15 +1114,14 @@ namespace Portable
         {
           if (colored_graph_fine[color].size() > 0)
             {
-              const auto &mf_data_fine = matrix_free_fine->get_data(color);
-              const auto &graph        = colored_graph_fine[color];
+              const auto &graph = colored_graph_fine[color];
 
               weights_view_kokkos[color] =
                 Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("weights_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
                   n_dofs_per_cell_fine,
-                  mf_data_fine.n_cells);
+                  graph.size());
 
               auto weights_view_host = Kokkos::create_mirror_view(weights_view_kokkos[color]);
 
@@ -1143,27 +1151,26 @@ namespace Portable
       this->dof_indices_coarse.clear();
       this->dof_indices_coarse.resize(n_colors);
 
-      const auto &partitioner_coarse = matrix_free_coarse->get_vector_partitioner();
+      const auto &partitioner_coarse = operator_info_coarse->get_vector_partitioner();
 
       for (unsigned int color = 0; color < n_colors; ++color)
         {
           if (colored_graph_coarse[color].size() > 0)
             {
-              const auto &mf_data_coarse = matrix_free_coarse->get_data(color);
-
-              const auto &graph = colored_graph_coarse[color];
+              const auto        &graph   = colored_graph_coarse[color];
+              const unsigned int n_cells = graph.size();
 
               this->dof_indices_coarse[color] =
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("dof_indices_coarse_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
                   n_dofs_per_cell_coarse,
-                  mf_data_coarse.n_cells);
+                  n_cells);
 
               auto dof_indices_coarse_host =
                 Kokkos::create_mirror_view(this->dof_indices_coarse[color]);
 
-              for (unsigned int cell_id = 0; cell_id < mf_data_coarse.n_cells; ++cell_id)
+              for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
                 {
                   auto triacell = graph[cell_id];
 
@@ -1204,27 +1211,26 @@ namespace Portable
       this->plain_dof_indices_fine.clear();
       this->plain_dof_indices_fine.resize(n_colors);
 
-      const auto &partitioner_fine = matrix_free_fine->get_vector_partitioner();
+      const auto &partitioner_fine = operator_info_fine->get_vector_partitioner();
 
       for (unsigned int color = 0; color < n_colors; ++color)
         {
           if (colored_graph_fine[color].size() > 0)
             {
-              const auto &mf_data_fine = matrix_free_fine->get_data(color);
-
-              const auto &graph = colored_graph_fine[color];
+              const auto        &graph   = colored_graph_fine[color];
+              const unsigned int n_cells = graph.size();
 
               this->plain_dof_indices_fine[color] =
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("plain_dof_indices_fine_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
                   n_dofs_per_cell_fine,
-                  mf_data_fine.n_cells);
+                  n_cells);
 
               auto plain_dof_indices_fine_host =
                 Kokkos::create_mirror_view(this->plain_dof_indices_fine[color]);
 
-              for (unsigned int cell_id = 0; cell_id < mf_data_fine.n_cells; ++cell_id)
+              for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
                 {
                   auto triacell = graph[cell_id];
 

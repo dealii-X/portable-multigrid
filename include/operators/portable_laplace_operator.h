@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
+#include "base/portable_mapping_data_accessor.h"
 #include "kernels/bk3_kokkos_kernels.h"
 #include "kernels/portable_local_laplace_operator.h"
 #include "kernels/portable_local_laplace_operator_batched.h"
@@ -161,7 +162,7 @@ namespace Portable
     el(const types::global_dof_index row, const types::global_dof_index col) const override;
 
     const MatrixFree<dim, number> &
-    get_matrix_free() const override;
+    get_matrix_free() const;
 
     // matrix_free_new's own accessor -- see initialize_dof_vector_new()'s
     // comment for why vmult_dealii_new()'s vectors need matrix_free_new
@@ -171,6 +172,15 @@ namespace Portable
 
     const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const override;
+
+    const DoFHandler<dim> &
+    get_dof_handler() const override;
+
+    const typename OperatorInfoBase<dim>::ColoredGraph &
+    get_colored_graph() const override;
+
+    bool
+    use_overlap_communication_computation() const override;
 
   private:
     using TeamHandle =
@@ -214,6 +224,9 @@ namespace Portable
 
     MatrixFree<dim, number> matrix_free;
 
+    // matrix_free's colored graph without the FilteredIterator wrapper
+    typename OperatorInfoBase<dim>::ColoredGraph colored_graph;
+
     // Local matrix_free_dealii port of the above, filled identically -- see
     // vmult_dealii_new()/LocalLaplaceOperatorNew.
     Copy::Portable::MatrixFree<dim, number> matrix_free_new;
@@ -250,6 +263,7 @@ namespace Portable
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
+    colored_graph = make_colored_graph<dim>(matrix_free.get_colored_graph());
 
     typename Copy::Portable::MatrixFree<dim, number>::AdditionalData additional_data_new;
     additional_data_new.mapping_update_flags =
@@ -1047,13 +1061,12 @@ namespace Portable
             const auto        &precomputed_data = matrix_free.get_data(color);
             const unsigned int n_cells          = precomputed_data.n_cells;
 
-            const auto &inv_jacobian = precomputed_data.inv_jacobian;
-            const auto &JxW          = precomputed_data.JxW;
+            const MappingDataAccessor<dim, number> mapping_data(precomputed_data);
 
             G_tensors[color] = Kokkos::View<number *, MemorySpace::Default::kokkos_space>(
               Kokkos::view_alloc("G_tensor_color_" + std::to_string(color),
                                  Kokkos::WithoutInitializing),
-              symmetric_tensor_dim * n_cells * n_q_points);
+              static_cast<std::size_t>(symmetric_tensor_dim) * n_cells * n_q_points);
 
             auto G = G_tensors[color];
 
@@ -1072,17 +1085,16 @@ namespace Portable
                         {
                           number sum = 0;
                           for (int k = 0; k < dim; ++k)
-                            sum += inv_jacobian(q_point, cell_id, d1, k) *
-                                   inv_jacobian(q_point, cell_id, d2, k);
-                          components[idx] = JxW(q_point, cell_id) * sum;
+                            sum += mapping_data.inverse_jacobian(cell_id, q_point, d1, k) *
+                                   mapping_data.inverse_jacobian(cell_id, q_point, d2, k);
+                          components[idx] = mapping_data.JxW_value(cell_id, q_point) * sum;
                           ++idx;
                         }
 
+                    const std::size_t g_cell_base =
+                      static_cast<std::size_t>(cell_id) * symmetric_tensor_dim * n_q_points;
                     for (int c = 0; c < symmetric_tensor_dim; ++c)
-                      {
-                        G[cell_id * symmetric_tensor_dim * n_q_points + c * n_q_points + q_point] =
-                          components[c];
-                      }
+                      G[g_cell_base + c * n_q_points + q_point] = components[c];
                   }
               });
             Kokkos::fence();
@@ -1129,6 +1141,27 @@ namespace Portable
   LaplaceOperator<dim, fe_degree, number>::get_matrix_free() const
   {
     return matrix_free;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  const DoFHandler<dim> &
+  LaplaceOperator<dim, fe_degree, number>::get_dof_handler() const
+  {
+    return matrix_free.get_dof_handler();
+  }
+
+  template <int dim, int fe_degree, typename number>
+  const typename OperatorInfoBase<dim>::ColoredGraph &
+  LaplaceOperator<dim, fe_degree, number>::get_colored_graph() const
+  {
+    return colored_graph;
+  }
+
+  template <int dim, int fe_degree, typename number>
+  bool
+  LaplaceOperator<dim, fe_degree, number>::use_overlap_communication_computation() const
+  {
+    return matrix_free.use_overlap_communication_computation();
   }
 
   template <int dim, int fe_degree, typename number>

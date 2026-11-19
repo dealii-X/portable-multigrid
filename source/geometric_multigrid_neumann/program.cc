@@ -255,8 +255,8 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
     {
       mg_transfers[level] =
         std::make_unique<Portable::GeometricTransfer<dim, fe_degree, double>>();
-      mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
-                                  level_matrices[level]->get_matrix_free(),
+      mg_transfers[level]->reinit(*level_matrices[level - 1],
+                                  *level_matrices[level],
                                   level_constraints[level - 1],
                                   level_constraints[level]);
     }

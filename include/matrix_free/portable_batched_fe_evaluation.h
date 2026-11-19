@@ -197,7 +197,7 @@ namespace Custom
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
-        data->values[point] = value * data->JxW(point_local, global_cell);
+        data->values[point] = value * data->mapping_data.JxW_value(global_cell, point_local);
       }
 
       DEAL_II_HOST_DEVICE gradient_type
@@ -212,7 +212,7 @@ namespace Custom
           {
             Number tmp = 0.;
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-              tmp += data->inv_jacobian(point_local, global_cell, d_2, d_1) *
+              tmp += data->mapping_data.inverse_jacobian(global_cell, point_local, d_2, d_1) *
                      data->gradients[d_2 * data->n_q_points_per_batch + point];
             grad[d_1] = tmp;
           }
@@ -226,13 +226,14 @@ namespace Custom
         const int          point_local = point % nq_total;
         const unsigned int global_cell = get_global_cell_index(point);
 
-        const Number jxw = data->JxW(point_local, global_cell);
+        const Number jxw = data->mapping_data.JxW_value(global_cell, point_local);
 
         for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
           {
             Number tmp = 0.;
             for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-              tmp += data->inv_jacobian(point_local, global_cell, d_1, d_2) * gradient[d_2];
+              tmp += data->mapping_data.inverse_jacobian(global_cell, point_local, d_1, d_2) *
+                     gradient[d_2];
             data->gradients[d_1 * data->n_q_points_per_batch + point] = tmp * jxw;
           }
       }

@@ -190,11 +190,11 @@ namespace multigrid
 
     struct PolynomialTransferRunner
     {
-      const unsigned int                       level;
-      const Portable::MatrixFree<dim, double> &mf_coarse;
-      const Portable::MatrixFree<dim, double> &mf_fine;
-      AffineConstraints<double>               &constraints_coarse;
-      AffineConstraints<double>               &constraints_fine;
+      const unsigned int                     level;
+      const Portable::OperatorInfoBase<dim> &op_coarse;
+      const Portable::OperatorInfoBase<dim> &op_fine;
+      AffineConstraints<double>             &constraints_coarse;
+      AffineConstraints<double>             &constraints_fine;
 
       LaplaceProblem<dim, fe_degree> &parent_problem;
 
@@ -206,8 +206,8 @@ namespace multigrid
           Portable::
             PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
-        parent_problem.mg_transfers[level]->reinit(mf_coarse,
-                                                   mf_fine,
+        parent_problem.mg_transfers[level]->reinit(op_coarse,
+                                                   op_fine,
                                                    constraints_coarse,
                                                    constraints_fine);
       }
@@ -435,8 +435,8 @@ namespace multigrid
             mg_transfers[level] =
               std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
             mg_transfers[level]->reinit(
-              level_matrices[level - 1]->get_matrix_free(),
-              level_matrices[level]->get_matrix_free(),
+              *level_matrices[level - 1],
+              *level_matrices[level],
               level_constraints[level - 1],
               level_constraints[level]);
           }
@@ -449,8 +449,8 @@ namespace multigrid
 
             PolynomialTransferRunner runner{
               level,
-              level_matrices[level - 1]->get_matrix_free(),
-              level_matrices[level]->get_matrix_free(),
+              *level_matrices[level - 1],
+              *level_matrices[level],
               level_constraints[level - 1],
               level_constraints[level],
               *this};

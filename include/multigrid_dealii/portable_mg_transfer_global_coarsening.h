@@ -1,0 +1,352 @@
+// -----------------------------------------------------------------------------
+//
+// Copy of deal.II's include/deal.II/multigrid/portable_mg_transfer_global_coarsening.h
+// (branch batched-portable-evaluation-kernels, commit d45a6d985a), placed in
+// the namespace Copy so that it can be compiled and tested against an
+// installed deal.II without rebuilding the library. Apart from the namespace,
+// the include paths and the accessors for private members of the host
+// transfer in mg_transfer_private_access.h, the setup code is unchanged; the
+// cell kernels are the subject of this branch.
+//
+// -----------------------------------------------------------------------------
+
+#ifndef multigrid_dealii_portable_mg_transfer_global_coarsening_h
+#define multigrid_dealii_portable_mg_transfer_global_coarsening_h
+
+#include <deal.II/base/memory_space.h>
+#include <deal.II/base/mpi_remote_point_evaluation.h>
+
+#include <deal.II/dofs/dof_handler.h>
+
+#include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/la_parallel_vector.h>
+
+#include <deal.II/matrix_free/constraint_info.h>
+#include <deal.II/matrix_free/portable_matrix_free.h>
+#include <deal.II/matrix_free/shape_info.h>
+
+#include <deal.II/multigrid/mg_base.h>
+#include <deal.II/multigrid/mg_transfer_matrix_free.h>
+
+DEAL_II_NAMESPACE_OPEN
+
+namespace Copy
+{
+
+  namespace Portable
+  {
+
+    // Forward declarations
+#ifndef DOXYGEN
+    namespace internal
+    {
+      template <typename Number>
+      struct MGTransferSharedData;
+
+      class MGTwoLevelTransferImplementation;
+    } // namespace internal
+
+#endif
+
+    /**
+     * @addtogroup mg
+     * @{
+     */
+
+    /**
+     * Class for transfer between two multigrid levels for geometric or
+     * polynomial coarsening strategies. It relies on a list of DoF indices
+     * associated with the cells on the coarse and fine side of the transfer,
+     * and implements a cell-by-cell (matrix-free) interpolation setup with the
+     * reference-cell embedding matrices.
+     *
+     * The implementation of this class is similar to MGTwoLevelTransfer which is
+     * explained in detail in @cite munch2022gc.
+     *
+     * The transfer is built from the underlying DoFHandler and AffineConstraints
+     * objects on the coarse and fine side, collecting an explicit copy of all
+     * indices on both sides. At the moment, this class supports FE_Q and
+     * FESystem(FE_Q).
+     */
+    template <int dim, typename VectorType>
+    class MGTwoLevelTransfer : public dealii::internal::MGTwoLevelTransferCore<dim, VectorType>
+    {
+    public:
+      static_assert(
+        std::is_same_v<VectorType,
+                       LinearAlgebra::distributed::Vector<typename VectorType::value_type,
+                                                          MemorySpace::Default>>,
+        "This class is currently only implemented for vectors of "
+        "type LinearAlgebra::distributed::Vector.");
+
+      /**
+       * The scalar type used by the vector-type template argument.
+       */
+      using Number = typename VectorType::value_type;
+
+      /**
+       * Set up global coarsening between the given DoFHandler objects (
+       * @p dof_handler_fine and @p dof_handler_coarse). In case the optional
+       * arguments @p mg_level_fine and @p mg_level_coarse are set, a
+       * local-smoothing multigrid approach is possible, otherwise a
+       * global-coarsening approach connecting two different triangulations
+       * on active cells is selected.
+       */
+      void
+      reinit_geometric_transfer(
+        const DoFHandler<dim>           &dof_handler_fine,
+        const DoFHandler<dim>           &dof_handler_coarse,
+        const AffineConstraints<Number> &constraint_fine   = AffineConstraints<Number>(),
+        const AffineConstraints<Number> &constraint_coarse = AffineConstraints<Number>(),
+        const unsigned int               mg_level_fine     = numbers::invalid_unsigned_int,
+        const unsigned int               mg_level_coarse   = numbers::invalid_unsigned_int);
+
+      /**
+       * @copydoc MGTwoLevelTransferBase::interpolate
+       */
+      void
+      interpolate(VectorType &dst, const VectorType &src) const override;
+
+      /**
+       * Enable inplace vector operations if external and internal vectors
+       * are compatible.
+       */
+      std::pair<bool, bool>
+      enable_inplace_operations_if_possible(
+        const std::shared_ptr<const Utilities::MPI::Partitioner> &partitioner_coarse,
+        const std::shared_ptr<const Utilities::MPI::Partitioner> &partitioner_fine) override;
+
+      /**
+       * Return the memory consumption of the allocated memory in this class.
+       */
+      std::size_t
+      memory_consumption() const override;
+
+      /**
+       * Return the DoFHandler associated with the fine level and the level index.
+       */
+      std::pair<const DoFHandler<dim> *, unsigned int>
+      get_dof_handler_fine() const override;
+
+      /**
+       * Set the number of coarse cells processed by one Kokkos team (one
+       * batch) in prolongate_and_add() and restrict_and_add(). The default,
+       * numbers::invalid_unsigned_int, chooses the number of cells from a
+       * shared memory budget; the value is capped by the number of coarse
+       * cells of each transfer scheme.
+       */
+      void
+      set_cells_per_batch(const unsigned int n_cells);
+
+      /**
+       * A multigrid transfer scheme. A multigrid transfer class can have
+       * different transfer schemes to enable global coarsening (one transfer
+       * scheme for transfer between children and parent cells as well as one
+       * transfer scheme for cells that are not refined).
+       */
+      struct MGTransferScheme
+      {
+        /**
+         * Number of coarse cells.
+         */
+        unsigned int n_coarse_cells;
+
+        /**
+         * Number of degrees of freedom of a coarse cell.
+         *
+         * @note For tensor-product elements, the value equals
+         *   `n_components * (degree_coarse + 1)^dim`.
+         */
+        unsigned int n_dofs_per_cell_coarse;
+
+        /**
+         * Number of degrees of freedom of fine cell.
+         *
+         * @note For tensor-product elements, the value equals
+         *   `n_components * (n_dofs_per_cell_fine + 1)^dim`.
+         */
+        unsigned int n_dofs_per_cell_fine;
+
+        /**
+         * Polynomial degree of the finite element of a coarse cell.
+         */
+        unsigned int degree_coarse;
+
+        /**
+         * Number of basis functions per coordinate direction in a tensor product
+         * of the union of all children of a coarse cell, which we refer to as
+         * "polynomial degree" in analogy to the p-multigrid ingredients, meaning
+         * `degree_fine * 2 + 1` if a cell is refined.
+         */
+        unsigned int degree_fine;
+
+        /**
+         * Prolongation matrix used for the prolongate_and_add() and
+         * restrict_and_add() functions. Empty for the identity scheme
+         * (cells that are not refined between the two levels).
+         */
+        Kokkos::View<Number *, MemorySpace::Default::kokkos_space> prolongation_matrix;
+
+        /**
+         * If false, coarse DoFs are gathered/scattered with a single global
+         * index per local DoF stored in #coarse_constraint_indices (length
+         * `n_coarse_cells * n_dofs_per_cell_coarse`). Dirichlet DoFs use
+         * `numbers::invalid_unsigned_int` and contribute 0 / are skipped on
+         * write-back. If true, use the full CRS in #coarse_constraint_offsets /
+         * #coarse_constraint_indices / #coarse_constraint_weights for
+         * multi-entry AffineConstraints (e.g. hanging nodes not resolved by
+         * #hanging_node_masks).
+         */
+        bool use_constraint_crs = false;
+
+        /**
+         * CRS offsets into #coarse_constraint_indices /
+         * #coarse_constraint_weights. Empty if #use_constraint_crs is false.
+         * Otherwise size is `n_coarse_cells * n_dofs_per_cell_coarse + 1`.
+         */
+        Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space> coarse_constraint_offsets;
+
+        /**
+         * Global (locally owned + ghost) DoF indices for the coarse side.
+         * If #use_constraint_crs is false, length is
+         * `n_coarse_cells * n_dofs_per_cell_coarse` with one entry per local
+         * DoF (`numbers::invalid_unsigned_int` for Dirichlet). If true, this
+         * is the CRS column index array with length equal to
+         * #coarse_constraint_weights; for local DoF `i` on cell `c`, entries
+         * lie in
+         * `[coarse_constraint_offsets(c * n_dofs_per_cell_coarse + i),
+         *   coarse_constraint_offsets(c * n_dofs_per_cell_coarse + i + 1))`.
+         */
+        Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space> coarse_constraint_indices;
+
+        /**
+         * Constraint weights for the CRS path. Empty if #use_constraint_crs is
+         * false. For unconstrained DoFs in the CRS path this is a single entry
+         * with weight 1.
+         */
+        Kokkos::View<Number *, MemorySpace::Default::kokkos_space> coarse_constraint_weights;
+
+        /**
+         * DoF indices on the fine solution space.
+         */
+        Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space> dof_indices_fine;
+
+        /**
+         * Weights for continuous elements.
+         */
+        Kokkos::View<Number **, MemorySpace::Default::kokkos_space> weights;
+
+        /**
+         * Fast hanging-node constraint masks for each coarse cell of this
+         * scheme (ConstraintKinds::unconstrained if none). Empty if the host
+         * setup did not enable the fast hanging-node algorithm.
+         */
+        Kokkos::View<dealii::internal::MatrixFreeFunctions::ConstraintKinds *,
+                     MemorySpace::Default::kokkos_space>
+          hanging_node_masks;
+      };
+
+      /**
+       * Struct used for copying the data to the execution kernel handled by
+       * internal::ApplyCellKernel. This is similar to MatrixFree<dim,
+       * Number>::Data.
+       */
+      struct TransferCellData
+      {
+        using TeamHandle =
+          Kokkos::TeamPolicy<MemorySpace::Default::kokkos_space::execution_space>::member_type;
+
+        using SharedViewScratchPad =
+          Kokkos::View<Number *,
+                       MemorySpace::Default::kokkos_space::execution_space::scratch_memory_space,
+                       Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+
+        /**
+         * TeamPolicy handle.
+         */
+        TeamHandle team_member;
+
+        /**
+         * Prolongation matrix in the scratch device memory.
+         *
+         * @note The views below are stored by value: a Kokkos view is a
+         * handle, and holding references to the views of the enclosing kernel
+         * forces those into addressable local memory.
+         */
+        SharedViewScratchPad prolongation_matrix_device;
+
+        /**
+         * Memory for the coarse dof values of a single component of the cells
+         * of the batch, cell after cell. It also holds intermediate results
+         * of the sum factorization and therefore has as many entries as
+         * values_fine if the scheme interpolates between different cells.
+         */
+        SharedViewScratchPad values_coarse;
+
+        /**
+         * Memory for the fine dof values of a single component of the cells
+         * of the batch, cell after cell. It also holds intermediate results
+         * of the sum factorization.
+         */
+        SharedViewScratchPad values_fine;
+
+        /**
+         * Number of coarse cells in the batch processed by this team.
+         */
+        const int batch_size;
+      };
+
+    protected:
+      void
+      prolongate_and_add_internal(VectorType &dst, const VectorType &src) const override;
+
+      void
+      restrict_and_add_internal(VectorType &dst, const VectorType &src) const override;
+
+    private:
+      /**
+       * Transfer schemes.
+       */
+      std::vector<MGTransferScheme> schemes;
+
+      /**
+       * Number of components.
+       */
+      unsigned int n_components;
+
+      /**
+       * Number of coarse cells per batch, see set_cells_per_batch().
+       */
+      unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
+
+      /**
+       * Pointer to the DoFHandler object used during initialization.
+       */
+      ObserverPointer<const DoFHandler<dim>> dof_handler_fine;
+
+      /**
+       * Multigrid level used during initialization.
+       */
+      unsigned int mg_level_fine;
+
+      /**
+       * 1D hanging-node interpolation weights (subface interpolation matrix)
+       * shared by all schemes when the fast hanging-node algorithm is used.
+       */
+      Kokkos::View<Number *, MemorySpace::Default::kokkos_space> hanging_node_constraint_weights;
+
+      dealii::MGTwoLevelTransfer<dim, LinearAlgebra::distributed::Vector<Number, MemorySpace::Host>>
+        transfer_cpu;
+
+      friend class internal::MGTwoLevelTransferImplementation;
+    };
+
+    /** @} */
+
+  } // namespace Portable
+
+} // namespace Copy
+
+DEAL_II_NAMESPACE_CLOSE
+
+#endif

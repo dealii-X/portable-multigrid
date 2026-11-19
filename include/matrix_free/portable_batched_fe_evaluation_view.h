@@ -279,7 +279,7 @@ namespace Custom
       {
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
-        const Number       jxw         = data->precomputed_data.data.JxW(point_local, global_cell);
+        const Number       jxw         = data->precomputed_data.JxW_value(global_cell, point_local);
 
         if constexpr (n_components_ == 1)
           data->shared_data.values(point, 0) = value * jxw;
@@ -331,7 +331,7 @@ namespace Custom
                 Number tmp = 0.;
                 for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                   tmp +=
-                    data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_2, d_1) *
+                    data->precomputed_data.inverse_jacobian(global_cell, point_local, d_2, d_1) *
                     data->shared_data.gradients(point, d_2, 0);
                 grad[d_1] = tmp;
               }
@@ -344,7 +344,7 @@ namespace Custom
                   Number tmp = 0.;
                   for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                     tmp +=
-                      data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_2, d_1) *
+                      data->precomputed_data.inverse_jacobian(global_cell, point_local, d_2, d_1) *
                       data->shared_data.gradients(point, d_2, c);
                   grad[c][d_1] = tmp;
                 }
@@ -363,7 +363,7 @@ namespace Custom
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
 
-        const Number jxw = data->precomputed_data.data.JxW(point_local, global_cell);
+        const Number jxw = data->precomputed_data.JxW_value(global_cell, point_local);
 
         if constexpr (n_components_ == 1)
           {
@@ -372,7 +372,7 @@ namespace Custom
                 Number tmp = 0.;
                 for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                   tmp +=
-                    data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
+                    data->precomputed_data.inverse_jacobian(global_cell, point_local, d_1, d_2) *
                     gradient[d_2];
                 data->shared_data.gradients(point, d_1, 0) = tmp * jxw;
               }
@@ -385,7 +385,7 @@ namespace Custom
                   Number tmp = 0.;
                   for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
                     tmp +=
-                      data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
+                      data->precomputed_data.inverse_jacobian(global_cell, point_local, d_1, d_2) *
                       gradient[c][d_2];
                   data->shared_data.gradients(point, d_1, c) = tmp * jxw;
                 }
@@ -430,16 +430,15 @@ namespace Custom
 
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
-        const Number       jxw         = data->precomputed_data.data.JxW(point_local, global_cell);
+        const Number       jxw         = data->precomputed_data.JxW_value(global_cell, point_local);
 
         for (unsigned int c = 0; c < dim; ++c)
           for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
             {
               Number tmp = 0.;
               for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                tmp +=
-                  data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, d_2) *
-                  sym_grad[c][d_2];
+                tmp += data->precomputed_data.inverse_jacobian(global_cell, point_local, d_1, d_2) *
+                       sym_grad[c][d_2];
               data->shared_data.gradients(point, d_1, c) = tmp * jxw;
             }
         if constexpr (running_in_debug_mode())
@@ -466,7 +465,7 @@ namespace Custom
         Number divergence = 0.;
         for (unsigned int c = 0; c < dim; ++c)
           for (unsigned int d = 0; d < dim; ++d)
-            divergence += data->precomputed_data.data.inv_jacobian(point_local, global_cell, d, c) *
+            divergence += data->precomputed_data.inverse_jacobian(global_cell, point_local, d, c) *
                           data->shared_data.gradients(point, d, c);
         return divergence;
       }
@@ -497,12 +496,12 @@ namespace Custom
 
         const int          point_local = point % data->n_q_points;
         const unsigned int global_cell = get_global_cell_index(point);
-        const Number       jxw         = data->precomputed_data.data.JxW(point_local, global_cell);
+        const Number       jxw         = data->precomputed_data.JxW_value(global_cell, point_local);
 
         for (unsigned int c = 0; c < dim; ++c)
           for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
             data->shared_data.gradients(point, d_1, c) =
-              data->precomputed_data.data.inv_jacobian(point_local, global_cell, d_1, c) * div_in *
+              data->precomputed_data.inverse_jacobian(global_cell, point_local, d_1, c) * div_in *
               jxw;
         if constexpr (running_in_debug_mode())
           gradients_quad_submitted = true;

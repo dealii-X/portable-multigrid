@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "base/portable_operator_info_base.h"
 #include "domain_decomposition/subdomain_dof_handler.h"
 
 DEAL_II_NAMESPACE_OPEN
@@ -20,7 +21,7 @@ namespace Portable
 {
 
   template <int dim, typename number>
-  class SubdomainLaplaceOperatorBase : public EnableObserverPointer
+  class SubdomainLaplaceOperatorBase : public OperatorInfoBase<dim>
   {
   public:
     virtual void
@@ -86,11 +87,9 @@ namespace Portable
     el(const types::global_dof_index row,
        const types::global_dof_index col) const = 0;
 
-    virtual const MatrixFree<dim, number> &
-    get_matrix_free() const = 0;
-
-    virtual const std::shared_ptr<const Utilities::MPI::Partitioner> &
-    get_vector_partitioner() const = 0;
+    // get_dof_handler(), get_colored_graph(), get_vector_partitioner() and
+    // use_overlap_communication_computation() are inherited from
+    // OperatorInfoBase<dim>.
 
     virtual const Kokkos::View<const unsigned int *,
                                MemorySpace::Default::kokkos_space>

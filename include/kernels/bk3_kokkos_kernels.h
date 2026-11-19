@@ -24,10 +24,77 @@ namespace BK3
 
     using CellRangeIdView = Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space>;
 
+    using ExecutionSpace = MemorySpace::Default::kokkos_space::execution_space;
 
+    namespace internal
+    {
+      // Number of compute units the backend can run teams on concurrently:
+      // streaming multiprocessors on CUDA/HIP, hardware threads elsewhere.
+      inline int
+      n_compute_units(const ExecutionSpace &exec)
+      {
+#if defined(KOKKOS_ENABLE_CUDA)
+        if constexpr (std::is_same_v<ExecutionSpace, Kokkos::Cuda>)
+          return exec.cuda_device_prop().multiProcessorCount;
+#endif
+#if defined(KOKKOS_ENABLE_HIP)
+        if constexpr (std::is_same_v<ExecutionSpace, Kokkos::HIP>)
+          return exec.hip_device_prop().multiProcessorCount;
+#endif
+        return std::max(1, exec.concurrency());
+      }
+
+      // Largest batch size whose per-team scratch fits the backend's limit.
+      // shmem_bytes(n) must be monotone in n.
+      template <typename ShmemBytes>
+      int
+      clamp_batch_to_scratch(int nelmtPerBatch, const ShmemBytes &shmem_bytes)
+      {
+        const std::size_t scratch_max = Kokkos::TeamPolicy<ExecutionSpace>::scratch_size_max(0);
+        while (nelmtPerBatch > 1 && shmem_bytes(nelmtPerBatch) > scratch_max)
+          --nelmtPerBatch;
+        return nelmtPerBatch;
+      }
+
+      // Team policy for a batch kernel: the requested team size clamped to
+      // what the backend allows for this functor and scratch size; one team
+      // per batch while that is at most two teams per compute unit, half as
+      // many beyond, unless a league size was requested explicitly.
+      template <typename Functor>
+      Kokkos::TeamPolicy<ExecutionSpace>
+      make_team_policy(const ExecutionSpace &exec,
+                       const Functor        &functor,
+                       const int             n_batches,
+                       const unsigned int    requested_blocks,
+                       const int             requested_team_size,
+                       const std::size_t     shmem_bytes)
+      {
+        Kokkos::TeamPolicy<ExecutionSpace> probe(exec, 1, Kokkos::AUTO);
+        probe.set_scratch_size(0, Kokkos::PerTeam(shmem_bytes));
+        const int team_size_max = probe.team_size_max(functor, Kokkos::ParallelForTag());
+        const int team_size     = std::max(1, std::min(requested_team_size, team_size_max));
+
+        int n_blocks;
+        if (requested_blocks != numbers::invalid_unsigned_int)
+          n_blocks = std::max(1, static_cast<int>(requested_blocks));
+        else if (n_batches <= 2 * n_compute_units(exec))
+          n_blocks = std::max(1, n_batches);
+        else
+          n_blocks = std::max(1, n_batches / 2);
+
+        Kokkos::TeamPolicy<ExecutionSpace> policy(exec, n_blocks, team_size);
+        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_bytes));
+        return policy;
+      }
+    } // namespace internal
+
+
+    // Launches on `exec` and returns without fencing; the caller fences
+    // before any host or MPI access to d_out.
     template <int dim, int fe_degree, int n_q_points_1d, typename Number>
     void
-    KokkosKernelAbstracted(const DeviceView<Number> d_shape_values,
+    KokkosKernelAbstracted(const ExecutionSpace    &exec,
+                           const DeviceView<Number> d_shape_values,
                            const DeviceView<Number> d_co_shape_gradients,
                            const DeviceView<Number> d_G,
                            const DeviceView<Number> d_in,
@@ -55,18 +122,24 @@ namespace BK3
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
+      // shape values + co-shape gradients + values slot + dim gradients-pool slots
+      const auto shmem_bytes = [](const int n_cells_in_batch) {
+        return static_cast<std::size_t>(n_local_dofs_1d * n_q_points_1d +
+                                        n_q_points_1d * n_q_points_1d +
+                                        n_scratch_arrays * n_cells_in_batch *
+                                          n_quad_points_total) *
+               sizeof(Number);
+      };
+
+      const int nelmtPerBatch = internal::clamp_batch_to_scratch(
         std::max(1,
                  ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
                     static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
                                      sizeof(Number)) :
-                    static_cast<int>(n_cells_per_batch)));
+                    static_cast<int>(n_cells_per_batch))),
+        shmem_bytes);
 
-
-      const int numBlocks = std::max(1,
-                                     ((n_blocks == numbers::invalid_unsigned_int) ?
-                                        ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
-                                        static_cast<int>(n_blocks)));
+      const int n_batches = (nelmt + nelmtPerBatch - 1) / nelmtPerBatch;
 
       const int threadsPerBlock =
         std::max(1,
@@ -75,19 +148,11 @@ namespace BK3
                     static_cast<int>(threads_per_block)));
 
       {
-        const int ssize = n_local_dofs_1d * n_q_points_1d + // shape values
-                          n_q_points_1d * n_q_points_1d +   // co-shape gradients
-                          n_scratch_arrays * nelmtPerBatch *
-                            n_quad_points_total; // values slot + dim gradients-pool slots
+        const unsigned int shmem_size = shmem_bytes(nelmtPerBatch);
 
-        const unsigned int shmem_size = ssize * sizeof(Number);
+        using member_type = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
 
-        typedef Kokkos::TeamPolicy<>::member_type member_type;
-        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
-        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
-
-        Kokkos::parallel_for(
-          policy, KOKKOS_LAMBDA(member_type team_member) {
+        auto functor = KOKKOS_LAMBDA(member_type team_member) {
             Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
             Number *s_shape_values       = scratch;
@@ -188,14 +253,227 @@ namespace BK3
 
                 batchIdx += team_member.league_size();
               }
-          });
+          };
 
-        Kokkos::fence();
+        Kokkos::parallel_for(
+          "vmult_bk3",
+          internal::make_team_policy(
+            exec, functor, n_batches, n_blocks, threadsPerBlock, shmem_size),
+          functor);
       }
     }
 
 
+    // Default execution-space instance, fenced before returning.
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+    void
+    KokkosKernelAbstracted(const DeviceView<Number> d_shape_values,
+                           const DeviceView<Number> d_co_shape_gradients,
+                           const DeviceView<Number> d_G,
+                           const DeviceView<Number> d_in,
+                           DeviceView<Number>       d_out,
+                           const DoFIndicesView     dof_indices,
+                           const unsigned int       n_cells,
+                           const unsigned int       n_blocks       = numbers::invalid_unsigned_int,
+                           const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
+                           const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
+                           const CellRangeIdView cell_range_ids    = CellRangeIdView())
+    {
+      KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, Number>(ExecutionSpace(),
+                                                                    d_shape_values,
+                                                                    d_co_shape_gradients,
+                                                                    d_G,
+                                                                    d_in,
+                                                                    d_out,
+                                                                    dof_indices,
+                                                                    n_cells,
+                                                                    n_blocks,
+                                                                    threads_per_block,
+                                                                    n_cells_per_batch,
+                                                                    cell_range_ids);
+      Kokkos::fence();
+    }
 
+
+
+    namespace internal
+    {
+      // JxW as Portable::MatrixFree stores it: a (q, cell) view per color.
+      template <typename Number>
+      struct JxWPerQuadAndCell
+      {
+        Kokkos::View<Number **, MemorySpace::Default::kokkos_space> view;
+
+        KOKKOS_INLINE_FUNCTION Number
+        operator()(const int q, const unsigned int cell) const
+        {
+          return view(q, cell);
+        }
+      };
+
+      // JxW stored flat per cell: [cell * n_q_points + q].
+      template <typename Number>
+      struct JxWPerCell
+      {
+        DeviceView<Number> view;
+        int                n_q_points;
+
+        KOKKOS_INLINE_FUNCTION Number
+        operator()(const int q, const unsigned int cell) const
+        {
+          return view[static_cast<std::size_t>(cell) * n_q_points + q];
+        }
+      };
+
+      // Constant-unit-load RHS: seeds the quadrature-point buffer with JxW,
+      // integrates values, scatters. Launched on `exec`, no fence.
+      template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename JxWAccessor>
+      void
+      KokkosRHSAbstractedImpl(const ExecutionSpace    &exec,
+                              const DeviceView<Number> d_shape_values,
+                              const JxWAccessor        jxw,
+                              DeviceView<Number>       d_out,
+                              const DoFIndicesView     dof_indices,
+                              const unsigned int       n_cells,
+                              const unsigned int       n_blocks,
+                              const unsigned int       threads_per_block,
+                              const unsigned int       n_cells_per_batch,
+                              const CellRangeIdView    cell_range_ids)
+      {
+        if (n_cells == 0)
+          return;
+
+        constexpr int n_quad_points_total = Utilities::pow(n_q_points_1d, dim);
+        constexpr int n_local_dofs_1d     = fe_degree + 1;
+
+        constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
+
+        // 1 values slot + (dim - 1) integrate_values() scratch slots (see the
+        // scratch-sizing note in FEEvaluationImplTransformToCollocation::
+        // integrate_values(), portable_evaluation_kernels.h) -- no gradients
+        // slot needed here, unlike KokkosKernelAbstracted() above.
+        constexpr int n_scratch_arrays = dim;
+
+        if (cell_range_ids.size() > 0)
+          AssertDimension(cell_range_ids.size(), n_cells);
+
+        const int nelmt = n_cells;
+
+        // shape values + values slot + scratch slot(s)
+        const auto shmem_bytes = [](const int n_cells_in_batch) {
+          return static_cast<std::size_t>(n_local_dofs_1d * n_q_points_1d +
+                                          n_scratch_arrays * n_cells_in_batch *
+                                            n_quad_points_total) *
+                 sizeof(Number);
+        };
+
+        const int nelmtPerBatch = internal::clamp_batch_to_scratch(
+          std::max(1,
+                   ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
+                      static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
+                                       sizeof(Number)) :
+                      static_cast<int>(n_cells_per_batch))),
+          shmem_bytes);
+
+        const int n_batches = (nelmt + nelmtPerBatch - 1) / nelmtPerBatch;
+
+        const int threadsPerBlock =
+          std::max(1,
+                   ((threads_per_block == numbers::invalid_unsigned_int) ?
+                      (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
+                      static_cast<int>(threads_per_block)));
+
+        {
+          const unsigned int shmem_size = shmem_bytes(nelmtPerBatch);
+
+          using member_type = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+
+          auto functor = KOKKOS_LAMBDA(member_type team_member) {
+              Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+
+              Number *s_shape_values = scratch;
+              Number *s_values       = s_shape_values + n_q_points_1d * n_local_dofs_1d;
+              Number *s_scratch      = s_values + nelmtPerBatch * n_quad_points_total;
+
+              const int threadIdx = team_member.team_rank();
+              const int blockSize = team_member.team_size();
+
+              // copy to shared memory
+              for (int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d; tid += blockSize)
+                {
+                  s_shape_values[tid] = d_shape_values[tid];
+                }
+              team_member.team_barrier();
+
+              // element batch iteration
+              int batchIdx = team_member.league_rank();
+
+              while (batchIdx < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+                {
+                  const int c_nelmtPerBatch = (batchIdx * nelmtPerBatch + nelmtPerBatch > nelmt) ?
+                                                (nelmt - batchIdx * nelmtPerBatch) :
+                                                nelmtPerBatch;
+
+                  const Custom::Parallel::
+                    FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+                      fe_eval(team_member,
+                              s_shape_values,
+                              nullptr, // shape_gradient_collocation -- unused by
+                                       // (integrate_)values()
+                              nelmtPerBatch,
+                              c_nelmtPerBatch,
+                              batchIdx,
+                              threadIdx,
+                              blockSize);
+
+                  // 1. seed the quadrature-point buffer with JxW(q) * 1
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * n_quad_points_total;
+                       tid += blockSize)
+                    {
+                      const int e_local = tid / n_quad_points_total;
+                      const int q_local = tid % n_quad_points_total;
+
+                      unsigned int global_cell_index = batchIdx * nelmtPerBatch + e_local;
+                      if (cell_range_ids.size() > 0)
+                        global_cell_index = cell_range_ids(global_cell_index);
+
+                      s_values[tid] = jxw(q_local, global_cell_index);
+                    }
+                  team_member.team_barrier();
+
+                  // 2. quadrature points -> dof values (adjoint of the
+                  // interpolation transform, weighted by the JxW seeded above)
+                  fe_eval.integrate_values(s_values, s_values, s_scratch);
+
+                  // 3. distribute dof values from shared memory to global
+                  // memory
+                  Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(team_member,
+                                                                                     dof_indices,
+                                                                                     cell_range_ids,
+                                                                                     s_values,
+                                                                                     d_out,
+                                                                                     batchIdx,
+                                                                                     nelmtPerBatch,
+                                                                                     c_nelmtPerBatch,
+                                                                                     threadIdx,
+                                                                                     blockSize);
+
+                  batchIdx += team_member.league_size();
+                }
+            };
+
+          Kokkos::parallel_for(
+            "compute_rhs_bk3",
+            internal::make_team_policy(
+              exec, functor, n_batches, n_blocks, threadsPerBlock, shmem_size),
+            functor);
+        }
+      }
+    } // namespace internal
+
+
+
+    // JxW as a (q, cell) view; default execution-space instance, fenced.
     template <int dim, int fe_degree, int n_q_points_1d, typename Number>
     void
     KokkosRHSAbstracted(const DeviceView<Number> d_shape_values,
@@ -208,36 +486,99 @@ namespace BK3
                         const unsigned int    n_cells_per_batch = numbers::invalid_unsigned_int,
                         const CellRangeIdView cell_range_ids    = CellRangeIdView())
     {
+      internal::KokkosRHSAbstractedImpl<dim, fe_degree, n_q_points_1d, Number>(
+        ExecutionSpace(),
+        d_shape_values,
+        internal::JxWPerQuadAndCell<Number>{d_JxW},
+        d_out,
+        dof_indices,
+        n_cells,
+        n_blocks,
+        threads_per_block,
+        n_cells_per_batch,
+        cell_range_ids);
+      Kokkos::fence();
+    }
+
+
+
+    // JxW flat per cell ([cell * n_q_points + q]); launched on `exec`, no fence.
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+    void
+    KokkosRHSAbstracted(const ExecutionSpace    &exec,
+                        const DeviceView<Number> d_shape_values,
+                        const DeviceView<Number> d_JxW,
+                        DeviceView<Number>       d_out,
+                        const DoFIndicesView     dof_indices,
+                        const unsigned int       n_cells,
+                        const unsigned int       n_blocks          = numbers::invalid_unsigned_int,
+                        const unsigned int       threads_per_block = numbers::invalid_unsigned_int,
+                        const unsigned int       n_cells_per_batch = numbers::invalid_unsigned_int,
+                        const CellRangeIdView    cell_range_ids    = CellRangeIdView())
+    {
+      internal::KokkosRHSAbstractedImpl<dim, fe_degree, n_q_points_1d, Number>(
+        exec,
+        d_shape_values,
+        internal::JxWPerCell<Number>{d_JxW, Utilities::pow(n_q_points_1d, dim)},
+        d_out,
+        dof_indices,
+        n_cells,
+        n_blocks,
+        threads_per_block,
+        n_cells_per_batch,
+        cell_range_ids);
+    }
+
+
+
+    // Diagonal of the operator KokkosKernelAbstracted() applies: for every
+    // cell and every local basis function i the cell operator is applied to
+    // the unit vector e_i and entry i of the result is accumulated into
+    // d_diagonal. Same launch configuration and scratch layout as
+    // KokkosKernelAbstracted(). Launched on `exec`, no fence.
+    template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+    void
+    KokkosDiagonalAbstracted(const ExecutionSpace    &exec,
+                             const DeviceView<Number> d_shape_values,
+                             const DeviceView<Number> d_co_shape_gradients,
+                             const DeviceView<Number> d_G,
+                             DeviceView<Number>       d_diagonal,
+                             const DoFIndicesView     dof_indices,
+                             const unsigned int       n_cells,
+                             const unsigned int       n_blocks = numbers::invalid_unsigned_int,
+                             const unsigned int threads_per_block = numbers::invalid_unsigned_int,
+                             const unsigned int n_cells_per_batch = numbers::invalid_unsigned_int)
+    {
       if (n_cells == 0)
         return;
 
       constexpr int n_quad_points_total = Utilities::pow(n_q_points_1d, dim);
       constexpr int n_local_dofs_1d     = fe_degree + 1;
+      constexpr int n_local_dofs_total  = Utilities::pow(n_local_dofs_1d, dim);
 
-      constexpr int shmemPerBlock = 10800; // total shared memory used per block (KB)
-
-      // 1 values slot + (dim - 1) integrate_values() scratch slots (see the
-      // scratch-sizing note in FEEvaluationImplTransformToCollocation::
-      // integrate_values(), portable_evaluation_kernels.h) -- no gradients
-      // slot needed here, unlike KokkosKernelAbstracted() above.
-      constexpr int n_scratch_arrays = dim;
-
-      if (cell_range_ids.size() > 0)
-        AssertDimension(cell_range_ids.size(), n_cells);
+      constexpr int shmemPerBlock    = 10800;
+      constexpr int n_scratch_arrays = 1 + dim;
 
       const int nelmt = n_cells;
 
-      const int nelmtPerBatch =
+      // shape values + co-shape gradients + values slot + dim gradients-pool slots
+      const auto shmem_bytes = [](const int n_cells_in_batch) {
+        return static_cast<std::size_t>(n_local_dofs_1d * n_q_points_1d +
+                                        n_q_points_1d * n_q_points_1d +
+                                        n_scratch_arrays * n_cells_in_batch *
+                                          n_quad_points_total) *
+               sizeof(Number);
+      };
+
+      const int nelmtPerBatch = internal::clamp_batch_to_scratch(
         std::max(1,
                  ((n_cells_per_batch == numbers::invalid_unsigned_int) ?
                     static_cast<int>(shmemPerBlock / (n_scratch_arrays * n_quad_points_total) /
                                      sizeof(Number)) :
-                    static_cast<int>(n_cells_per_batch)));
+                    static_cast<int>(n_cells_per_batch))),
+        shmem_bytes);
 
-      const int numBlocks = std::max(1,
-                                     ((n_blocks == numbers::invalid_unsigned_int) ?
-                                        ((nelmt + nelmtPerBatch - 1) / nelmtPerBatch / 2) :
-                                        static_cast<int>(n_blocks)));
+      const int n_batches = (nelmt + nelmtPerBatch - 1) / nelmtPerBatch;
 
       const int threadsPerBlock =
         std::max(1,
@@ -245,94 +586,89 @@ namespace BK3
                     (Utilities::pow(n_q_points_1d, dim - 1) * nelmtPerBatch) :
                     static_cast<int>(threads_per_block)));
 
-      {
-        const int ssize =
-          n_local_dofs_1d * n_q_points_1d +                       // shape values
-          n_scratch_arrays * nelmtPerBatch * n_quad_points_total; // values slot + scratch slot(s)
+      const unsigned int shmem_size = shmem_bytes(nelmtPerBatch);
 
-        const unsigned int shmem_size = ssize * sizeof(Number);
+      // cells of a color are contiguous: no indirection
+      const CellRangeIdView cell_range_ids;
 
-        typedef Kokkos::TeamPolicy<>::member_type member_type;
-        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
-        policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
+      using member_type = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
 
-        Kokkos::parallel_for(
-          "compute_rhs_bk3", policy, KOKKOS_LAMBDA(member_type team_member) {
-            Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
+      auto functor = KOKKOS_LAMBDA(member_type team_member) {
+          Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
-            Number *s_shape_values = scratch;
-            Number *s_values       = s_shape_values + n_q_points_1d * n_local_dofs_1d;
-            Number *s_scratch      = s_values + nelmtPerBatch * n_quad_points_total;
+          Number *s_shape_values       = scratch;
+          Number *s_co_shape_gradients = s_shape_values + n_q_points_1d * n_local_dofs_1d;
 
-            const int threadIdx = team_member.team_rank();
-            const int blockSize = team_member.team_size();
+          Number *s_values    = s_co_shape_gradients + n_q_points_1d * n_q_points_1d;
+          Number *s_gradients = s_values + nelmtPerBatch * n_quad_points_total;
 
-            // copy to shared memory
-            for (int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d; tid += blockSize)
-              {
-                s_shape_values[tid] = d_shape_values[tid];
-              }
-            team_member.team_barrier();
+          const int threadIdx = team_member.team_rank();
+          const int blockSize = team_member.team_size();
 
-            // element batch iteration
-            int batchIdx = team_member.league_rank();
+          for (int tid = threadIdx; tid < n_local_dofs_1d * n_q_points_1d; tid += blockSize)
+            s_shape_values[tid] = d_shape_values[tid];
 
-            while (batchIdx < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
-              {
-                const int c_nelmtPerBatch = (batchIdx * nelmtPerBatch + nelmtPerBatch > nelmt) ?
-                                              (nelmt - batchIdx * nelmtPerBatch) :
-                                              nelmtPerBatch;
+          for (int tid = threadIdx; tid < n_q_points_1d * n_q_points_1d; tid += blockSize)
+            s_co_shape_gradients[tid] = d_co_shape_gradients[tid];
+          team_member.team_barrier();
 
-                const Custom::Parallel::
-                  FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
-                    fe_eval(team_member,
-                            s_shape_values,
-                            nullptr, // shape_gradient_collocation -- unused by
-                                     // (integrate_)values()
-                            nelmtPerBatch,
-                            c_nelmtPerBatch,
-                            batchIdx,
-                            threadIdx,
-                            blockSize);
+          int batchIdx = team_member.league_rank();
 
-                // 1. seed the quadrature-point buffer with JxW(q) * 1
-                for (int tid = threadIdx; tid < c_nelmtPerBatch * n_quad_points_total;
-                     tid += blockSize)
-                  {
-                    const int e_local = tid / n_quad_points_total;
-                    const int q_local = tid % n_quad_points_total;
+          while (batchIdx < (nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
+            {
+              const int c_nelmtPerBatch = (batchIdx * nelmtPerBatch + nelmtPerBatch > nelmt) ?
+                                            (nelmt - batchIdx * nelmtPerBatch) :
+                                            nelmtPerBatch;
 
-                    unsigned int global_cell_index = batchIdx * nelmtPerBatch + e_local;
-                    if (cell_range_ids.size() > 0)
-                      global_cell_index = cell_range_ids(global_cell_index);
+              const Custom::Parallel::
+                FEEvaluationImplTransformToCollocation<dim, fe_degree, n_q_points_1d, Number>
+                  fe_eval(team_member,
+                          s_shape_values,
+                          s_co_shape_gradients,
+                          nelmtPerBatch,
+                          c_nelmtPerBatch,
+                          batchIdx,
+                          threadIdx,
+                          blockSize);
 
-                    s_values[tid] = d_JxW(q_local, global_cell_index);
-                  }
-                team_member.team_barrier();
+              for (int i = 0; i < n_local_dofs_total; ++i)
+                {
+                  // 1. unit vector e_i on every cell of the batch
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch * n_local_dofs_total;
+                       tid += blockSize)
+                    s_values[tid] = (tid % n_local_dofs_total == i) ? Number(1) : Number(0);
+                  team_member.team_barrier();
 
-                // 2. quadrature points -> dof values (adjoint of the
-                // interpolation transform, weighted by the JxW seeded above)
-                fe_eval.integrate_values(s_values, s_values, s_scratch);
+                  // 2.-5. the pipeline of KokkosKernelAbstracted()
+                  fe_eval.evaluate_values(s_values, s_values, s_gradients);
+                  fe_eval.evaluate_gradients_and_multiply_symmetric_tensor(d_G,
+                                                                           cell_range_ids,
+                                                                           s_values,
+                                                                           s_gradients);
+                  fe_eval.integrate_gradients(s_gradients, s_values);
+                  fe_eval.integrate_values(s_values, s_values, s_gradients);
 
-                // 3. distribute dof values from shared memory to global
-                // memory
-                Custom::Parallel::distribute_local_to_global<dim, n_local_dofs_1d>(team_member,
-                                                                                   dof_indices,
-                                                                                   cell_range_ids,
-                                                                                   s_values,
-                                                                                   d_out,
-                                                                                   batchIdx,
-                                                                                   nelmtPerBatch,
-                                                                                   c_nelmtPerBatch,
-                                                                                   threadIdx,
-                                                                                   blockSize);
+                  // 6. keep entry i of (A_cell e_i)
+                  for (int tid = threadIdx; tid < c_nelmtPerBatch; tid += blockSize)
+                    {
+                      const unsigned int cell_index = batchIdx * nelmtPerBatch + tid;
+                      const unsigned int dof_index  = dof_indices(i, cell_index);
+                      if (dof_index != numbers::invalid_unsigned_int)
+                        Kokkos::atomic_add(&d_diagonal[dof_index],
+                                           s_values[tid * n_local_dofs_total + i]);
+                    }
+                  team_member.team_barrier();
+                }
 
-                batchIdx += team_member.league_size();
-              }
-          });
+              batchIdx += team_member.league_size();
+            }
+        };
 
-        Kokkos::fence();
-      }
+      Kokkos::parallel_for(
+        "compute_diagonal_bk3",
+        internal::make_team_policy(
+          exec, functor, n_batches, n_blocks, threadsPerBlock, shmem_size),
+        functor);
     }
 
 
@@ -677,6 +1013,9 @@ namespace BK3
                       if (cell_range_ids.size() > 0)
                         global_cell_index = cell_range_ids(global_cell_index);
 
+                      const std::size_t g_base = static_cast<std::size_t>(global_cell_index) *
+                                                 symmetric_tensor_dimension * nq_total;
+
                       if (dim == 2)
                         {
                           const int p = tid % nq;
@@ -697,14 +1036,11 @@ namespace BK3
                               qs = 0;
 
                               // Load Geometric Factors, coalesced access
-                              Grr = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        0 * nq_total + q * nq + p];
+                              Grr = d_G[g_base + 0 * nq_total + q * nq + p];
 
-                              Grs = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        1 * nq_total + q * nq + p];
+                              Grs = d_G[g_base + 1 * nq_total + q * nq + p];
 
-                              Gss = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        2 * nq_total + q * nq + p];
+                              Gss = d_G[g_base + 2 * nq_total + q * nq + p];
 
                               // Multiply by D
                               for (int n = 0; n < nq; n++)
@@ -742,23 +1078,17 @@ namespace BK3
                               qt = 0;
 
                               // Load Geometric Factors, coalesced access
-                              Grr = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        0 * nq_total + r * nq * nq + q * nq + p];
+                              Grr = d_G[g_base + 0 * nq_total + r * nq * nq + q * nq + p];
 
-                              Grs = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        1 * nq_total + r * nq * nq + q * nq + p];
+                              Grs = d_G[g_base + 1 * nq_total + r * nq * nq + q * nq + p];
 
-                              Grt = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        2 * nq_total + r * nq * nq + q * nq + p];
+                              Grt = d_G[g_base + 2 * nq_total + r * nq * nq + q * nq + p];
 
-                              Gss = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        3 * nq_total + r * nq * nq + q * nq + p];
+                              Gss = d_G[g_base + 3 * nq_total + r * nq * nq + q * nq + p];
 
-                              Gst = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        4 * nq_total + r * nq * nq + q * nq + p];
+                              Gst = d_G[g_base + 4 * nq_total + r * nq * nq + q * nq + p];
 
-                              Gtt = d_G[global_cell_index * symmetric_tensor_dimension * nq_total +
-                                        5 * nq_total + r * nq * nq + q * nq + p];
+                              Gtt = d_G[g_base + 5 * nq_total + r * nq * nq + q * nq + p];
 
                               // Multiply by D
                               for (int n = 0; n < nq; n++)

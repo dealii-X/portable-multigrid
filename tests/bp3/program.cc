@@ -80,6 +80,13 @@ namespace BP3
     void
     setup_matrix_free();
 
+    // Frees the previous cycle's device allocations before the next cycle
+    // allocates its own (and before the DoFHandler and Triangulation they
+    // were built on are cleared), so peak device memory stays at one
+    // cycle's worth instead of two.
+    void
+    release_cycle_memory();
+
     void
     compute_rhs();
 
@@ -104,6 +111,8 @@ namespace BP3
 
     VectorType solution_device;
     VectorType system_rhs_device;
+    // matvec-timing destination, so the CG solution is not overwritten
+    VectorType matvec_dst_device;
 
     AffineConstraints<double> constraints;
 
@@ -178,12 +187,24 @@ namespace BP3
       std::make_unique<OperatorType>(dof_handler, constraints, overlap_communication_computation);
     system_matrix->initialize_dof_vector(solution_device);
     system_rhs_device.reinit(solution_device);
+    matvec_dst_device.reinit(solution_device);
     Kokkos::fence();
 
     setup_time += time.wall_time();
 
     time_details << "Setup matrices   (CPU/wall) " << time.cpu_time() << "s/" << time.wall_time()
                  << 's' << std::endl;
+  }
+
+  template <int dim, int fe_degree>
+  void
+  LaplaceProblem<dim, fe_degree>::release_cycle_memory()
+  {
+    matvec_dst_device.reinit(0);
+    system_rhs_device.reinit(0);
+    solution_device.reinit(0);
+    system_matrix.reset();
+    Kokkos::fence();
   }
 
   template <int dim, int fe_degree>
@@ -242,9 +263,11 @@ namespace BP3
                         PreconditionIdentity());
         Kokkos::fence();
 
-        if (time.wall_time() < time_cg)
+        const double time_cg_run =
+          Utilities::MPI::min_max_avg(time.wall_time(), MPI_COMM_WORLD).max;
+        if (time_cg_run < time_cg)
           {
-            time_cg           = time.wall_time();
+            time_cg           = time_cg_run;
             cg_details.first  = solver_control.last_step();
             cg_details.second = solver_control.last_value();
           }
@@ -261,7 +284,7 @@ namespace BP3
         Kokkos::fence();
         Timer time;
         for (unsigned int j = 0; j < n_mv; ++j)
-          backend_operator.vmult(solution_device, system_rhs_device);
+          backend_operator.vmult(matvec_dst_device, system_rhs_device);
         Kokkos::fence();
 
         const Utilities::MPI::MinMaxAvg stat =
@@ -290,6 +313,7 @@ namespace BP3
 
     for (unsigned int cycle = 0; cycle < refinement_cycles; ++cycle)
       {
+        release_cycle_memory();
         triangulation.clear();
 
         setup_time = 0.;
@@ -437,6 +461,14 @@ main(int argc, char *argv[])
         minsize = std::atoll(argv[2]);
       if (argc > 3)
         maxsize = std::atoll(argv[3]);
+
+      if (degree < minimal_degree || degree > maximal_degree)
+        {
+          if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            std::cerr << "Error: the polynomial degree must be between " << minimal_degree
+                      << " and " << maximal_degree << " (got '" << argv[1] << "')." << std::endl;
+          return 1;
+        }
 
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {

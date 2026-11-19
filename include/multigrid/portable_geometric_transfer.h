@@ -729,9 +729,11 @@ namespace Portable
   public:
     GeometricTransfer();
 
+    using MGTransferBase<dim, number>::reinit;
+
     void
-    reinit(const MatrixFree<dim, number>   &mf_coarse,
-           const MatrixFree<dim, number>   &mf_fine,
+    reinit(const OperatorInfoBase<dim>     &op_coarse,
+           const OperatorInfoBase<dim>     &op_fine,
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) override;
 
@@ -753,9 +755,6 @@ namespace Portable
     setup_dof_indices();
 
     std::vector<h_mg_transfer::MGTransferScheme<dim, fe_degree, number>> transfer_schemes;
-
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
 
 
     ObserverPointer<const AffineConstraints<number>> constraints_fine;
@@ -881,8 +880,8 @@ namespace Portable
   template <int dim, int fe_degree, typename number>
   void
   GeometricTransfer<dim, fe_degree, number>::reinit(
-    const MatrixFree<dim, number>   &mf_coarse,
-    const MatrixFree<dim, number>   &mf_fine,
+    const OperatorInfoBase<dim>     &op_coarse,
+    const OperatorInfoBase<dim>     &op_fine,
     const AffineConstraints<number> &constraints_coarse,
     const AffineConstraints<number> &constraints_fine)
   {
@@ -891,14 +890,11 @@ namespace Portable
              (this->mg_level_coarse + 1 == this->mg_level_fine),
            ExcNotImplemented());
 
-    this->matrix_free_coarse = &mf_coarse;
-    this->matrix_free_fine   = &mf_fine;
-
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
 
-    this->dof_handler_coarse = &matrix_free_coarse->get_dof_handler();
-    this->dof_handler_fine   = &matrix_free_fine->get_dof_handler();
+    this->dof_handler_coarse = &op_coarse.get_dof_handler();
+    this->dof_handler_fine   = &op_fine.get_dof_handler();
 
     Assert(this->dof_handler_coarse->get_mpi_communicator() ==
              this->dof_handler_fine->get_mpi_communicator(),

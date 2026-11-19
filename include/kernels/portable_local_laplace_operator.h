@@ -7,6 +7,8 @@
 #include <deal.II/matrix_free/portable_fe_evaluation.h>
 #include <deal.II/matrix_free/portable_matrix_free.h>
 
+#include "base/portable_mapping_data_accessor.h"
+
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
@@ -371,7 +373,7 @@ LocalLaplaceOperator<dim, fe_degree, n_q_points_1d, number>::operator()(
             {
               number tmp = 0.;
               for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_2, d_1) *
+                tmp += Portable::inverse_jacobian(precomputed_data, cell_id, q_point, d_2, d_1) *
                        gradients(q_point, d_2);
               grad[d_1] = tmp;
             }
@@ -381,8 +383,10 @@ LocalLaplaceOperator<dim, fe_degree, n_q_points_1d, number>::operator()(
             {
               number tmp = 0.;
               for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                tmp += precomputed_data.inv_jacobian(q_point, cell_id, d_1, d_2) * grad[d_2];
-              gradients(q_point, d_1) = tmp * precomputed_data.JxW(q_point, cell_id);
+                tmp += Portable::inverse_jacobian(precomputed_data, cell_id, q_point, d_1, d_2) *
+                       grad[d_2];
+              gradients(q_point, d_1) =
+                tmp * Portable::JxW_value(precomputed_data, cell_id, q_point);
             }
         });
 

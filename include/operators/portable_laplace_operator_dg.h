@@ -5,6 +5,8 @@
 
 #include <deal.II/fe/mapping.h>
 
+#include <deal.II/matrix_free/tools.h>
+
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
@@ -32,9 +34,11 @@ namespace Portable
 
     void
     vmult_new(
-      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
-      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override
+      LinearAlgebra::distributed::Vector<Number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<Number, MemorySpace::Default> &src) const
     {
+      (void)dst;
+      (void)src;
       DEAL_II_NOT_IMPLEMENTED();
     }
 
@@ -82,10 +86,19 @@ namespace Portable
     el(const types::global_dof_index row, const types::global_dof_index col) const override;
 
     const MatrixFree<dim, Number> &
-    get_matrix_free() const override;
+    get_matrix_free() const;
 
     const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const override;
+
+    const DoFHandler<dim> &
+    get_dof_handler() const override;
+
+    const typename OperatorInfoBase<dim>::ColoredGraph &
+    get_colored_graph() const override;
+
+    bool
+    use_overlap_communication_computation() const override;
 
 
   private:
@@ -106,6 +119,9 @@ namespace Portable
 
 
     MatrixFree<dim, Number> matrix_free;
+
+    // matrix_free's colored graph without the FilteredIterator wrapper
+    typename OperatorInfoBase<dim>::ColoredGraph colored_graph;
 
     ObserverPointer<const AffineConstraints<Number>> constraints;
 
@@ -189,6 +205,7 @@ namespace Portable
     additional_data.overlap_communication_computation = overlap_communication_computation;
 
     matrix_free.reinit(mapping, dof_handler, constraints, *quadrature_1d, additional_data);
+    colored_graph = make_colored_graph<dim>(matrix_free.get_colored_graph());
 
     {
       dealii::internal::MatrixFreeFunctions::ShapeInfo<Number> shape_info(*quadrature_1d,
@@ -608,9 +625,10 @@ namespace Portable
                     ++idx;
                   }
 
+              const std::size_t g_cell_base =
+                static_cast<std::size_t>(cell_id) * symmetric_tensor_dim * n_q_points;
               for (int c = 0; c < symmetric_tensor_dim; ++c)
-                geometry_tensor_host[cell_id * symmetric_tensor_dim * n_q_points + c * n_q_points +
-                                     q] = components[c];
+                geometry_tensor_host[g_cell_base + c * n_q_points + q] = components[c];
             }
         }
 
@@ -763,6 +781,17 @@ namespace Portable
       auto penalty_parameters_boundary_face_host =
         Kokkos::create_mirror_view(penalty_parameters_boundary_face);
 
+      // The kernels number the quadrature points of a face lexicographically
+      // in the cell's reference coordinates (lower tangential direction
+      // fastest). deal.II's face quadrature does the same except on the
+      // y-normal faces 2 and 3 of a hexahedron, whose face coordinates are
+      // (z, x): remap those to the kernels' order.
+      const auto kernel_face_q = [](const unsigned int face_no, const unsigned int q) {
+        if (dim == 3 && face_no / 2 == 1)
+          return (q % n_q_points_1d) * n_q_points_1d + q / n_q_points_1d;
+        return q;
+      };
+
       for (unsigned int f = 0; f < n_inner_faces; ++f)
         {
           const unsigned int cell_minus = face_info_cpu[0][f][0];
@@ -797,21 +826,24 @@ namespace Portable
                 const Tensor<2, dim, double> inv_jacobian_plus(
                   fe_face_values_neighbor.jacobian(q).covariant_form());
 
-                Tensor<1, dim, double> jac_x_n_minus = inv_jacobian_minus * n_minus;
+                // d_n u = grad_xi u . (J^-1 n); inv_jacobian is the covariant form J^-T
+                Tensor<1, dim, double> jac_x_n_minus = n_minus * inv_jacobian_minus;
 
-                Tensor<1, dim, double> jac_x_n_plus = inv_jacobian_plus * n_minus;
+                Tensor<1, dim, double> jac_x_n_plus = n_minus * inv_jacobian_plus;
 
-                jxw_inner_face_host(f * n_q_points_face + q, 0) = fe_face_values.JxW(q);
+                const unsigned int q_k = kernel_face_q(f_minus, q);
 
-                jxw_inner_face_host(f * n_q_points_face + q, 1) = fe_face_values_neighbor.JxW(q);
+                jxw_inner_face_host(f * n_q_points_face + q_k, 0) = fe_face_values.JxW(q);
+
+                jxw_inner_face_host(f * n_q_points_face + q_k, 1) = fe_face_values_neighbor.JxW(q);
 
                 for (unsigned int d = 0; d < dim; d++)
                   {
                     jacobians_times_normal_inner_face_host(f * dim * n_q_points_face +
-                                                             d * n_q_points_face + q,
+                                                             d * n_q_points_face + q_k,
                                                            0) = jac_x_n_minus[d];
                     jacobians_times_normal_inner_face_host(f * dim * n_q_points_face +
-                                                             d * n_q_points_face + q,
+                                                             d * n_q_points_face + q_k,
                                                            1) = jac_x_n_plus[d];
                   }
               }
@@ -843,14 +875,16 @@ namespace Portable
               const Tensor<2, dim, double> inv_jacobian(
                 fe_face_values.jacobian(q).covariant_form());
 
-              Tensor<1, dim, double> jac_x_n = inv_jacobian * n;
+              Tensor<1, dim, double> jac_x_n = n * inv_jacobian; // J^-1 n, see above
 
-              jxw_boundary_face_host(f * n_q_points_face + q) = fe_face_values.JxW(q);
+              const unsigned int q_k = kernel_face_q(face, q);
+
+              jxw_boundary_face_host(f * n_q_points_face + q_k) = fe_face_values.JxW(q);
 
               for (unsigned int d = 0; d < dim; d++)
                 {
                   jacobians_times_normal_boundary_face_host(f * dim * n_q_points_face +
-                                                            d * n_q_points_face + q) = jac_x_n[d];
+                                                            d * n_q_points_face + q_k) = jac_x_n[d];
                 }
             }
         }
@@ -895,6 +929,27 @@ namespace Portable
   LaplaceOperatorDG<dim, fe_degree, n_q_points_1d, Number>::get_matrix_free() const
   {
     return matrix_free;
+  }
+
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+  const DoFHandler<dim> &
+  LaplaceOperatorDG<dim, fe_degree, n_q_points_1d, Number>::get_dof_handler() const
+  {
+    return matrix_free.get_dof_handler();
+  }
+
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+  const typename OperatorInfoBase<dim>::ColoredGraph &
+  LaplaceOperatorDG<dim, fe_degree, n_q_points_1d, Number>::get_colored_graph() const
+  {
+    return colored_graph;
+  }
+
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+  bool
+  LaplaceOperatorDG<dim, fe_degree, n_q_points_1d, Number>::use_overlap_communication_computation() const
+  {
+    return matrix_free.use_overlap_communication_computation();
   }
 
   template <int dim, int fe_degree, int n_q_points_1d, typename Number>

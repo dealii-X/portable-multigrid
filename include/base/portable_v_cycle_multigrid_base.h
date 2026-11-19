@@ -3,10 +3,12 @@
 
 #include <deal.II/base/enable_observer_pointer.h>
 
+#include <deal.II/base/memory_space.h>
+
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/la_parallel_vector.h>
 
-#include <deal.II/matrix_free/portable_matrix_free.h>
+#include <deal.II/multigrid/mg_base.h>
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -18,7 +20,7 @@ namespace Portable
   class VCycleMultigridBase : public EnableObserverPointer
   {
   public:
-    ~VCycleMultigridBase() = default;
+    virtual ~VCycleMultigridBase() = default;
 
     virtual void
     vmult(LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &dst,

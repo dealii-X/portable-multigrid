@@ -149,16 +149,28 @@ namespace Portable
       return 1.0 / (*inverse_diagonal_neumann)(row, row);
     }
 
-    const MatrixFree<dim, number> &
-    get_matrix_free() const override
-    {
-      return dirichlet_operator->get_matrix_free();
-    }
-
     const std::shared_ptr<const Utilities::MPI::Partitioner> &
     get_vector_partitioner() const override
     {
       return dirichlet_operator->get_vector_partitioner();
+    }
+
+    const DoFHandler<dim> &
+    get_dof_handler() const override
+    {
+      return dirichlet_operator->get_dof_handler();
+    }
+
+    const typename OperatorInfoBase<dim>::ColoredGraph &
+    get_colored_graph() const override
+    {
+      return dirichlet_operator->get_colored_graph();
+    }
+
+    bool
+    use_overlap_communication_computation() const override
+    {
+      return dirichlet_operator->use_overlap_communication_computation();
     }
 
     const Kokkos::View<const unsigned int *, MemorySpace::Default::kokkos_space>

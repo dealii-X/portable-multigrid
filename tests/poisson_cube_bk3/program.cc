@@ -188,11 +188,11 @@ namespace multigrid
 
     struct PolynomialTransferRunner
     {
-      const unsigned int                              level;
-      const Portable::MatrixFree<dim, vcycle_number> &mf_coarse;
-      const Portable::MatrixFree<dim, vcycle_number> &mf_fine;
-      AffineConstraints<vcycle_number>               &constraints_coarse;
-      AffineConstraints<vcycle_number>               &constraints_fine;
+      const unsigned int                     level;
+      const Portable::OperatorInfoBase<dim> &op_coarse;
+      const Portable::OperatorInfoBase<dim> &op_fine;
+      AffineConstraints<vcycle_number>      &constraints_coarse;
+      AffineConstraints<vcycle_number>      &constraints_fine;
 
       LaplaceProblem<dim, fe_degree> &parent_problem;
 
@@ -203,8 +203,8 @@ namespace multigrid
         parent_problem.mg_transfers[level] = std::make_unique<
           Portable::PolynomialTransfer<dim, degree_coarse, degree_fine, vcycle_number>>();
 
-        parent_problem.mg_transfers[level]->reinit(mf_coarse,
-                                                   mf_fine,
+        parent_problem.mg_transfers[level]->reinit(op_coarse,
+                                                   op_fine,
                                                    constraints_coarse,
                                                    constraints_fine);
       }
@@ -429,8 +429,8 @@ namespace multigrid
           {
             mg_transfers[level] =
               std::make_unique<Portable::GeometricTransfer<dim, 1, vcycle_number>>();
-            mg_transfers[level]->reinit(level_matrices[level - 1]->get_matrix_free(),
-                                        level_matrices[level]->get_matrix_free(),
+            mg_transfers[level]->reinit(*level_matrices[level - 1],
+                                        *level_matrices[level],
                                         level_constraints[level - 1],
                                         level_constraints[level]);
           }
@@ -441,8 +441,8 @@ namespace multigrid
               p_level_fes[level + 1 - coarse_triangulations.size()]->degree;
 
             PolynomialTransferRunner runner{level,
-                                            level_matrices[level - 1]->get_matrix_free(),
-                                            level_matrices[level]->get_matrix_free(),
+                                            *level_matrices[level - 1],
+                                            *level_matrices[level],
                                             level_constraints[level - 1],
                                             level_constraints[level],
                                             *this};
@@ -516,24 +516,22 @@ namespace multigrid
   {
     Timer time;
 
-    // assemble the right-hand side f = 1 on the device with the fine-level
-    // operator, instead of on the host with FEValues and a copy to the device
+    // (f, phi_i) with f = 1, assembled on the device by the fine operator's own
+    // per-cell kernel as tests/bp3 does, instead of a host FEValues loop plus a
+    // host-to-device copy. The kernel skips constrained DoFs, which is what
+    // distribute_local_to_global() with homogeneous constraints did. The fine
+    // operator is always a LaplaceOperatorBK3 (see its construction above); it
+    // is the only operator type that provides compute_rhs().
+    using FineOperator = Portable::LaplaceOperatorBK3<dim, fe_degree, full_number>;
+    const FineOperator *fine_operator = nullptr;
     if constexpr (std::is_same_v<full_number, vcycle_number>)
-      {
-        const auto &system_matrix =
-          dynamic_cast<const Portable::LaplaceOperatorBK3<dim, fe_degree, full_number> &>(
-            *level_matrices.back());
-        system_matrix.compute_rhs(system_rhs_device);
-        system_matrix.get_matrix_free().set_constrained_values(0., system_rhs_device);
-      }
+      fine_operator = dynamic_cast<const FineOperator *>(level_matrices.back().get());
     else
-      {
-        const auto &system_matrix =
-          dynamic_cast<const Portable::LaplaceOperatorBK3<dim, fe_degree, full_number> &>(
-            *fine_level_matrix);
-        system_matrix.compute_rhs(system_rhs_device);
-        system_matrix.get_matrix_free().set_constrained_values(0., system_rhs_device);
-      }
+      fine_operator = dynamic_cast<const FineOperator *>(fine_level_matrix.get());
+    Assert(fine_operator != nullptr,
+           ExcMessage("The fine-level operator is not a LaplaceOperatorBK3."));
+
+    fine_operator->compute_rhs(system_rhs_device);
     Kokkos::fence();
 
     setup_time += time.wall_time();

@@ -4,6 +4,7 @@
 #include <deal.II/dofs/dof_handler.h>
 
 #include <deal.II/matrix_free/constraint_info.h>
+#include <deal.II/matrix_free/portable_matrix_free.h> // DeviceVector
 #include <deal.II/matrix_free/shape_info.h>
 
 #include <Kokkos_Core.hpp>
@@ -31,9 +32,11 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
+    using MGTransferBase<dim, number>::reinit;
+
     void
-    reinit(const MatrixFree<dim, number>   &mf_coarse,
-           const MatrixFree<dim, number>   &mf_fine,
+    reinit(const OperatorInfoBase<dim>     &op_coarse,
+           const OperatorInfoBase<dim>     &op_fine,
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) override;
 
@@ -51,8 +54,8 @@ namespace Portable
     void
     setup_dof_indices();
 
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_coarse;
-    ObserverPointer<const MatrixFree<dim, number>> matrix_free_fine;
+    ObserverPointer<const OperatorInfoBase<dim>> operator_info_coarse;
+    ObserverPointer<const OperatorInfoBase<dim>> operator_info_fine;
 
     ObserverPointer<const AffineConstraints<number>> constraints_fine;
     ObserverPointer<const AffineConstraints<number>> constraints_coarse;
@@ -70,18 +73,22 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(dst.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(dst.get_partitioner(),
+                                       operator_info_fine->get_vector_partitioner()),
            ExcMessage("Fine vector is not initialized correctly."));
-    Assert(src.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(src.get_partitioner(),
+                                       operator_info_coarse->get_vector_partitioner()),
            ExcMessage("Coarse vector is not initialized correctly."));
 
 
     this->prolongate_and_add_internal(dst, src);
 
-    Assert(dst.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(dst.get_partitioner(),
+                                       operator_info_fine->get_vector_partitioner()),
            ExcMessage("Fine vector is not handled correclty after prolongation."));
 
-    Assert(src.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(src.get_partitioner(),
+                                       operator_info_coarse->get_vector_partitioner()),
            ExcMessage("Coarse vector is not handled correclty after prolongation."));
   }
 
@@ -91,18 +98,22 @@ namespace Portable
     LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
     const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
   {
-    Assert(dst.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(dst.get_partitioner(),
+                                       operator_info_coarse->get_vector_partitioner()),
            ExcMessage("Coarse vector is not initialized correctly."));
 
-    Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(src.get_partitioner(),
+                                       operator_info_fine->get_vector_partitioner()),
            ExcMessage("Fine vector is not initialized correctly."));
 
     this->restrict_and_add_internal(dst, src);
 
-    Assert(dst.get_partitioner() == matrix_free_coarse->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(dst.get_partitioner(),
+                                       operator_info_coarse->get_vector_partitioner()),
            ExcMessage("Coarse vector is not handled correclty after restrtiction."));
 
-    Assert(src.get_partitioner() == matrix_free_fine->get_vector_partitioner(),
+    Assert(partitioners_are_compatible(src.get_partitioner(),
+                                       operator_info_fine->get_vector_partitioner()),
            ExcMessage("Fine vector is not handled correclty after restrtiction."));
   }
 
@@ -118,7 +129,7 @@ namespace Portable
     DeviceVector<number> src_device(src.get_values(), src.size()),
       dst_device(dst.get_values(), dst.locally_owned_size());
 
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+    const auto &colored_graph = operator_info_fine->get_colored_graph();
 
     const unsigned int n_colors = colored_graph.size();
 
@@ -165,7 +176,7 @@ namespace Portable
           }
       };
 
-    if (matrix_free_fine->use_overlap_communication_computation())
+    if (operator_info_fine->use_overlap_communication_computation())
       {
         src.update_ghost_values_start(0);
 
@@ -221,7 +232,7 @@ namespace Portable
   {
     MemorySpace::Default::kokkos_space::execution_space exec;
 
-    const auto &colored_graph = matrix_free_fine->get_colored_graph();
+    const auto &colored_graph = operator_info_fine->get_colored_graph();
 
     const unsigned int n_colors = colored_graph.size();
 
@@ -269,7 +280,7 @@ namespace Portable
           }
       };
 
-    if (matrix_free_fine->use_overlap_communication_computation())
+    if (operator_info_fine->use_overlap_communication_computation())
       {
         // In parallel, it's possible that some processors do not own any
         // cells.
@@ -288,11 +299,14 @@ namespace Portable
             Kokkos::fence();
           }
 
+        // When the mesh is coarse it is possible that some processors do
+        // not own any cells; see buffered_ghost_exchange for the ordering
+        if (buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
+          do_color(2);
+
         dst.compress_start(0, VectorOperation::add);
 
-        // When the mesh is coarse it is possible that some processors do
-        // not own any cells
-        if (colored_graph.size() > 2 && colored_graph[2].size() > 0)
+        if (!buffered_ghost_exchange && colored_graph.size() > 2 && colored_graph[2].size() > 0)
           do_color(2);
 
         dst.compress_finish(VectorOperation::add);
@@ -313,13 +327,13 @@ namespace Portable
   template <int dim, int fe_degree, typename number>
   void
   ContinuousTransfer<dim, fe_degree, number>::reinit(
-    const MatrixFree<dim, number>   &mf_coarse,
-    const MatrixFree<dim, number>   &mf_fine,
+    const OperatorInfoBase<dim>     &op_coarse,
+    const OperatorInfoBase<dim>     &op_fine,
     const AffineConstraints<number> &constraints_coarse,
     const AffineConstraints<number> &constraints_fine)
   {
-    this->matrix_free_coarse = &mf_coarse;
-    this->matrix_free_fine   = &mf_fine;
+    this->operator_info_coarse = &op_coarse;
+    this->operator_info_fine   = &op_fine;
 
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
@@ -331,13 +345,13 @@ namespace Portable
   void
   ContinuousTransfer<dim, fe_degree, number>::setup_dof_indices()
   {
-    const auto &dof_handler_fine   = matrix_free_fine->get_dof_handler();
-    const auto &dof_handler_coarse = matrix_free_coarse->get_dof_handler();
+    const auto &dof_handler_fine   = operator_info_fine->get_dof_handler();
+    const auto &dof_handler_coarse = operator_info_coarse->get_dof_handler();
     const auto &fe_fine            = dof_handler_fine.get_fe();
     const auto &fe_coarse          = dof_handler_coarse.get_fe();
 
-    const auto &colored_graph_fine   = matrix_free_fine->get_colored_graph();
-    const auto &colored_graph_coarse = matrix_free_coarse->get_colored_graph();
+    const auto &colored_graph_fine   = operator_info_fine->get_colored_graph();
+    const auto &colored_graph_coarse = operator_info_coarse->get_colored_graph();
 
     const unsigned int n_colors = colored_graph_fine.size();
 
@@ -383,34 +397,32 @@ namespace Portable
       this->dof_indices_fine_dg.resize(n_colors);
 
 
-      const auto &partitioner_coarse = matrix_free_coarse->get_vector_partitioner();
-      const auto &partitioner_fine   = matrix_free_fine->get_vector_partitioner();
+      const auto &partitioner_coarse = operator_info_coarse->get_vector_partitioner();
+      const auto &partitioner_fine   = operator_info_fine->get_vector_partitioner();
 
       for (unsigned int color = 0; color < n_colors; ++color)
         {
           if (colored_graph_coarse[color].size() > 0)
             {
-              const auto &mf_data_coarse = matrix_free_coarse->get_data(color);
-              const auto &mf_data_fine   = matrix_free_coarse->get_data(color);
-
               const auto &graph_coarse = colored_graph_coarse[color];
               const auto &graph_fine   = colored_graph_fine[color];
 
-              AssertDimension(mf_data_coarse.n_cells, mf_data_fine.n_cells);
+              const unsigned int n_cells = graph_coarse.size();
+              AssertDimension(n_cells, graph_fine.size());
 
               this->dof_indices_coarse_cg[color] =
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("dof_indices_coarse_cg_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
                   n_dofs_per_cell_coarse,
-                  mf_data_coarse.n_cells);
+                  n_cells);
 
               this->dof_indices_fine_dg[color] =
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("dof_indices_fine_dg_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
                   n_dofs_per_cell_fine,
-                  mf_data_fine.n_cells);
+                  n_cells);
 
               auto dof_indices_coarse_host =
                 Kokkos::create_mirror_view(this->dof_indices_coarse_cg[color]);
@@ -418,7 +430,7 @@ namespace Portable
               auto dof_indices_fine_host =
                 Kokkos::create_mirror_view(this->dof_indices_fine_dg[color]);
 
-              for (unsigned int cell_id = 0; cell_id < mf_data_coarse.n_cells; ++cell_id)
+              for (unsigned int cell_id = 0; cell_id < n_cells; ++cell_id)
                 {
                   const auto triacell_coarse = graph_coarse[cell_id];
                   const auto triacell_fine   = graph_fine[cell_id];

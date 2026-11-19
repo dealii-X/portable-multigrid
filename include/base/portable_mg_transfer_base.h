@@ -3,10 +3,14 @@
 
 #include <deal.II/base/enable_observer_pointer.h>
 
+#include <deal.II/dofs/dof_handler.h>
+
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/la_parallel_vector.h>
 
-#include <deal.II/matrix_free/portable_matrix_free.h>
+#include <memory>
+
+#include "base/portable_operator_info_base.h"
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -16,7 +20,7 @@ namespace Portable
   class MGTransferBase : public EnableObserverPointer
   {
   public:
-    ~MGTransferBase() = default;
+    virtual ~MGTransferBase() = default;
 
     virtual void
     prolongate_and_add(
@@ -28,12 +32,47 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const = 0;
 
+    // Set up from the two level operators (any LaplaceOperatorBase or
+    // SubdomainLaplaceOperatorBase); the transfer loops over the operators'
+    // colored cell graphs and indexes vectors with their partitioners.
     virtual void
-    reinit(const MatrixFree<dim, number>   &mf_coarse,
-           const MatrixFree<dim, number>   &mf_fine,
+    reinit(const OperatorInfoBase<dim>     &op_coarse,
+           const OperatorInfoBase<dim>     &op_fine,
            const AffineConstraints<number> &constraints_coarse,
            const AffineConstraints<number> &constraints_fine) = 0;
+
+    // Set up from bare DoFHandlers: builds its own partitioners (locally owned
+    // + locally relevant DoFs) and single-color cell lists, see
+    // DoFHandlerOperatorInfo. Vectors passed later must be compatible with
+    // those partitioners, which any operator on the same DoFHandler built
+    // from the same index sets satisfies.
+    void
+    reinit(const DoFHandler<dim>           &dof_handler_coarse,
+           const DoFHandler<dim>           &dof_handler_fine,
+           const AffineConstraints<number> &constraints_coarse,
+           const AffineConstraints<number> &constraints_fine);
+
+  private:
+    std::unique_ptr<DoFHandlerOperatorInfo<dim>> owned_info_coarse;
+    std::unique_ptr<DoFHandlerOperatorInfo<dim>> owned_info_fine;
   };
+
+
+
+  template <int dim, typename number>
+  void
+  MGTransferBase<dim, number>::reinit(const DoFHandler<dim>           &dof_handler_coarse,
+                                      const DoFHandler<dim>           &dof_handler_fine,
+                                      const AffineConstraints<number> &constraints_coarse,
+                                      const AffineConstraints<number> &constraints_fine)
+  {
+    owned_info_coarse = std::make_unique<DoFHandlerOperatorInfo<dim>>(dof_handler_coarse);
+    owned_info_fine   = std::make_unique<DoFHandlerOperatorInfo<dim>>(dof_handler_fine);
+
+    reinit(*owned_info_coarse, *owned_info_fine, constraints_coarse, constraints_fine);
+  }
+
+
 
   class PolynomialTransferDispatchFactory
   {

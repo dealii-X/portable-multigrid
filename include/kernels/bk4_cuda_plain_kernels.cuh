@@ -7,6 +7,8 @@
 #include <Kokkos_Array.hpp>
 #include <Kokkos_Core.hpp>
 
+#include "base/portable_mapping_data_accessor.h"
+
 #ifdef __CUDACC__
 
 #  include <cuda_runtime.h>
@@ -438,7 +440,7 @@ namespace BK4
       gemm_rhs_operator(
         const unsigned int nelmt,
         const T *__restrict__ d_basis,
-        const Kokkos::View<T **, MemorySpace::Default::kokkos_space> d_JxW,
+        const Portable::MappingDataAccessor<3, T>                    mapping_data,
         T *__restrict__ d_out,
         const Kokkos::Array<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>,
                             n_components> dof_indices_per_component)
@@ -476,7 +478,7 @@ namespace BK4
                 if (e_local < c_nelmtPerBatch)
                   {
                     const unsigned int global_cell_index = eb * nelmtPerBatch + e_local;
-                    s_wsp1[tid]                           = d_JxW(q_local, global_cell_index);
+                    s_wsp1[tid] = mapping_data.JxW_value(global_cell_index, q_local);
                   }
                 else
                   {
@@ -611,7 +613,7 @@ namespace BK4
       launch_gemm_rhs_operator(
         const unsigned int                                                  nelmt,
         const double                                                       *d_basis,
-        const Kokkos::View<double **, MemorySpace::Default::kokkos_space>  &d_JxW,
+        const Portable::MappingDataAccessor<3, double>                     &mapping_data,
         double                                                             *d_out,
         const Kokkos::Array<Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>,
                             n_components> &dof_indices_per_component)
@@ -645,7 +647,7 @@ namespace BK4
                                " bytes): " + cudaGetErrorString(attr_err)));
 
         kernel<<<numBlocks, threadsPerBlock, shmem_size>>>(
-          nelmt, d_basis, d_JxW, d_out, dof_indices_per_component);
+          nelmt, d_basis, mapping_data, d_out, dof_indices_per_component);
 
         const cudaError_t launch_err = cudaGetLastError();
         AssertThrow(launch_err == cudaSuccess,

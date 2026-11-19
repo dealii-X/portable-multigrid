@@ -7,14 +7,14 @@
 #include <deal.II/lac/diagonal_matrix.h>
 #include <deal.II/lac/la_parallel_vector.h>
 
-#include <deal.II/matrix_free/portable_matrix_free.h>
+#include "base/portable_operator_info_base.h"
 
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
   template <int dim, typename Number>
-  class LaplaceOperatorBase : public EnableObserverPointer
+  class LaplaceOperatorBase : public OperatorInfoBase<dim>
   {
   public:
     virtual ~LaplaceOperatorBase() = default;
@@ -53,11 +53,9 @@ namespace Portable
     virtual Number
     el(const types::global_dof_index row, const types::global_dof_index col) const = 0;
 
-    virtual const Portable::MatrixFree<dim, Number> &
-    get_matrix_free() const = 0;
-
-    virtual const std::shared_ptr<const Utilities::MPI::Partitioner> &
-    get_vector_partitioner() const = 0;
+    // get_dof_handler(), get_colored_graph(), get_vector_partitioner() and
+    // use_overlap_communication_computation() are inherited from
+    // OperatorInfoBase<dim>.
   };
 
   class OperatorDispatchFactory

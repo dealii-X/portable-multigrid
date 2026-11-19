@@ -124,11 +124,11 @@ private:
 
   struct PolynomialTransferRunner
   {
-    const int                                level;
-    const Portable::MatrixFree<dim, double> &mf_coarse;
-    const Portable::MatrixFree<dim, double> &mf_fine;
-    AffineConstraints<double>               &constraints_coarse;
-    AffineConstraints<double>               &constraints_fine;
+    const int                              level;
+    const Portable::OperatorInfoBase<dim> &op_coarse;
+    const Portable::OperatorInfoBase<dim> &op_fine;
+    AffineConstraints<double>             &constraints_coarse;
+    AffineConstraints<double>             &constraints_fine;
 
     LaplaceProblem<dim, fe_degree, mg_levels> &parent_problem;
 
@@ -140,8 +140,8 @@ private:
         Portable::
           PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
-      parent_problem.mg_transfers[level]->reinit(mf_coarse,
-                                                 mf_fine,
+      parent_problem.mg_transfers[level]->reinit(op_coarse,
+                                                 op_fine,
                                                  constraints_coarse,
                                                  constraints_fine);
     }
@@ -258,8 +258,8 @@ LaplaceProblem<dim, fe_degree, mg_levels>::setup_mg_transfers()
        ++level)
     {
       PolynomialTransferRunner runner{(int)level,
-                                      mg_matrices[level - 1]->get_matrix_free(),
-                                      mg_matrices[level]->get_matrix_free(),
+                                      *mg_matrices[level - 1],
+                                      *mg_matrices[level],
                                       constraints_collection[level - 1],
                                       constraints_collection[level],
                                       *this};

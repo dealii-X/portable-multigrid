@@ -226,13 +226,13 @@ private:
 
   struct PolynomialTransferRunner
   {
-    const unsigned int                       level;
-    const Portable::MatrixFree<dim, double> &mf_coarse;
-    const Portable::MatrixFree<dim, double> &mf_fine;
-    AffineConstraints<double>               &constraints_coarse;
-    AffineConstraints<double>               &constraints_fine;
-    AffineConstraints<double>               &physical_constraints_coarse;
-    AffineConstraints<double>               &physical_constraints_fine;
+    const unsigned int                     level;
+    const Portable::OperatorInfoBase<dim> &op_coarse;
+    const Portable::OperatorInfoBase<dim> &op_fine;
+    AffineConstraints<double>             &constraints_coarse;
+    AffineConstraints<double>             &constraints_fine;
+    AffineConstraints<double>             &physical_constraints_coarse;
+    AffineConstraints<double>             &physical_constraints_fine;
 
     LaplaceProblem<dim, fe_degree> &parent_problem;
 
@@ -245,15 +245,15 @@ private:
           PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
       parent_problem.subdomain_mg_transfers_dirichlet[level]->reinit(
-        mf_coarse, mf_fine, constraints_coarse, constraints_fine);
+        op_coarse, op_fine, constraints_coarse, constraints_fine);
 
       parent_problem.subdomain_mg_transfers_neumann[level] = std::make_unique<
         Portable::
           PolynomialTransfer<dim, degree_coarse, degree_fine, double>>();
 
       parent_problem.subdomain_mg_transfers_neumann[level]->reinit(
-        mf_coarse,
-        mf_fine,
+        op_coarse,
+        op_fine,
         physical_constraints_coarse,
         physical_constraints_fine);
     }
@@ -599,16 +599,16 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
           subdomain_mg_transfers_dirichlet[level] =
             std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
           subdomain_mg_transfers_dirichlet[level]->reinit(
-            level_subdomain_matrices[level - 1]->get_matrix_free(),
-            level_subdomain_matrices[level]->get_matrix_free(),
+            *level_subdomain_matrices[level - 1],
+            *level_subdomain_matrices[level],
             level_subdomain_constraints[level - 1],
             level_subdomain_constraints[level]);
 
           subdomain_mg_transfers_neumann[level] =
             std::make_unique<Portable::GeometricTransfer<dim, 1, double>>();
           subdomain_mg_transfers_neumann[level]->reinit(
-            level_subdomain_matrices[level - 1]->get_matrix_free(),
-            level_subdomain_matrices[level]->get_matrix_free(),
+            *level_subdomain_matrices[level - 1],
+            *level_subdomain_matrices[level],
             level_subdomain_constraints_physical[level - 1],
             level_subdomain_constraints_physical[level]);
         }
@@ -620,8 +620,8 @@ LaplaceProblem<dim, fe_degree>::setup_mg_transfers()
 
           PolynomialTransferRunner runner{
             level,
-            level_subdomain_matrices[level - 1]->get_matrix_free(),
-            level_subdomain_matrices[level]->get_matrix_free(),
+            *level_subdomain_matrices[level - 1],
+            *level_subdomain_matrices[level],
             level_subdomain_constraints[level - 1],
             level_subdomain_constraints[level],
             level_subdomain_constraints_physical[level - 1],

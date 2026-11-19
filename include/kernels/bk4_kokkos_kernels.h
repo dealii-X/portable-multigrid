@@ -7,6 +7,7 @@
 #include <Kokkos_Array.hpp>
 #include <Kokkos_Core.hpp>
 
+#include "base/portable_mapping_data_accessor.h"
 #include "kernels/bk3_kokkos_kernels.h"
 #include "matrix_free/portable_evaluation_kernels.h"
 
@@ -189,14 +190,14 @@ namespace BK4
     template <int dim, int fe_degree, int n_q_points_1d, int n_components, typename Number>
     void
     KokkosRHSAbstracted(
-      const DeviceView<Number>                                           d_shape_values,
-      const Kokkos::View<Number **, MemorySpace::Default::kokkos_space> &d_JxW,
-      DeviceView<Number>                                                 d_out,
-      const Kokkos::Array<DoFIndicesView, n_components>                 &dof_indices_per_component,
-      const unsigned int                                                 n_cells,
-      const unsigned int    n_blocks          = numbers::invalid_unsigned_int,
-      const unsigned int    threads_per_block = numbers::invalid_unsigned_int,
-      const CellRangeIdView cell_range_ids    = CellRangeIdView())
+      const DeviceView<Number>                           d_shape_values,
+      const Portable::MappingDataAccessor<dim, Number>  &mapping_data,
+      DeviceView<Number>                                 d_out,
+      const Kokkos::Array<DoFIndicesView, n_components> &dof_indices_per_component,
+      const unsigned int                                 n_cells,
+      const unsigned int                                 n_blocks = numbers::invalid_unsigned_int,
+      const unsigned int    threads_per_block                     = numbers::invalid_unsigned_int,
+      const CellRangeIdView cell_range_ids                        = CellRangeIdView())
     {
       if (n_cells == 0)
         return;
@@ -294,7 +295,7 @@ namespace BK4
                     if (cell_range_ids.size() > 0)
                       global_cell_index = cell_range_ids(global_cell_index);
 
-                    s_values[tid] = d_JxW(q_local, global_cell_index);
+                    s_values[tid] = mapping_data.JxW_value(global_cell_index, q_local);
                   }
                 team_member.team_barrier();
 
