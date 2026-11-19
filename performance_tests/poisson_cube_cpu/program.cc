@@ -425,6 +425,7 @@ namespace multigrid
 
         level_matrices[level]->compute_diagonal();
         smoother_data.preconditioner = level_matrices[level]->get_matrix_diagonal_inverse();
+        smoother_data.constraints.copy_from(level_constraints[level]);
 
         mg_smoothers[level].initialize(*level_matrices[level], smoother_data);
       }

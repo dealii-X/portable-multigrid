@@ -111,6 +111,7 @@ namespace gmg_test
           }
         matrices[level]->compute_diagonal();
         smoother_data.preconditioner = matrices[level]->get_matrix_diagonal_inverse();
+        smoother_data.constraints.copy_from(constraints[level]);
         smoothers[level].initialize(*matrices[level], smoother_data);
       }
 

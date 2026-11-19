@@ -373,6 +373,7 @@ namespace hybrid
 
         h.matrices[l]->compute_diagonal();
         smoother_data.preconditioner = h.matrices[l]->get_matrix_diagonal_inverse();
+        smoother_data.constraints.copy_from(h.constraints[l]);
 
         h.smoothers[l].initialize(*h.matrices[l], smoother_data);
       }
