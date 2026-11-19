@@ -11,7 +11,6 @@
 
 #include <memory>
 
-#include "base/portable_constrained_source.h"
 #include "base/portable_laplace_operator_base.h"
 #include "base/portable_mapping_data_accessor.h"
 #include "kernels/bk3_kokkos_kernels.h"
@@ -229,8 +228,6 @@ namespace Portable
 
     MatrixFree<dim, number> matrix_free;
 
-    ConstrainedSource<number> constrained_source;
-
     // matrix_free's colored graph without the FilteredIterator wrapper
     typename OperatorInfoBase<dim>::ColoredGraph colored_graph;
 
@@ -270,7 +267,6 @@ namespace Portable
 
     const QGauss<1> quadrature_1d(fe_degree + 1);
     matrix_free.reinit(mapping, dof_handler, constraints, quadrature_1d, additional_data);
-    constrained_source.reinit(constraints, dof_handler.locally_owned_dofs());
     colored_graph = make_colored_graph<dim>(matrix_free.get_colored_graph());
 
     typename Copy::Portable::MatrixFree<dim, number>::AdditionalData additional_data_new;
@@ -305,10 +301,7 @@ namespace Portable
     // LocalLaplaceOperator<dim, fe_degree, fe_degree + 1, number> cell_operator;
     LocalLaplaceOperatorStep64<dim, fe_degree, fe_degree + 1, number> cell_operator;
 
-    // deal.II's cell loop reads src at constrained DoFs
-    constrained_source.zero_constrained(src);
     matrix_free.cell_loop(cell_operator, src, dst);
-    constrained_source.restore_constrained(src);
 
     matrix_free.copy_constrained_values(src, dst);
   }
