@@ -18,3 +18,4 @@ DEAL:1::vmult_tensor_core: OK
 DEAL:1::dim = 3, fe_degree = 4, n_components = 2
 DEAL:1::n_dofs = 9826
 DEAL:1::vmult_tensor_core: OK
+

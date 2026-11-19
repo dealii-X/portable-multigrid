@@ -24,3 +24,4 @@ DEAL:1::compute_rhs_cuda: OK
 DEAL:1::dim = 3, fe_degree = 3, n_components = 2, n_q_points_1d = 5
 DEAL:1::n_dofs = 4394
 DEAL:1::compute_rhs_cuda: OK
+
