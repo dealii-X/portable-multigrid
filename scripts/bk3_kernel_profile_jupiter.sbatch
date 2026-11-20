@@ -57,9 +57,10 @@ NQ=$((DEGREE + 1))
 opts="-n 1 --mpi=pspmix --cpu-bind=cores --gpu-bind=closest --gpus-per-task=1"
 
 for number in $NUMBERS; do
-  # fine-level instances: KokkosKernelAbstracted<dim, degree, n_q, Number> and
-  # KokkosKernel<dim, n_dofs_1d, n_q, Number, ...>
-  regex=${KERNEL_REGEX:-"KokkosKernelAbstracted<3, *$DEGREE, *$NQ, *$number|KokkosKernel<3, *$NQ, *$NQ, *$number"}
+  # fine-level instances, as ncu prints them:
+  #   KokkosKernelAbstracted<(int)3, (int)4, (int)5, double>
+  #   KokkosKernel<(int)3, (int)5, (int)5, double, ...>
+  regex=${KERNEL_REGEX:-"KokkosKernel(Abstracted)?<[^>]*[ )]$NQ, *$number"}
   for kernel in $KERNELS; do
     rep=$OUT/${kernel}_${number}
     echo
