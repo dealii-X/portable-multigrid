@@ -47,6 +47,10 @@ public:
   void
   run();
 
+  // public: contains a KOKKOS_LAMBDA (nvcc)
+  void
+  test_prolongation();
+
 private:
   void
   setup_system();
@@ -68,9 +72,6 @@ private:
 
   void
   output_results(const unsigned int cycle) const;
-
-  void
-  test_prolongation();
 
   MPI_Comm mpi_communicator;
 
