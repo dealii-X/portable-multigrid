@@ -17,6 +17,8 @@
 #   abstracted      the default kernel, for reference only (other launch configuration)
 # One binary on one node; the kernels alternate within each repetition.
 #   DEGREES="1 2 3 4" KERNELS="plain plain_constant abstracted" REPS=2 GPUS=1 sbatch <this script>
+# One node up to 1.08e9 DoFs (p=4, 270M per GPU):
+#   DEGREES=4 GPUS=4 MAX_PER_GPU=270000000 TIMEOUT=2400 sbatch --time=03:00:00 <this script>
 # Doubling mesh, 5 + 5 smoothing, float V-cycle, MIN_PER_GPU .. MAX_PER_GPU DoFs, 1 rank
 # per GPU. One JSON per run in OUT; at the end plain_constant against plain
 # (compare_baseline.py: ratio < 1 means plain_constant is faster, cg_its must agree).
@@ -33,6 +35,7 @@ MIN_PER_GPU=${MIN_PER_GPU:-100000}
 MAX_PER_GPU=${MAX_PER_GPU:-40000000}
 MIN=$((MIN_PER_GPU * GPUS))
 MAX=$((MAX_PER_GPU * GPUS))
+TIMEOUT=${TIMEOUT:-1200} # seconds per run
 OUT=${OUT:-$PWD/bk3-shape-ab-${SLURM_JOB_ID:-local}}
 
 source $REPO/scripts/jupiter/env.sh
@@ -40,7 +43,7 @@ export NVCOMPILER_OMP_DISABLE_WARNINGS=true
 
 mkdir -p $OUT
 ldd $BIN | grep -E 'libdeal_II|libkokkoscore'
-git -C $REPO log -1 --format='commit %h %s'
+command -v git > /dev/null && git -C $REPO log -1 --format='commit %h %s' # no git on the compute nodes
 echo "GPUs: $GPUS, sizes $MIN .. $MAX DoFs, degrees: $DEGREES, kernels: $KERNELS, repetitions: $REPS"
 echo "JSON files: $OUT"
 
@@ -54,7 +57,7 @@ for degree in $DEGREES; do
     for kernel in $KERNELS; do
       echo
       echo "=============== kernel=$kernel degree=$degree repetition=$rep"
-      BK3_VMULT_KERNEL=$kernel timeout 1200 srun $opts $BIN $degree $MIN $MAX 5 5 d 0 \
+      BK3_VMULT_KERNEL=$kernel timeout $TIMEOUT srun $opts $BIN $degree $MIN $MAX 5 5 d 0 \
         --json $OUT/${kernel}_p${degree}_r${rep}.json
     done
   done
