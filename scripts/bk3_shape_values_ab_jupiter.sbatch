@@ -12,23 +12,25 @@
 
 # poisson_cube_bk3 (performance_tests/poisson_cube_multigrid) with the cell kernel of
 # LaplaceOperatorBK3::vmult() chosen by BK3_VMULT_KERNEL:
-#   plain           hand-written kernel, shape values in the team scratch
-#   plain_constant  hand-written kernel, shape values in the kernel closure
-#   abstracted      the default kernel, for reference only (other launch configuration)
+#   abstracted           the default kernel, shape values in the team scratch
+#   abstracted_constant  the default kernel, shape values in the kernel closure
+#   plain                hand-written kernel, shape values in the team scratch
+#   plain_constant       hand-written kernel, shape values in the kernel closure
 # One binary on one node; the kernels alternate within each repetition.
-#   DEGREES="1 2 3 4" KERNELS="plain plain_constant abstracted" REPS=2 GPUS=1 sbatch <this script>
+#   DEGREES="1 2 3 4" KERNELS="abstracted abstracted_constant" REPS=2 GPUS=1 sbatch <this script>
 # One node up to 1.08e9 DoFs (p=4, 270M per GPU):
 #   DEGREES=4 GPUS=4 MAX_PER_GPU=270000000 TIMEOUT=2400 sbatch --time=03:00:00 <this script>
 # Doubling mesh, 5 + 5 smoothing, float V-cycle, MIN_PER_GPU .. MAX_PER_GPU DoFs, 1 rank
-# per GPU. One JSON per run in OUT; at the end plain_constant against plain
-# (compare_baseline.py: ratio < 1 means plain_constant is faster, cg_its must agree).
+# per GPU. One JSON per run in OUT; at the end each closure variant against its
+# scratch variant (compare_baseline.py: ratio < 1 means the closure is faster,
+# cg_its must agree).
 
 # checkout and binary, override with REPO=... BIN=... sbatch
 REPO=${REPO:-$HOME/codes/dealiiX-portable-multigrid}
 BIN=${BIN:-$REPO/performance_tests/poisson_cube_multigrid/build/poisson_cube_bk3}
 
 DEGREES=${DEGREES:-"1 2 3 4"}
-KERNELS=${KERNELS:-"plain plain_constant abstracted"}
+KERNELS=${KERNELS:-"abstracted abstracted_constant plain plain_constant"}
 REPS=${REPS:-2}
 GPUS=${GPUS:-1}
 MIN_PER_GPU=${MIN_PER_GPU:-100000}
@@ -63,14 +65,16 @@ for degree in $DEGREES; do
   done
 done
 
-for degree in $DEGREES; do
-  for rep in $(seq 1 $REPS); do
-    new=$OUT/plain_constant_p${degree}_r${rep}.json
-    old=$OUT/plain_p${degree}_r${rep}.json
-    if [ -f $new ] && [ -f $old ]; then
-      echo
-      echo "=============== plain_constant / plain, degree=$degree repetition=$rep"
-      python3 $REPO/performance_tests/compare_baseline.py $new $old --tolerance 0.05
-    fi
+for base in abstracted plain; do
+  for degree in $DEGREES; do
+    for rep in $(seq 1 $REPS); do
+      new=$OUT/${base}_constant_p${degree}_r${rep}.json
+      old=$OUT/${base}_p${degree}_r${rep}.json
+      if [ -f $new ] && [ -f $old ]; then
+        echo
+        echo "=============== ${base}_constant / $base, degree=$degree repetition=$rep"
+        python3 $REPO/performance_tests/compare_baseline.py $new $old --tolerance 0.05
+      fi
+    done
   done
 done

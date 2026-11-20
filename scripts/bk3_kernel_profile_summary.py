@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "performance_tests" / "mg_transfer_comparison"))
 from profile_summary import METRICS, to_float  # noqa: E402
 
-KERNELS = ["abstracted", "plain", "plain_constant"]
+KERNELS = ["abstracted", "abstracted_constant", "plain", "plain_constant"]
 DURATION = "gpu__time_duration.sum"
 TIME_SCALE = {"ns": 1e-3, "nsecond": 1e-3, "us": 1.0, "usecond": 1.0, "ms": 1e3, "msecond": 1e3}
 
@@ -82,7 +82,7 @@ def main(directory):
             print(f"{kernel}: {len(rows)} launches{more}\n  {name[:300]}")
 
         kernels = list(reports)
-        print(f"\n{'metric':<32}" + "".join(f"{k:>18}" for k in kernels) + "".join(f"{k + '/plain':>22}" for k in kernels if k != "plain" and "plain" in reports))
+        print(f"\n{'metric':<32}" + "".join(f"{k:>21}" for k in kernels) + "".join(f"{k + '/plain':>27}" for k in kernels if k != "plain" and "plain" in reports))
         for metric, label in METRICS:
             vals = {}
             for kernel, (col, units, rows, _, _) in reports.items():
@@ -92,12 +92,12 @@ def main(directory):
                 vals[kernel] = v
             if all(v is None for v in vals.values()):
                 continue
-            line = f"{label:<32}" + "".join(f"{vals[k]:>18,.1f}" if vals[k] is not None else f"{'-':>18}" for k in kernels)
+            line = f"{label:<32}" + "".join(f"{vals[k]:>21,.1f}" if vals[k] is not None else f"{'-':>21}" for k in kernels)
             ref = vals.get("plain")
             for k in kernels:
                 if k == "plain" or "plain" not in reports:
                     continue
-                line += f"{vals[k] / ref:>22.3f}" if vals[k] is not None and ref else f"{'-':>22}"
+                line += f"{vals[k] / ref:>27.3f}" if vals[k] is not None and ref else f"{'-':>27}"
             print(line)
 
 

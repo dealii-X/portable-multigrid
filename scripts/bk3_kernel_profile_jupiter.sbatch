@@ -12,7 +12,7 @@
 #SBATCH --output=bk3-kernel-profile-%j.out
 
 # Nsight Compute profile of the fine-level cell kernel of LaplaceOperatorBK3::vmult()
-# in poisson_cube_bk3, for each BK3_VMULT_KERNEL (abstracted, plain, plain_constant)
+# in poisson_cube_bk3, for each BK3_VMULT_KERNEL (abstracted, abstracted_constant, plain, plain_constant)
 # in double and in float: why is the abstracted kernel slower than the plain one in
 # double but not in float? One program run per kernel and number type, a few launches
 # of the fine-level kernel profiled with the full metric set.
@@ -30,7 +30,7 @@ REPO=${REPO:-$HOME/codes/dealiiX-portable-multigrid}
 BIN=${BIN:-$REPO/performance_tests/poisson_cube_multigrid/build/poisson_cube_bk3}
 
 DEGREE=${DEGREE:-4}
-KERNELS=${KERNELS:-"abstracted plain plain_constant"}
+KERNELS=${KERNELS:-"abstracted abstracted_constant plain plain_constant"}
 NUMBERS=${NUMBERS:-"double float"}
 MIN_SIZE=${MIN_SIZE:-30000000}
 MAX_SIZE=${MAX_SIZE:-40000000}

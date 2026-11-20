@@ -32,20 +32,21 @@ DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
 {
-  // Cell kernel of LaplaceOperatorBK3::vmult(): the abstracted kernel, or the
-  // hand-written one with the shape values in the team scratch or in the
-  // kernel closure.
+  // Cell kernel of LaplaceOperatorBK3::vmult(): the abstracted or the
+  // hand-written one, each with the shape values in the team scratch or in
+  // the kernel closure.
   enum class BK3VmultKernel
   {
     abstracted,
+    abstracted_constant_shape_values,
     plain,
     plain_constant_shape_values
   };
 
   namespace internal
   {
-    // Environment variable BK3_VMULT_KERNEL: abstracted (default), plain or
-    // plain_constant.
+    // Environment variable BK3_VMULT_KERNEL: abstracted (default),
+    // abstracted_constant, plain or plain_constant.
     inline BK3VmultKernel
     bk3_vmult_kernel_from_environment()
     {
@@ -56,6 +57,8 @@ namespace Portable
       const std::string name(value);
       if (name == "abstracted")
         return BK3VmultKernel::abstracted;
+      if (name == "abstracted_constant")
+        return BK3VmultKernel::abstracted_constant_shape_values;
       if (name == "plain")
         return BK3VmultKernel::plain;
       if (name == "plain_constant")
@@ -63,7 +66,8 @@ namespace Portable
 
       AssertThrow(false,
                   ExcMessage("BK3_VMULT_KERNEL=" + name +
-                             ": expected abstracted, plain or plain_constant."));
+                             ": expected abstracted, abstracted_constant, plain or "
+                             "plain_constant."));
       return BK3VmultKernel::abstracted;
     }
   } // namespace internal
@@ -219,6 +223,14 @@ namespace Portable
       shape_values_in_closure;
 
     BK3VmultKernel vmult_kernel = internal::bk3_vmult_kernel_from_environment();
+
+    // compute_rhs() and compute_diagonal() follow the vmult() kernel
+    bool
+    shape_values_in_closure_selected() const
+    {
+      return vmult_kernel == BK3VmultKernel::abstracted_constant_shape_values ||
+             vmult_kernel == BK3VmultKernel::plain_constant_shape_values;
+    }
 
     Kokkos::View<unsigned int *, MemorySpace::Default::kokkos_space> owned_constrained_dofs;
 
@@ -776,6 +788,20 @@ namespace Portable
             threadsPerBlock);
           break;
 
+        case BK3VmultKernel::abstracted_constant_shape_values:
+          BK3::Parallel::KokkosKernelAbstracted<dim, fe_degree, n_q_points_1d, number>(
+            exec,
+            shape_values_in_closure,
+            co_shape_gradients,
+            G_tensors[color],
+            src_device,
+            dst_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
+          break;
+
         case BK3VmultKernel::plain:
           BK3::Parallel::KokkosKernel<dim, fe_degree + 1, n_q_points_1d, number>(
             exec,
@@ -973,15 +999,26 @@ namespace Portable
         if (n_cells == 0)
           continue;
 
-        BK3::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, number>(
-          exec,
-          shape_values,
-          JxW_per_color[color],
-          rhs_device,
-          dof_indices_per_color[color],
-          n_cells,
-          numBlocks,
-          threadsPerBlock);
+        if (shape_values_in_closure_selected())
+          BK3::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, number>(
+            exec,
+            shape_values_in_closure,
+            JxW_per_color[color],
+            rhs_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
+        else
+          BK3::Parallel::KokkosRHSAbstracted<dim, fe_degree, n_q_points_1d, number>(
+            exec,
+            shape_values,
+            JxW_per_color[color],
+            rhs_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
       }
 
     exec.fence();
@@ -1151,16 +1188,28 @@ namespace Portable
         if (n_cells == 0)
           continue;
 
-        BK3::Parallel::KokkosDiagonalAbstracted<dim, fe_degree, n_q_points_1d, number>(
-          exec,
-          shape_values,
-          co_shape_gradients,
-          G_tensors[color],
-          diagonal_device,
-          dof_indices_per_color[color],
-          n_cells,
-          numBlocks,
-          threadsPerBlock);
+        if (shape_values_in_closure_selected())
+          BK3::Parallel::KokkosDiagonalAbstracted<dim, fe_degree, n_q_points_1d, number>(
+            exec,
+            shape_values_in_closure,
+            co_shape_gradients,
+            G_tensors[color],
+            diagonal_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
+        else
+          BK3::Parallel::KokkosDiagonalAbstracted<dim, fe_degree, n_q_points_1d, number>(
+            exec,
+            shape_values,
+            co_shape_gradients,
+            G_tensors[color],
+            diagonal_device,
+            dof_indices_per_color[color],
+            n_cells,
+            numBlocks,
+            threadsPerBlock);
       }
 
     exec.fence();

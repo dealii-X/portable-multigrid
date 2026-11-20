@@ -1,5 +1,6 @@
-// Portable::LaplaceOperatorBK3::vmult() with each cell kernel (abstracted,
-// plain, plain with the shape values in the kernel closure) on a curved,
+// Portable::LaplaceOperatorBK3::vmult() with each cell kernel (abstracted
+// and plain, each with the shape values in the team scratch and in the
+// kernel closure) and the compute_diagonal() that goes with it on a curved,
 // sheared mesh against the CPU FEValues reference, in double and float, with
 // p + 1 and p + 2 quadrature points, with and without
 // communication/computation overlap.
@@ -82,9 +83,21 @@ test(const bool overlap)
     op.vmult(dst, src);
     Kokkos::fence();
     report(name, relative_l2_difference(dst, dst_ref), tolerance);
+
+    // compute_diagonal() follows the vmult() kernel
+    op.compute_diagonal();
+    Kokkos::fence();
+    report(name + " diagonal",
+           max_relative_diagonal_error(op.get_matrix_diagonal_inverse()->get_vector(),
+                                       diag_ref,
+                                       locally_owned_dofs,
+                                       MPI_COMM_WORLD),
+           tolerance);
   };
 
   check("abstracted", Portable::BK3VmultKernel::abstracted);
+  check("abstracted_constant_shape_values",
+        Portable::BK3VmultKernel::abstracted_constant_shape_values);
   check("plain", Portable::BK3VmultKernel::plain);
   check("plain_constant_shape_values", Portable::BK3VmultKernel::plain_constant_shape_values);
 }
