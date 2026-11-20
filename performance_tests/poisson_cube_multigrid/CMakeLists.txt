@@ -11,6 +11,7 @@ cmake_minimum_required(VERSION 3.13.4)
 #
 #   cmake -S . -B build -DDEAL_II_DIR=<deal.II install> [-DMG_VARIANTS="poisson_cube_bk3"]
 #   ./build/poisson_cube_bk3 degree minsize maxsize n_pre n_post doubling overlap [--json file]
+#                             [--single-rank-cells n]
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   find_package(deal.II 9.8.0 REQUIRED

@@ -18,6 +18,42 @@
 
 namespace multigrid
 {
+  // All cells on rank 0 if the mesh has fewer than n_cells_single_rank cells,
+  // else the given policy. 0 never triggers.
+  template <int dim>
+  class SingleRankBelowPolicy : public dealii::RepartitioningPolicyTools::Base<dim>
+  {
+  public:
+    SingleRankBelowPolicy(const dealii::types::global_cell_index              n_cells_single_rank,
+                          const dealii::RepartitioningPolicyTools::Base<dim> &policy)
+      : n_cells_single_rank(n_cells_single_rank)
+      , policy(policy)
+    {}
+
+    dealii::LinearAlgebra::distributed::Vector<double>
+    partition(const dealii::Triangulation<dim> &tria_in) const override
+    {
+      using namespace dealii;
+
+      if (tria_in.n_global_active_cells() >= n_cells_single_rank)
+        return policy.partition(tria_in);
+
+      const auto tria = dynamic_cast<const parallel::TriangulationBase<dim> *>(&tria_in);
+      Assert(tria, ExcNotImplemented());
+
+      LinearAlgebra::distributed::Vector<double> partition(
+        tria->global_active_cell_index_partitioner().lock());
+      partition = 0.;
+      return partition;
+    }
+
+  private:
+    const dealii::types::global_cell_index              n_cells_single_rank;
+    const dealii::RepartitioningPolicyTools::Base<dim> &policy;
+  };
+
+
+
   // Drop-in for create_geometric_coarsening_sequence() on globally refined
   // meshes: level l is the coarse grid refined l times, same policy.
   template <int dim>
