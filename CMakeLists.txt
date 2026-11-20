@@ -66,8 +66,12 @@ set(_benchmarks
 
 # as in their own CMakeLists.txt
 set(_with_common
+  performance
+  poisson_cube
   poisson_cube_bk3
   poisson_cube_bk3_dg
+  poisson_cube_bk3_fp64
+  poisson_cube_bk3_fp64_dg
   poisson_cube_cpu
   poisson_cube_hybrid_gpu_cpu
   test-pop-coe

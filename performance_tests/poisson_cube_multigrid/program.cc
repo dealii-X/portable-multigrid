@@ -3,7 +3,6 @@
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
 
-#include <deal.II/distributed/fully_distributed_tria.h>
 #include <deal.II/distributed/repartitioning_policy_tools.h>
 #include <deal.II/distributed/tria.h>
 
@@ -19,7 +18,6 @@
 #include <deal.II/grid/grid_refinement.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/tria.h>
-#include <deal.II/grid/tria_description.h>
 
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/la_parallel_vector.h>
@@ -53,6 +51,7 @@
 #include "operators/portable_laplace_operator_dg.h"
 
 #include "portable_multigrid_solver.h"
+#include "coarsening_sequence.h"
 
 
 namespace multigrid
@@ -174,9 +173,6 @@ namespace multigrid
 
     std::vector<std::shared_ptr<const Triangulation<dim>>> coarse_triangulations;
 
-    // coarse grid before refine_global(), for the multigrid levels
-    std::tuple<std::vector<Point<dim>>, std::vector<CellData<dim>>, SubCellData> coarse_grid;
-
     MGLevelObject<DoFHandler<dim>>                  level_dof_handlers;
     MGLevelObject<AffineConstraints<vcycle_number>> level_constraints;
 
@@ -292,31 +288,8 @@ namespace multigrid
 
     Timer time;
 
-    // globally refined: level l is the coarse grid refined l times, with the
-    // same partitioning policy as create_geometric_coarsening_sequence()
-    const unsigned int n_levels = triangulation.n_global_levels();
-    coarse_triangulations.clear();
-    coarse_triangulations.resize(n_levels);
-    coarse_triangulations.back().reset(&triangulation, [](auto *) {});
-
-    const RepartitioningPolicyTools::MinimalGranularityPolicy<dim> policy(16);
-    for (unsigned int l = 0; l + 1 < n_levels; ++l)
-      {
-        parallel::distributed::Triangulation<dim> level_triangulation(mpi_communicator);
-        level_triangulation.create_triangulation(std::get<0>(coarse_grid),
-                                                 std::get<1>(coarse_grid),
-                                                 std::get<2>(coarse_grid));
-        level_triangulation.refine_global(l);
-
-        const auto description = TriangulationDescription::Utilities::
-          create_description_from_triangulation(level_triangulation,
-                                                policy.partition(level_triangulation));
-
-        auto level = std::make_shared<parallel::fullydistributed::Triangulation<dim>>(
-          mpi_communicator);
-        level->create_triangulation(description);
-        coarse_triangulations[l] = level;
-      }
+    coarse_triangulations = create_refined_coarsening_sequence(
+      triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
 
     setup_time += time.wall_time();
 
@@ -1062,7 +1035,6 @@ namespace multigrid
           }
 
 
-        coarse_grid = GridTools::get_coarse_mesh_description(triangulation);
         triangulation.refine_global(n_refine);
 
         create_coarse_triangulations();

@@ -21,6 +21,7 @@
 
 #include "hybrid_cell_id_translator.h"
 #include "hybrid_mpi_layout.h"
+#include "coarsening_sequence.h"
 
 namespace hybrid
 {
@@ -139,7 +140,7 @@ namespace hybrid
     {
       make_coarse_grid(fine, coarse_grid);
       fine.refine_global(n_refinements);
-      levels = MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+      levels = multigrid::create_refined_coarsening_sequence(
         fine, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
     }
 
