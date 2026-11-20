@@ -41,6 +41,7 @@
 #include "operators/portable_laplace_operator.h"
 
 #include "portable_multigrid_solver.h"
+#include "coarsening_sequence.h"
 
 
 namespace multigrid
@@ -269,7 +270,7 @@ namespace multigrid
 
     Timer time;
 
-    coarse_triangulations = MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+    coarse_triangulations = create_refined_coarsening_sequence(
       triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
 
     setup_time += time.wall_time();

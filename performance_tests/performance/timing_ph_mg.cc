@@ -43,6 +43,7 @@
 #define TESTING_ENVIRONMENT heavy
 
 #include "performance_test_driver.h"
+#include "coarsening_sequence.h"
 
 using namespace dealii;
 
@@ -244,7 +245,7 @@ void
 LaplaceProblem<dim, fe_degree>::create_coarse_triangulations()
 {
   coarse_triangulations =
-    MGTransferGlobalCoarseningTools::create_geometric_coarsening_sequence(
+    multigrid::create_refined_coarsening_sequence(
       triangulation,
       RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
 }
