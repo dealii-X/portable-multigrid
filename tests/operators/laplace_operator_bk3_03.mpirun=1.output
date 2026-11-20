@@ -1,0 +1,73 @@
+
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 2, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 2, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 2, fe_degree = 3, n_q_points_1d = 4, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 2, fe_degree = 3, n_q_points_1d = 4, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 4, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 4, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 4, n_q_points_1d = 5, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 4, n_q_points_1d = 5, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4, double, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4, double, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2, float, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2, float, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 4, n_q_points_1d = 5, float, overlap = false
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK
+DEAL:0::dim = 3, fe_degree = 4, n_q_points_1d = 5, float, overlap = true
+DEAL:0::abstracted: OK
+DEAL:0::plain: OK
+DEAL:0::plain_constant_shape_values: OK

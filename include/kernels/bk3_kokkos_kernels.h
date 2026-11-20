@@ -6,6 +6,7 @@
 
 #include <Kokkos_Core.hpp>
 
+#include <type_traits>
 #include <vector>
 
 #include "matrix_free/portable_evaluation_kernels.h"
@@ -26,8 +27,53 @@ namespace BK3
 
     using ExecutionSpace = MemorySpace::Default::kokkos_space::execution_space;
 
+    // 1D shape values [dof * nq + q] for the kernel closure instead of a
+    // device view. CUDA passes the closure in constant memory, where a read
+    // at the same address is shared by a warp.
+    template <typename Number, int n_entries>
+    struct ShapeValuesInClosure
+    {
+      Number values[n_entries];
+    };
+
     namespace internal
     {
+      template <typename ShapeValuesType>
+      struct is_shape_values_in_closure : std::false_type
+      {};
+
+      template <typename Number, int n_entries>
+      struct is_shape_values_in_closure<ShapeValuesInClosure<Number, n_entries>> : std::true_type
+      {};
+
+      // Shape values as a team reads them: a device view is copied to the
+      // team scratch (the caller places the barrier), the closure is read
+      // in place.
+      template <typename ViewType, typename Number>
+      KOKKOS_INLINE_FUNCTION const Number *
+      team_shape_values(const ViewType &shape_values,
+                        Number         *scratch,
+                        const int       n_entries,
+                        const int       thread_id,
+                        const int       block_size)
+      {
+        for (int tid = thread_id; tid < n_entries; tid += block_size)
+          scratch[tid] = shape_values[tid];
+        return scratch;
+      }
+
+      template <typename Number, int n_entries>
+      KOKKOS_INLINE_FUNCTION const Number *
+      team_shape_values(const ShapeValuesInClosure<Number, n_entries> &shape_values,
+                        Number *,
+                        const int,
+                        const int,
+                        const int)
+      {
+        return shape_values.values;
+      }
+
+
       // Number of compute units the backend can run teams on concurrently:
       // streaming multiprocessors on CUDA/HIP, hardware threads elsewhere.
       inline int
@@ -670,9 +716,13 @@ namespace BK3
 
 
 
-    template <int dim, int nm, int nq, typename Number>
+    // Hand-written BK3 kernel. d_shape_values is a device view, copied to the
+    // team scratch, or a ShapeValuesInClosure. Launches on `exec` and returns
+    // without fencing.
+    template <int dim, int nm, int nq, typename Number, typename ShapeValuesType>
     void
-    KokkosKernel(const DeviceView<Number> d_shape_values,
+    KokkosKernel(const ExecutionSpace    &exec,
+                 const ShapeValuesType    d_shape_values,
                  const DeviceView<Number> d_co_shape_gradients,
                  const DeviceView<Number> d_G,
                  const DeviceView<Number> d_in,
@@ -686,6 +736,10 @@ namespace BK3
     {
       if (n_cells == 0)
         return;
+
+      constexpr bool shape_values_in_closure =
+        internal::is_shape_values_in_closure<ShapeValuesType>::value;
+      constexpr int n_shape_values_scratch = shape_values_in_closure ? 0 : nm * nq;
 
       constexpr int nq_total = Utilities::pow(nq, dim);
       constexpr int nm_total = Utilities::pow(nm, dim);
@@ -718,27 +772,25 @@ namespace BK3
                                               static_cast<int>(threads_per_block)));
 
       {
-        const int ssize = nm * nq + // shape values
-                          nq * nq + // co-shape gradients
+        const int ssize = n_shape_values_scratch + // shape values
+                          nq * nq +                // co-shape gradients
                           n_scratch_arrays * nelmtPerBatch *
                             nq_total; // working scratch arrays: s_wsp0, s_wsp1, rqr, rqs, rqt
 
         const unsigned int shmem_size = ssize * sizeof(Number);
 
-        typedef Kokkos::TeamPolicy<>::member_type member_type;
-        Kokkos::TeamPolicy<>                      policy(numBlocks, threadsPerBlock);
+        using member_type = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+        Kokkos::TeamPolicy<ExecutionSpace> policy(exec, numBlocks, threadsPerBlock);
         policy.set_scratch_size(0, Kokkos::PerTeam(shmem_size));
 
-        Kokkos::parallel_for(
-          policy, KOKKOS_LAMBDA(member_type team_member) {
+        const auto functor = KOKKOS_LAMBDA(member_type team_member) {
             Number r_p[nq];
             Number r_q[nq];
             Number r_r[nq];
 
             Number *scratch = (Number *)team_member.team_shmem().get_shmem(shmem_size);
 
-            Number *s_shape_values       = scratch;
-            Number *s_co_shape_gradients = s_shape_values + nq * nm;
+            Number *s_co_shape_gradients = scratch + n_shape_values_scratch;
 
             Number *s_wsp0 = s_co_shape_gradients + nq * nq;
             Number *s_wsp1 = s_wsp0 + nelmtPerBatch * nq_total;
@@ -757,10 +809,8 @@ namespace BK3
             const int blockSize = team_member.team_size();
 
             // copy to shared memory
-            for (int tid = threadIdx; tid < nm * nq; tid += blockSize)
-              {
-                s_shape_values[tid] = d_shape_values[tid];
-              }
+            const Number *s_shape_values =
+              internal::team_shape_values(d_shape_values, scratch, nm * nq, threadIdx, blockSize);
 
             for (int tid = threadIdx; tid < nq * nq; tid += blockSize)
               {
@@ -1390,10 +1440,50 @@ namespace BK3
 
                 eb += team_member.league_size();
               }
-          });
+          };
 
-        Kokkos::fence();
+        // The closure grows by the shape values. As a kernel argument it
+        // stays in constant memory; Kokkos' constant buffer, the default
+        // above 512 bytes, makes each launch wait for the previous kernel.
+        if constexpr (shape_values_in_closure)
+          Kokkos::parallel_for(
+            Kokkos::Experimental::require(policy,
+                                          Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+            functor);
+        else
+          Kokkos::parallel_for(policy, functor);
       }
+    }
+
+
+    // Default execution-space instance, fenced before returning.
+    template <int dim, int nm, int nq, typename Number, typename ShapeValuesType>
+    void
+    KokkosKernel(const ShapeValuesType    d_shape_values,
+                 const DeviceView<Number> d_co_shape_gradients,
+                 const DeviceView<Number> d_G,
+                 const DeviceView<Number> d_in,
+                 DeviceView<Number>       d_out,
+                 const DoFIndicesView     dof_indices,
+                 const unsigned int       n_cells,
+                 const unsigned int       n_blocks          = numbers::invalid_unsigned_int,
+                 const unsigned int       threads_per_block = numbers::invalid_unsigned_int,
+                 const unsigned int       n_cells_per_batch = numbers::invalid_unsigned_int,
+                 const CellRangeIdView    cell_range_ids    = CellRangeIdView())
+    {
+      KokkosKernel<dim, nm, nq, Number>(ExecutionSpace(),
+                                        d_shape_values,
+                                        d_co_shape_gradients,
+                                        d_G,
+                                        d_in,
+                                        d_out,
+                                        dof_indices,
+                                        n_cells,
+                                        n_blocks,
+                                        threads_per_block,
+                                        n_cells_per_batch,
+                                        cell_range_ids);
+      Kokkos::fence();
     }
 
     // template <int dim, int n_local_dofs_1d, int n_q_points_1d, typename Number>

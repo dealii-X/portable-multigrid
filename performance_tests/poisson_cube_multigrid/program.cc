@@ -33,6 +33,7 @@
 #include <deal.II/numerics/vector_tools.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -1184,6 +1185,11 @@ main(int argc, char *argv[])
       if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         std::cout << "Settings of parameters:                " << std::endl
                   << "Variant:                               " << MG_VARIANT_NAME << std::endl
+                  << "BK3 vmult kernel (BK3_VMULT_KERNEL):   "
+                  << (!use_bk3                                   ? "-" :
+                      std::getenv("BK3_VMULT_KERNEL") != nullptr ? std::getenv("BK3_VMULT_KERNEL") :
+                                                                   "abstracted")
+                  << std::endl
                   << "Number of MPI ranks:                   "
                   << Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << std::endl
                   << "Polynomial degree:                     " << degree << std::endl
