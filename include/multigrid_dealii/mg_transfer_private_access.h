@@ -99,6 +99,9 @@ namespace Copy
       DEALII_COPY_CPU_TRANSFER_ACCESSOR(n_components)
       DEALII_COPY_CPU_TRANSFER_ACCESSOR(constraint_info_coarse)
       DEALII_COPY_CPU_TRANSFER_ACCESSOR(constraint_info_fine)
+      DEALII_COPY_CPU_TRANSFER_ACCESSOR(weights)
+      DEALII_COPY_CPU_TRANSFER_ACCESSOR(weights_start)
+      DEALII_COPY_CPU_TRANSFER_ACCESSOR(weights_are_compressed)
       // the following three are protected members of the base class
       // dealii::internal::MGTwoLevelTransferCore
       DEALII_COPY_CPU_TRANSFER_ACCESSOR(fine_element_is_continuous)
@@ -124,6 +127,9 @@ namespace Copy
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, n_components)               \
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, constraint_info_coarse)     \
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, constraint_info_fine)       \
+  DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, weights)                    \
+  DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, weights_start)              \
+  DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, weights_are_compressed)     \
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, fine_element_is_continuous) \
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, partitioner_coarse)         \
   DEALII_COPY_CPU_TRANSFER_INSTANTIATE_MEMBER(dim, Number, partitioner_fine)

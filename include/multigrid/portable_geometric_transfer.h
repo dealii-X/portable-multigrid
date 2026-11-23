@@ -14,6 +14,7 @@
 
 #include "kernels/bk1_kokkos_kernels.h"
 #include "multigrid/portable_geometric_transfer_core.h"
+#include "multigrid_dealii/mg_transfer_private_access.h"
 
 
 DEAL_II_NAMESPACE_OPEN
@@ -749,12 +750,6 @@ namespace Portable
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const override;
 
-    void
-    setup_weights();
-
-    void
-    setup_dof_indices();
-
     std::vector<h_mg_transfer::MGTransferScheme<dim, fe_degree, number>> transfer_schemes;
 
 
@@ -766,14 +761,6 @@ namespace Portable
 
     const unsigned int mg_level_coarse = numbers::invalid_unsigned_int;
     const unsigned int mg_level_fine   = numbers::invalid_unsigned_int;
-
-    dealii::internal::MatrixFreeFunctions::
-      ConstraintInfo<dim, VectorizedArray<number, 1>, types::global_dof_index>
-        constraint_info_fine;
-
-    dealii::internal::MatrixFreeFunctions::
-      ConstraintInfo<dim, VectorizedArray<number, 1>, types::global_dof_index>
-        constraint_info_coarse;
   };
 
 
@@ -886,10 +873,7 @@ namespace Portable
     const AffineConstraints<number> &constraints_coarse,
     const AffineConstraints<number> &constraints_fine)
   {
-    Assert((this->mg_level_fine == numbers::invalid_unsigned_int &&
-            this->mg_level_coarse == numbers::invalid_unsigned_int) ||
-             (this->mg_level_coarse + 1 == this->mg_level_fine),
-           ExcNotImplemented());
+    namespace host_access = Copy::Portable::internal;
 
     this->constraints_coarse = &constraints_coarse;
     this->constraints_fine   = &constraints_fine;
@@ -897,525 +881,199 @@ namespace Portable
     this->dof_handler_coarse = &op_coarse.get_dof_handler();
     this->dof_handler_fine   = &op_fine.get_dof_handler();
 
-    Assert(this->dof_handler_coarse->get_mpi_communicator() ==
-             this->dof_handler_fine->get_mpi_communicator(),
-           ExcMessage("Coarse and fine DoFHandler must have the same MPI communicator."));
+    // deal.II's host transfer does the setup; its data is copied to the
+    // device below and the host transfer is dropped at the end of this function
+    host_access::CpuTransfer<dim, number> host_transfer;
+    host_transfer.reinit_geometric_transfer(*this->dof_handler_fine,
+                                            *this->dof_handler_coarse,
+                                            constraints_fine,
+                                            constraints_coarse,
+                                            this->mg_level_fine,
+                                            this->mg_level_coarse);
 
-    std::unique_ptr<dealii::internal::FineDoFHandlerViewBase<dim>> dof_handler_fine_view =
-      std::make_unique<dealii::internal::GlobalCoarseningFineDoFHandlerView<dim>>(
-        *this->dof_handler_fine,
-        *this->dof_handler_coarse,
-        this->mg_level_fine,
-        this->mg_level_coarse);
+    const auto &host_schemes           = host_access::cpu_schemes(host_transfer);
+    const auto &constraint_info_coarse = host_access::cpu_constraint_info_coarse(host_transfer);
+    const auto &constraint_info_fine   = host_access::cpu_constraint_info_fine(host_transfer);
+    const auto &host_weights           = host_access::cpu_weights(host_transfer);
+    const auto &host_weights_start     = host_access::cpu_weights_start(host_transfer);
+    const auto &host_weights_are_compressed =
+      host_access::cpu_weights_are_compressed(host_transfer);
 
-    const auto reference_cell = this->dof_handler_fine->get_fe().reference_cell();
+    AssertThrow(host_access::cpu_fine_element_is_continuous(host_transfer), ExcNotImplemented());
+    AssertThrow(host_access::cpu_n_components(host_transfer) == 1, ExcNotImplemented());
 
-    // set up mg-transfer_schemes
-    //   (0) no refinement -> identity
-    //   (1) h-refinement
-    //   (2) - other
-    transfer_schemes.resize(1 + reference_cell.n_isotropic_refinement_choices()); // size=2
+    // schemes: (0) not refined, (1) refined. The kernels handle refined cells only.
+    AssertThrow(host_schemes.size() == 2 && host_schemes[0].n_coarse_cells == 0,
+                ExcNotImplemented());
 
-    const auto &fe_fine   = this->dof_handler_fine->get_fe();
-    const auto &fe_coarse = this->dof_handler_coarse->get_fe();
+    this->partitioner_coarse = host_access::cpu_partitioner_coarse(host_transfer);
+    this->partitioner_fine   = host_access::cpu_partitioner_fine(host_transfer);
 
-    // helper function: to process the fine level cells; function
-    // fu_non_refined is performed on cells that are not refined and
-    // fu_refined is performed on children of cells that are refined
-    const auto process_cells = [&](const auto &fu_non_refined, const auto &fu_refined)
+    this->vec_coarse.reinit(this->partitioner_coarse);
+    this->vec_fine.reinit(this->partitioner_fine);
+
+    transfer_schemes.resize(host_schemes.size());
+
+    // the host transfer stores the weights per batch of n_lanes cells
+    const unsigned int n_lanes      = VectorizedArray<number>::size();
+    std::size_t        batch_offset = 0;
+    unsigned int       cell_offset  = 0;
+
+    for (unsigned int scheme_index = 0; scheme_index < host_schemes.size(); ++scheme_index)
       {
-        dealii::internal::loop_over_active_or_level_cells(
-          *this->dof_handler_coarse,
-          this->mg_level_coarse,
-          [&](const auto &cell_coarse)
-            {
-              if (this->mg_level_coarse == numbers::invalid_unsigned_int)
-                {
-                  // get a reference to the equivalent cell on the fine
-                  // triangulation
-                  const auto cell_coarse_on_fine_mesh =
-                    dof_handler_fine_view->get_cell_view(cell_coarse);
+        auto       &scheme      = transfer_schemes[scheme_index];
+        const auto &host_scheme = host_schemes[scheme_index];
 
-                  // check if cell has children
-                  if (cell_coarse_on_fine_mesh.has_children())
-                    // ... cell has children -> process children
-                    for (unsigned int c = 0; c < GeometryInfo<dim>::max_children_per_cell; c++)
-                      fu_refined(cell_coarse,
-                                 dof_handler_fine_view->get_cell_view(cell_coarse, c),
-                                 c);
-                  else // ... cell has no children -> process cell
-                    fu_non_refined(cell_coarse, cell_coarse_on_fine_mesh);
-                }
-              else
-                {
-                  // check if cell has children
-                  if (cell_coarse->has_children())
-                    // ... cell has children -> process children
-                    for (unsigned int c = 0; c < GeometryInfo<dim>::max_children_per_cell; c++)
-                      fu_refined(cell_coarse,
-                                 dof_handler_fine_view->get_cell_view(cell_coarse, c),
-                                 c);
-                }
-            });
-      };
+        scheme.n_coarse_cells = host_scheme.n_coarse_cells;
 
-    // check if FE is the same
-    AssertDimension(fe_coarse.n_dofs_per_cell(), fe_fine.n_dofs_per_cell());
-
-    for (auto &scheme : transfer_schemes)
-      {
-        /**  FIXME: MGTransferScheme for the moment assumes only global
-         * refinement, not local. */
-        // number of dofs on coarse and fine cells
-        // scheme.n_dofs_per_cell_coarse = fe_coarse.n_dofs_per_cell();
-        // scheme.n_dofs_per_cell_fine =
-        //   Utilities::pow(2 * fe_fine.degree + 1, dim);
-
-        // degree of FE on coarse and fine cell
-        // scheme.degree_coarse = fe_coarse.degree;
-        // scheme.degree_fine   = fe_coarse.degree * 2;
-
-        Assert(scheme.degree_coarse == fe_coarse.degree,
-               ExcMessage("Scheme coarse degree is not set correctly."));
-        Assert(scheme.degree_fine == fe_coarse.degree * 2,
-               ExcMessage("Scheme fine degree is not set correctly."));
-
-        Assert(scheme.n_dofs_per_cell_coarse == fe_coarse.n_dofs_per_cell(),
-               ExcMessage("Scheme n_dofs_per_cell_coarse is not set correctly."));
-
-        Assert(scheme.n_dofs_per_cell_fine == Utilities::pow(2 * fe_fine.degree + 1, dim),
-               ExcMessage("Scheme n_dofs_per_cell_fine is not set correctly."));
-
-        // reset number of coarse cells
-        scheme.n_coarse_cells = 0;
-      }
-
-    /**  FIXME: MGTransferScheme for the moment assumes only global
-     * refinement, not local. */
-    // correct for first scheme
-    // transfer_schemes[0].n_dofs_per_cell_fine = fe_coarse.n_dofs_per_cell();
-    // transfer_schemes[0].degree_fine          = fe_coarse.degree;
-
-    std::uint8_t current_refinement_case = static_cast<std::uint8_t>(-1);
-
-    // count coarse cells for each scheme (0, 1, ...)
-    {
-      // count by looping over all coarse cells
-      process_cells([&](const auto &, const auto &) { transfer_schemes[0].n_coarse_cells++; },
-                    [&](const auto &, const auto &cell_fine, const auto c)
-                      {
-                        std::uint8_t refinement_case = cell_fine.refinement_case();
-
-                        // Assert triggers if cell has no children
-                        Assert(RefinementCase<dim>(refinement_case) ==
-                                 RefinementCase<dim>::isotropic_refinement,
-                               ExcNotImplemented());
-
-                        refinement_case = 1;
-
-                        if (c == 0)
-                          {
-                            transfer_schemes[refinement_case].n_coarse_cells++;
-
-                            current_refinement_case = refinement_case;
-                          }
-                        else
-                          // Check that all children have the same refinement case
-                          AssertThrow(current_refinement_case == refinement_case,
-                                      ExcNotImplemented());
-                      });
-    }
-
-    const auto cell_local_children_indices =
-      dealii::internal::get_child_offsets<dim>(transfer_schemes[0].n_dofs_per_cell_coarse,
-                                               fe_fine.degree,
-                                               fe_fine.degree);
-
-    std::vector<unsigned int> n_dof_indices_fine(transfer_schemes.size() + 1);
-    std::vector<unsigned int> n_dof_indices_coarse(transfer_schemes.size() + 1);
-
-    for (unsigned int i = 0; i < transfer_schemes.size(); ++i)
-      {
-        n_dof_indices_fine[i + 1] =
-          transfer_schemes[i].n_dofs_per_cell_fine * transfer_schemes[i].n_coarse_cells;
-        n_dof_indices_coarse[i + 1] =
-          transfer_schemes[i].n_dofs_per_cell_coarse * transfer_schemes[i].n_coarse_cells;
-      }
-
-    for (unsigned int i = 0; i < transfer_schemes.size(); ++i)
-      {
-        n_dof_indices_fine[i + 1] += n_dof_indices_fine[i];
-        n_dof_indices_coarse[i + 1] += n_dof_indices_coarse[i];
-      }
-
-    // indices
-
-    {
-      std::vector<types::global_dof_index> local_dof_indices(
-        transfer_schemes[0].n_dofs_per_cell_coarse);
-
-      // ---------------------- lexicographic_numbering ----------------------
-      std::vector<unsigned int> lexicographic_numbering_fine;
-      std::vector<unsigned int> lexicographic_numbering_coarse;
-      {
-        const Quadrature<1> dummy_quadrature(std::vector<Point<1>>(1, Point<1>()));
-
-        dealii::internal::MatrixFreeFunctions::ShapeInfo<number> shape_info;
-
-        shape_info.reinit(dummy_quadrature, fe_fine, 0);
-        lexicographic_numbering_fine = shape_info.lexicographic_numbering;
-
-        shape_info.reinit(dummy_quadrature, fe_coarse, 0);
-        lexicographic_numbering_coarse = shape_info.lexicographic_numbering;
-      }
-
-      // ------------------------------ indices ------------------------------
-      std::vector<types::global_dof_index> level_dof_indices_coarse(
-        transfer_schemes[0].n_dofs_per_cell_fine);
-
-      std::vector<types::global_dof_index> level_dof_indices_fine(
-        transfer_schemes[1].n_dofs_per_cell_fine);
-
-      unsigned int n_coarse_cells_total = 0;
-
-      for (const auto &scheme : transfer_schemes)
-        n_coarse_cells_total += scheme.n_coarse_cells;
-
-      this->constraint_info_coarse.reinit(*this->dof_handler_coarse,
-                                          n_coarse_cells_total,
-                                          constraints_coarse.n_constraints() > 0);
-
-      this->constraint_info_coarse.set_locally_owned_indices(
-        this->dof_handler_coarse->locally_owned_dofs());
-
-      this->constraint_info_fine.reinit(n_coarse_cells_total);
-
-      this->constraint_info_fine.set_locally_owned_indices(
-        this->dof_handler_fine->locally_owned_dofs());
-
-
-      std::vector<unsigned int> cell_no(transfer_schemes.size(), 0);
-      for (unsigned int i = 1; i < transfer_schemes.size(); ++i)
-        cell_no[i] = cell_no[i - 1] + transfer_schemes[i - 1].n_coarse_cells;
-
-      process_cells(
-        [&](const auto &cell_coarse, const auto &cell_fine)
+        if (scheme_index > 0)
           {
-            // first process cells with scheme 0
-            // parent
-            {
-              this->constraint_info_coarse.read_dof_indices(
-                cell_no[0], this->mg_level_coarse, cell_coarse, constraints_coarse, {});
-            }
+            AssertThrow(host_scheme.degree_coarse == scheme.degree_coarse &&
+                          host_scheme.degree_fine == scheme.degree_fine &&
+                          host_scheme.n_dofs_per_cell_coarse == scheme.n_dofs_per_cell_coarse &&
+                          host_scheme.n_dofs_per_cell_fine == scheme.n_dofs_per_cell_fine,
+                        ExcInternalError());
 
-            // child
-            {
-              cell_fine.get_dof_indices(local_dof_indices);
-              for (unsigned int i = 0; i < transfer_schemes[0].n_dofs_per_cell_coarse; i++)
-                level_dof_indices_coarse[i] = local_dof_indices[lexicographic_numbering_fine[i]];
-
-              this->constraint_info_fine.read_dof_indices(cell_no[0], level_dof_indices_coarse, {});
-            }
-
-            // move pointers
-            {
-              ++cell_no[0];
-            }
-          },
-        [&](const auto &cell_coarse, const auto &cell_fine, const auto c)
-          {
-            // process rest of cells
-            const std::uint8_t refinement_case = 1;
-            // parent (only once at the beginning)
-            if (c == 0)
-              {
-                this->constraint_info_coarse.read_dof_indices(cell_no[refinement_case],
-                                                              this->mg_level_coarse,
-                                                              cell_coarse,
-                                                              constraints_coarse,
-                                                              {});
-
-                level_dof_indices_fine.assign(level_dof_indices_fine.size(),
-                                              numbers::invalid_dof_index);
-              }
-
-            // child
-            {
-              cell_fine.get_dof_indices(local_dof_indices);
-              for (unsigned int i = 0; i < transfer_schemes[refinement_case].n_dofs_per_cell_coarse;
-                   ++i)
-                {
-                  const auto index = local_dof_indices[lexicographic_numbering_fine[i]];
-                  Assert(level_dof_indices_fine[cell_local_children_indices[c][i]] ==
-                             numbers::invalid_dof_index ||
-                           level_dof_indices_fine[cell_local_children_indices[c][i]] == index,
-                         ExcInternalError());
-
-                  level_dof_indices_fine[cell_local_children_indices[c][i]] = index;
-                }
-            }
-
-            // move pointers (only once at the end)
-            if (c + 1 == GeometryInfo<dim>::max_children_per_cell)
-              {
-                this->constraint_info_fine.read_dof_indices(cell_no[refinement_case],
-                                                            level_dof_indices_fine,
-                                                            {});
-
-                ++cell_no[refinement_case];
-              }
-          });
-    }
-
-    {
-      this->partitioner_coarse =
-        this->constraint_info_coarse.finalize(this->dof_handler_coarse->get_mpi_communicator());
-
-      this->partitioner_fine =
-        this->constraint_info_fine.finalize(this->dof_handler_fine->get_mpi_communicator());
-
-      this->vec_coarse.reinit(this->partitioner_coarse);
-      this->vec_fine.reinit(this->partitioner_fine);
-
-
-      // if constexpr (running_in_debug_mode())
-      //   {
-      //     // We would like to assert that no strange indices were added in
-      //     // the transfer. Unfortunately, we can only do this if we're
-      //     // working with the multigrid indices within the DoFHandler, not
-      //     // when the transfer comes from different DoFHandler object, as
-      //     // the latter might have unrelated parallel partitions.
-      //     if (mg_level_fine != numbers::invalid_unsigned_int)
-      //       {
-      //         Utilities::MPI::Partitioner part_check(
-      //           dof_handler_fine.locally_owned_mg_dofs(mg_level_fine),
-      //           DoFTools::extract_locally_relevant_level_dofs(dof_handler_fine,
-      //                                                         mg_level_fine),
-      //           dof_handler_fine.get_mpi_communicator());
-      //         Assert(partitioner_fine->ghost_indices().is_subset_of(
-      //                  part_check.ghost_indices()),
-      //                ExcMessage(
-      //                  "The setup of ghost indices failed, because the set
-      //                  " "of ghost indices identified for the transfer is "
-      //                  "not a subset of the locally relevant dofs on level
-      //                  "
-      //                  + std::to_string(mg_level_fine) + " with " +
-      //                  std::to_string(dof_handler_fine.n_dofs(mg_level_fine))
-      //                  + " dofs in total, which means we do not understand
-      //                  " "the indices that were collected. This is very "
-      //                  "likely a bug in deal.II, and could e.g. be caused "
-      //                  "by some integer type narrowing between 64 bit and "
-      //                  "32 bit integers."));
-      //       }
-      //   }
-    }
-
-    // ------------- prolongation matrix (0) -> identity matrix --------------
-
-    // nothing to do since for identity prolongation matrices a short-cut
-    // code path is used during prolongation/restriction
-
-    // -------------------prolongation matrix (i = 1 ... n)-------------------
-    {
-      AssertDimension(fe_fine.n_base_elements(), 1);
-
-
-
-      for (unsigned int transfer_scheme_index = 1; transfer_scheme_index < transfer_schemes.size();
-           ++transfer_scheme_index)
-        {
-          // const auto fe = create_1D_fe(fe_fine.base_element(0));
-          const auto fe = FE_Q<1>(fe_fine.degree);
-
-          std::vector<unsigned int> renumbering(fe.n_dofs_per_cell());
-          {
-            AssertIndexRange(fe.n_dofs_per_vertex(), 2);
-            renumbering[0] = 0;
-            for (unsigned int i = 0; i < fe.dofs_per_line; ++i)
-              renumbering[i + fe.n_dofs_per_vertex()] =
-                GeometryInfo<1>::vertices_per_cell * fe.n_dofs_per_vertex() + i;
-            if (fe.n_dofs_per_vertex() > 0)
-              renumbering[fe.n_dofs_per_cell() - fe.n_dofs_per_vertex()] = fe.n_dofs_per_vertex();
-          }
-
-          const unsigned int shift           = fe.n_dofs_per_cell() - fe.n_dofs_per_vertex();
-          const unsigned int n_child_dofs_1d = fe.n_dofs_per_cell() * 2 - fe.n_dofs_per_vertex();
-
-          {
-            // transfer_schemes[scheme.prolongation_matrix]
-            //   .prolongation_matrix.resize(fe.n_dofs_per_cell() *
-            //                               n_child_dofs_1d);
-
-            transfer_schemes[transfer_scheme_index].prolongation_matrix_shared_memory =
+            // prolongation matrix
+            scheme.prolongation_matrix_shared_memory =
               Kokkos::View<number *, MemorySpace::Default::kokkos_space>(
                 Kokkos::view_alloc("prolongation_matrix_h_transfer_scheme_" +
-                                     std::to_string(transfer_scheme_index),
+                                     std::to_string(scheme_index),
                                    Kokkos::WithoutInitializing),
-                fe.n_dofs_per_cell() * n_child_dofs_1d);
+                host_scheme.prolongation_matrix.size());
 
-            auto prolongation_matrix_host = Kokkos::create_mirror_view(
-              transfer_schemes[transfer_scheme_index].prolongation_matrix_shared_memory);
+            auto prolongation_matrix_host =
+              Kokkos::create_mirror_view(scheme.prolongation_matrix_shared_memory);
 
-            for (unsigned int c = 0; c < GeometryInfo<1>::max_children_per_cell; ++c)
-              for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i)
-                for (unsigned int j = 0; j < fe.n_dofs_per_cell(); ++j)
-                  prolongation_matrix_host[i * n_child_dofs_1d + j + c * shift] =
-                    fe.get_prolongation_matrix(c)(renumbering[j], renumbering[i]);
+            for (unsigned int i = 0; i < host_scheme.prolongation_matrix.size(); ++i)
+              prolongation_matrix_host[i] = host_scheme.prolongation_matrix[i];
 
-            Kokkos::deep_copy(
-              transfer_schemes[transfer_scheme_index].prolongation_matrix_shared_memory,
-              prolongation_matrix_host);
+            Kokkos::deep_copy(scheme.prolongation_matrix_shared_memory, prolongation_matrix_host);
             Kokkos::fence();
           }
-        }
-    }
 
-    setup_dof_indices();
-
-    setup_weights();
-  }
-
-  template <int dim, int fe_degree, typename number>
-  void
-  GeometricTransfer<dim, fe_degree, number>::setup_weights()
-  {
-    LinearAlgebra::distributed::Vector<number> weight_vector;
-    weight_vector.reinit(this->partitioner_fine);
-
-    for (const auto i : constraint_info_fine.dof_indices)
-      weight_vector.local_element(i) += 1.0;
-
-    weight_vector.compress(VectorOperation::add);
-
-    for (unsigned int i = 0; i < weight_vector.locally_owned_size(); ++i)
-      if (weight_vector.local_element(i) > 0)
-        weight_vector.local_element(i) = 1.0 / weight_vector.local_element(i);
-
-    // ... clear constrained indices
-    for (const auto &constrained_dofs : this->constraints_fine->get_lines())
-      if (weight_vector.locally_owned_elements().is_element(constrained_dofs.index))
-        weight_vector[constrained_dofs.index] = 0.0;
-
-    weight_vector.update_ghost_values();
-
-    unsigned int cell_counter = 0;
-    unsigned int scheme_index = 0;
-    for (auto &scheme : transfer_schemes)
-      {
-        scheme.weights = Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
-          Kokkos::view_alloc("weights_h_transer_scheme_" + std::to_string(scheme_index),
-                             Kokkos::WithoutInitializing),
-          scheme.n_dofs_per_cell_fine,
-          scheme.n_coarse_cells);
-
-        auto weights_view_host = Kokkos::create_mirror_view(scheme.weights);
-
-        const unsigned int first_cell = cell_counter;
-        for (unsigned int cell = 0; cell < scheme.n_coarse_cells; ++cell)
-          {
-            const unsigned int  cell_index = first_cell + cell;
-            const unsigned int *dof_indices_fine =
-              this->constraint_info_fine.dof_indices.data() +
-              this->constraint_info_fine.row_starts[cell_index].first;
-
-            for (unsigned int i = 0; i < scheme.n_dofs_per_cell_fine; ++dof_indices_fine, ++i)
-              {
-                weights_view_host(i, cell) = weight_vector.local_element(*dof_indices_fine);
-              }
-            ++cell_counter;
-          }
-
-        Kokkos::deep_copy(scheme.weights, weights_view_host);
-        Kokkos::fence();
-      }
-  }
-
-  template <int dim, int fe_degree, typename number>
-  void
-  GeometricTransfer<dim, fe_degree, number>::setup_dof_indices()
-  {
-    unsigned int scheme_counter = 0;
-    unsigned int cell_counter   = 0;
-    for (auto &scheme : transfer_schemes)
-      {
-        if (scheme.n_coarse_cells == 0)
-          continue;
-
-        scheme.dof_indices_coarse =
-          Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-            Kokkos::view_alloc("h_transfer_dof_indices_coarse_scheme_" +
-                                 std::to_string(scheme_counter),
+        // weights
+        {
+          scheme.weights = Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
+            Kokkos::view_alloc("weights_h_transer_scheme_" + std::to_string(scheme_index),
                                Kokkos::WithoutInitializing),
-            scheme.n_dofs_per_cell_coarse,
+            scheme.n_dofs_per_cell_fine,
             scheme.n_coarse_cells);
 
-        scheme.dof_indices_fine = Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
-          Kokkos::view_alloc("h_transfer_dof_indices_fine_scheme_" + std::to_string(scheme_counter),
-                             Kokkos::WithoutInitializing),
-          scheme.n_dofs_per_cell_fine,
-          scheme.n_coarse_cells);
+          auto weights_view_host = Kokkos::create_mirror_view(scheme.weights);
 
-        auto dof_indices_coarse_host = Kokkos::create_mirror_view(scheme.dof_indices_coarse);
-
-        auto dof_indices_fine_host = Kokkos::create_mirror_view(scheme.dof_indices_fine);
-
-        const unsigned int firts_cell = cell_counter;
-        for (unsigned int cell = 0; cell < scheme.n_coarse_cells; ++cell)
-          {
-            const unsigned int cell_index = firts_cell + cell;
-
-            // fill coarse indices
+          // a batch holds either all weights or 3^dim values by entity
+          // (first / inner / last point per direction)
+          const int  n_points_1d = scheme.degree_fine + 1;
+          const auto entity      = [n_points_1d](const int i)
             {
-              const unsigned int *dof_indices_coarse =
-                this->constraint_info_coarse.dof_indices.data() +
-                this->constraint_info_coarse.row_starts[cell_index].first;
-              unsigned int index_indicators =
-                this->constraint_info_coarse.row_starts[cell_index].second;
-              unsigned int next_index_indicators =
-                this->constraint_info_coarse.row_starts[cell_index + 1].second;
+              return i == 0 ? 0 : (i == n_points_1d - 1 ? 2 : 1);
+            };
 
-              unsigned int ind_local = 0;
-              for (; index_indicators != next_index_indicators; ++index_indicators)
+          for (unsigned int cell = 0; cell < scheme.n_coarse_cells; ++cell)
+            {
+              const std::size_t  batch         = batch_offset + cell / n_lanes;
+              const unsigned int lane          = cell % n_lanes;
+              const auto        *batch_weights = host_weights.data() + host_weights_start[batch];
+
+              if (host_weights_are_compressed[batch])
                 {
-                  const std::pair<unsigned short, unsigned short> indicator =
-                    this->constraint_info_coarse.constraint_indicator[index_indicators];
+                  unsigned int index = 0;
+                  for (int k = 0; k < (dim > 2 ? n_points_1d : 1); ++k)
+                    for (int j = 0; j < (dim > 1 ? n_points_1d : 1); ++j)
+                      for (int i = 0; i < n_points_1d; ++i, ++index)
+                        weights_view_host(index, cell) =
+                          batch_weights[9 * (dim > 2 ? entity(k) : 0) +
+                                        3 * (dim > 1 ? entity(j) : 0) + entity(i)][lane];
+                }
+              else
+                for (unsigned int i = 0; i < scheme.n_dofs_per_cell_fine; ++i)
+                  weights_view_host(i, cell) = batch_weights[i][lane];
+            }
 
-                  for (unsigned int j = 0; j < indicator.first; ++j)
+          Kokkos::deep_copy(scheme.weights, weights_view_host);
+          Kokkos::fence();
+        }
+
+        // DoF indices
+        if (scheme.n_coarse_cells > 0)
+          {
+            scheme.dof_indices_coarse =
+              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+                Kokkos::view_alloc("h_transfer_dof_indices_coarse_scheme_" +
+                                     std::to_string(scheme_index),
+                                   Kokkos::WithoutInitializing),
+                scheme.n_dofs_per_cell_coarse,
+                scheme.n_coarse_cells);
+
+            scheme.dof_indices_fine =
+              Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
+                Kokkos::view_alloc("h_transfer_dof_indices_fine_scheme_" +
+                                     std::to_string(scheme_index),
+                                   Kokkos::WithoutInitializing),
+                scheme.n_dofs_per_cell_fine,
+                scheme.n_coarse_cells);
+
+            auto dof_indices_coarse_host = Kokkos::create_mirror_view(scheme.dof_indices_coarse);
+            auto dof_indices_fine_host   = Kokkos::create_mirror_view(scheme.dof_indices_fine);
+
+            for (unsigned int cell = 0; cell < scheme.n_coarse_cells; ++cell)
+              {
+                const unsigned int cell_index = cell_offset + cell;
+
+                // coarse indices, constrained DoFs marked invalid
+                {
+                  const unsigned int *dof_indices_coarse =
+                    constraint_info_coarse.dof_indices.data() +
+                    constraint_info_coarse.row_starts[cell_index].first;
+                  unsigned int index_indicators =
+                    constraint_info_coarse.row_starts[cell_index].second;
+                  const unsigned int next_index_indicators =
+                    constraint_info_coarse.row_starts[cell_index + 1].second;
+
+                  unsigned int ind_local = 0;
+                  for (; index_indicators != next_index_indicators; ++index_indicators)
                     {
-                      dof_indices_coarse_host(ind_local + j, cell) = dof_indices_coarse[j];
+                      const std::pair<unsigned short, unsigned short> indicator =
+                        constraint_info_coarse.constraint_indicator[index_indicators];
+
+                      for (unsigned int j = 0; j < indicator.first; ++j)
+                        dof_indices_coarse_host(ind_local + j, cell) = dof_indices_coarse[j];
+
+                      ind_local += indicator.first;
+                      dof_indices_coarse += indicator.first;
+
+                      dof_indices_coarse_host(ind_local, cell) = numbers::invalid_unsigned_int;
+
+                      ++ind_local;
                     }
-                  ind_local += indicator.first;
-                  dof_indices_coarse += indicator.first;
 
-                  dof_indices_coarse_host(ind_local, cell) = numbers::invalid_unsigned_int;
-
-                  ++ind_local;
+                  for (; ind_local < scheme.n_dofs_per_cell_coarse;
+                       ++dof_indices_coarse, ++ind_local)
+                    dof_indices_coarse_host(ind_local, cell) = *dof_indices_coarse;
                 }
 
-              for (; ind_local < scheme.n_dofs_per_cell_coarse; ++dof_indices_coarse, ++ind_local)
-                dof_indices_coarse_host(ind_local, cell) = *dof_indices_coarse;
-            }
+                // fine indices
+                {
+                  const unsigned int *dof_indices_fine =
+                    constraint_info_fine.dof_indices.data() +
+                    constraint_info_fine.row_starts[cell_index].first;
 
-            // fill fine indices
-            {
-              const unsigned int *dof_indices_fine =
-                this->constraint_info_fine.dof_indices.data() +
-                this->constraint_info_fine.row_starts[cell_index].first;
+                  for (unsigned int j = 0; j < scheme.n_dofs_per_cell_fine;
+                       ++dof_indices_fine, ++j)
+                    dof_indices_fine_host(j, cell) = *dof_indices_fine;
+                }
+              }
 
-              for (unsigned int j = 0; j < scheme.n_dofs_per_cell_fine; ++dof_indices_fine, ++j)
-                dof_indices_fine_host(j, cell) = *dof_indices_fine;
-            }
+            Kokkos::deep_copy(scheme.dof_indices_coarse, dof_indices_coarse_host);
+            Kokkos::fence();
 
-            ++cell_counter;
+            Kokkos::deep_copy(scheme.dof_indices_fine, dof_indices_fine_host);
+            Kokkos::fence();
           }
 
-        Kokkos::deep_copy(scheme.dof_indices_coarse, dof_indices_coarse_host);
-        Kokkos::fence();
-
-        Kokkos::deep_copy(scheme.dof_indices_fine, dof_indices_fine_host);
-        Kokkos::fence();
-
-        ++scheme_counter;
+        batch_offset += (scheme.n_coarse_cells + n_lanes - 1) / n_lanes;
+        cell_offset += scheme.n_coarse_cells;
       }
   }
 
