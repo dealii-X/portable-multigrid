@@ -162,16 +162,26 @@ make -j install
   GPU on the node where `make test` runs; the MPI ones are launched through the
   `mpiexec` CMake detected. On a Slurm system where that launcher cannot start nested
   jobs (see section 5), run the two binaries directly instead:
-  `srun -n 2 tests/quick_tests/mpi.release/mpi.release` and
-  `srun -n 10 tests/quick_tests/p4est.release/p4est.release`; both must exit with 0.
+  `srun --mpi=pspmix -n 2 tests/quick_tests/mpi.release/mpi.release` and
+  `srun --mpi=pspmix -n 10 tests/quick_tests/p4est.release/p4est.release`; both must
+  exit with 0.
 
 ## 4. Building and running the programs of this repository
 
-Every driver and correctness test is a stand-alone CMake project:
+One build of everything, from the repository root (drivers in `source/`, benchmarks in
+`performance_tests/`, testsuite in `tests/`):
 
 ```bash
-cmake -DDEAL_II_DIR=$DEALII_PREFIX -DCMAKE_BUILD_TYPE=Release -S tests/poisson_cube_bk3 -B tests/poisson_cube_bk3/build
-make -C tests/poisson_cube_bk3/build -j
+cmake -S . -B build -DDEAL_II_DIR=$DEALII_PREFIX -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j<N>
+ctest --test-dir build -j<N>
+```
+
+Every directory in `source/` and `performance_tests/` is also a stand-alone CMake project:
+
+```bash
+cmake -S performance_tests/poisson_cube_bk3 -B performance_tests/poisson_cube_bk3/build -DDEAL_II_DIR=$DEALII_PREFIX -DCMAKE_BUILD_TYPE=Release
+cmake --build performance_tests/poisson_cube_bk3/build -j<N>
 ```
 
 No link-order tricks are required once deal.II is built as described above. If a program
@@ -193,11 +203,20 @@ deal.II master (2026-11), p4est 2.8.7, CMake from the stage.
   deal.II configure line; `nvfortran` works as the Fortran compiler.
 - Build on a compute node (`salloc` + `srun -N1 -n1 -c96 make -j96 install`; a GH200 node
   has 288 cores but each `nvcc` translation unit needs 1-3 GB, so do not use them all).
-- Launch MPI programs with `srun -n <ranks> ./program` **from the `salloc` shell on the
-  login node**, one job step per run. There is no `mpiexec` on the path, and a launcher
-  started inside an interactive `srun --pty` step cannot create a nested partition
-  (`PSI: PSI_createPartition: got: Permission denied`, or a hang with `--overlap`).
+- Launch MPI programs with `srun --mpi=pspmix -n <ranks> ./program` **from the `salloc`
+  shell on the login node**, one job step per run. There is no `mpiexec` on the path, and
+  a launcher started inside an interactive `srun --pty` step cannot create a nested
+  partition (`PSI: PSI_createPartition: got: Permission denied`, or a hang with
+  `--overlap`).
+- `--mpi=pspmix` is required with OpenMPI. Without it `srun` started independent
+  processes (seen 2026-11-11): each one reports 1 MPI rank, solves the whole problem
+  alone and ends with a segmentation fault in `PMIx_Finalize`. Check the rank count a
+  program prints once per job.
+- deal.II is linked against OpenMPI, so jobs load `OpenMPI`, not `ParaStationMPI`.
 - Compute nodes have no internet access: `git clone`/`git pull` on the login node.
 
-`run_sbatch.sh` in the repository root shows the batch-job form of the same launch
-(`srun --cpu-bind=cores --gpu-bind=closest --gpus-per-task=1 ./program ...`).
+`scripts/jupiter/env.sh` loads this module stack and sets the library path and the
+thread variables (`source scripts/jupiter/env.sh [DEAL_II_DIR]`); its header has the
+configure line of the testsuite for `srun`. The job scripts in `scripts/*_jupiter.sbatch`
+show the batch form of the launch
+(`srun --mpi=pspmix --cpu-bind=cores --gpu-bind=closest ./program ...`).
