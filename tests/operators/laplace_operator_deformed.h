@@ -1,6 +1,8 @@
 // Portable::LaplaceOperator on a curved, sheared mesh: every vmult variant
 // that runs on host and device builds, Tvmult() and compute_diagonal()
-// against the CPU FEValues reference of deformed_mesh_util.h.
+// against the CPU FEValues reference of deformed_mesh_util.h; with
+// batched_copy only vmult_batched() and vmult_fused() (the batched
+// FEEvaluation copied from deal.II, which needs PrecomputedData::first_cell).
 //
 // src is zero on the Dirichlet DoFs: the deal.II cell_loop paths read src
 // there, this project's own kernels do not.
@@ -20,7 +22,7 @@
 using namespace dealii;
 using namespace deformed_mesh_test;
 
-template <int dim, int fe_degree>
+template <int dim, int fe_degree, bool batched_copy = false>
 void
 test(const bool overlap)
 {
@@ -80,6 +82,13 @@ test(const bool overlap)
     report(name, relative_l2_difference(dst, dst_ref), tolerance);
   };
 
+  if constexpr (batched_copy)
+    {
+      check("vmult_batched", [&](VectorType &d, const VectorType &s) { op.vmult_batched(d, s); });
+      check("vmult_fused", [&](VectorType &d, const VectorType &s) { op.vmult_fused(d, s); });
+      return;
+    }
+
   check("vmult", [&](VectorType &d, const VectorType &s) { op.vmult(d, s); });
   check("Tvmult", [&](VectorType &d, const VectorType &s) { op.Tvmult(d, s); });
   check("vmult_dealii", [&](VectorType &d, const VectorType &s) { op.vmult_dealii(d, s); });
@@ -105,15 +114,16 @@ test(const bool overlap)
 
 
 
-inline void
+template <bool batched_copy = false>
+void
 test_all(const bool overlap)
 {
-  test<2, 1>(overlap);
-  test<2, 2>(overlap);
-  test<2, 3>(overlap);
-  test<2, 4>(overlap);
-  test<3, 1>(overlap);
-  test<3, 2>(overlap);
-  test<3, 3>(overlap);
-  test<3, 4>(overlap);
+  test<2, 1, batched_copy>(overlap);
+  test<2, 2, batched_copy>(overlap);
+  test<2, 3, batched_copy>(overlap);
+  test<2, 4, batched_copy>(overlap);
+  test<3, 1, batched_copy>(overlap);
+  test<3, 2, batched_copy>(overlap);
+  test<3, 3, batched_copy>(overlap);
+  test<3, 4, batched_copy>(overlap);
 }

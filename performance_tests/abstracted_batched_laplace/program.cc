@@ -49,7 +49,9 @@ namespace multigrid
   const unsigned int minimal_degree = 1;
   const unsigned int maximal_degree = 9;
   const double       wave_number    = 3.;
-  const bool         deform_grid    = false;
+  // set from the 6th command line argument: 'd' deforms the mesh so that all
+  // cells are general ones (per-point geometry in every variant)
+  bool deform_grid = false;
 
   // We also select a mixed-precision approach as default. You can
   // independently change the number type for the outer iteration via
@@ -503,7 +505,8 @@ namespace multigrid
   LaplaceProblem<dim, fe_degree>::vmult_comparison_timing()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Default> src, dst_dealii, dst_bk3,
-      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view, src_new, dst_dealii_new;
+      dst_bk3_abstracted, dst_batched, dst_batched_fused, dst_batched_view, src_new, dst_dealii_new,
+      dst_batched_copy, dst_batched_copy_fused;
     system_matrix->initialize_dof_vector(src);
     system_matrix->initialize_dof_vector(dst_dealii);
     system_matrix->initialize_dof_vector(dst_bk3);
@@ -511,6 +514,8 @@ namespace multigrid
     system_matrix->initialize_dof_vector(dst_batched);
     system_matrix->initialize_dof_vector(dst_batched_fused);
     system_matrix->initialize_dof_vector(dst_batched_view);
+    system_matrix->initialize_dof_vector(dst_batched_copy);
+    system_matrix->initialize_dof_vector(dst_batched_copy_fused);
     // vmult_dealii_new() drives Copy::Portable::MatrixFree, a separate
     // MatrixFree instance from the one above (matrix_free_new vs. matrix_
     // free in LaplaceOperator) -- its distributed_cell_loop() matches
@@ -551,6 +556,8 @@ namespace multigrid
     system_matrix->vmult_dealii_batched_fused(dst_batched_fused, src);
     system_matrix->vmult_dealii_batched_view(dst_batched_view, src);
     system_matrix->vmult_dealii_new(dst_dealii_new, src_new);
+    system_matrix->vmult_batched(dst_batched_copy, src);
+    system_matrix->vmult_fused(dst_batched_copy_fused, src);
 
     // Belt-and-suspenders: each vmult already leaves the constrained entries
     // at 0 given the zeroed src above (via either copy_constrained_values()
@@ -562,6 +569,8 @@ namespace multigrid
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_fused);
     system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_view);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_copy);
+    system_matrix->get_matrix_free().set_constrained_values(0., dst_batched_copy_fused);
     system_matrix->get_matrix_free_new().set_constrained_values(0., dst_dealii_new);
 
     const double norm_bk3 = dst_bk3.l2_norm();
@@ -580,6 +589,8 @@ namespace multigrid
     const double rel_err_batched_fused  = rel_err_vs_bk3(dst_batched_fused);
     const double rel_err_batched_view   = rel_err_vs_bk3(dst_batched_view);
     const double rel_err_dealii_new     = rel_err_vs_bk3(dst_dealii_new);
+    const double rel_err_batched_copy   = rel_err_vs_bk3(dst_batched_copy);
+    const double rel_err_batched_copy_fused = rel_err_vs_bk3(dst_batched_copy_fused);
 
     // -- performance: best-of-5, same methodology as the rest of this file --
     const unsigned int n_mv = dof_handler.n_dofs() < 10000000 ? 200 : 50;
@@ -616,6 +627,12 @@ namespace multigrid
       time_vmult([&]() { system_matrix->vmult_dealii_batched_view(dst_batched_view, src); });
     const double best_dealii_new =
       time_vmult([&]() { system_matrix->vmult_dealii_new(dst_dealii_new, src_new); });
+    // the batched FEEvaluation copied from deal.II, without and with
+    // evaluate_and_apply()
+    const double best_batched_copy =
+      time_vmult([&]() { system_matrix->vmult_batched(dst_batched_copy, src); });
+    const double best_batched_copy_fused =
+      time_vmult([&]() { system_matrix->vmult_fused(dst_batched_copy_fused, src); });
 
     vmult_timing_table.add_value("cells", triangulation.n_global_active_cells());
     vmult_timing_table.add_value("dofs", dof_handler.n_dofs());
@@ -626,6 +643,8 @@ namespace multigrid
     vmult_timing_table.add_value("t_batched_fused", best_batched_fused);
     vmult_timing_table.add_value("t_batched_view", best_batched_view);
     vmult_timing_table.add_value("t_dealii_new", best_dealii_new);
+    vmult_timing_table.add_value("t_batched_copy", best_batched_copy);
+    vmult_timing_table.add_value("t_batched_copy_fused", best_batched_copy_fused);
 
     // Speedups are relative to vmult_dealii() (real deal.II kernels) --
     // that's the baseline this whole comparison is meant to answer "how
@@ -641,6 +660,10 @@ namespace multigrid
     vmult_speedup_table.add_value("batched_view_vs_dealii", best_dealii / best_batched_view);
     vmult_speedup_table.add_value("batched_fused_vs_dealii", best_dealii / best_batched_fused);
     vmult_speedup_table.add_value("dealii_new_vs_dealii", best_dealii / best_dealii_new);
+    vmult_speedup_table.add_value("batched_copy_vs_dealii", best_dealii / best_batched_copy);
+    vmult_speedup_table.add_value("batched_copy_fused_vs_dealii",
+                                  best_dealii / best_batched_copy_fused);
+    vmult_speedup_table.add_value("batched_copy_fused_vs_bk3", best_bk3 / best_batched_copy_fused);
 
     // Correctness (rel_err) stays relative to vmult_bk3(), the validated
     // ground truth.
@@ -652,6 +675,8 @@ namespace multigrid
     vmult_norm_table.add_value("rel_err_batched_fused_vs_bk3", rel_err_batched_fused);
     vmult_norm_table.add_value("rel_err_batched_view_vs_bk3", rel_err_batched_view);
     vmult_norm_table.add_value("rel_err_dealii_new_vs_bk3", rel_err_dealii_new);
+    vmult_norm_table.add_value("rel_err_batched_copy_vs_bk3", rel_err_batched_copy);
+    vmult_norm_table.add_value("rel_err_batched_copy_fused_vs_bk3", rel_err_batched_copy_fused);
   }
 
 
@@ -731,6 +756,16 @@ namespace multigrid
 
         triangulation.refine_global(n_refine);
 
+        if (deform_grid)
+          GridTools::transform(
+            [](const Point<dim> &p) {
+              Point<dim> result = p;
+              for (unsigned int d = 0; d < dim; ++d)
+                result[d] += 0.05 * std::sin(2. * p[(d + 1) % dim]) * p[(d + 2) % dim];
+              return result;
+            },
+            triangulation);
+
         setup_dofs();
 
         setup_matrix_free();
@@ -766,6 +801,10 @@ namespace multigrid
             vmult_timing_table.set_precision("t_batched_view", 4);
             vmult_timing_table.set_scientific("t_dealii_new", true);
             vmult_timing_table.set_precision("t_dealii_new", 4);
+            vmult_timing_table.set_scientific("t_batched_copy", true);
+            vmult_timing_table.set_precision("t_batched_copy", 4);
+            vmult_timing_table.set_scientific("t_batched_copy_fused", true);
+            vmult_timing_table.set_precision("t_batched_copy_fused", 4);
 
             vmult_speedup_table.set_precision("bk3_vs_dealii", 3);
             vmult_speedup_table.set_precision("bk3_abstracted_vs_bk3", 3);
@@ -773,6 +812,9 @@ namespace multigrid
             vmult_speedup_table.set_precision("batched_view_vs_dealii", 3);
             vmult_speedup_table.set_precision("batched_fused_vs_dealii", 3);
             vmult_speedup_table.set_precision("dealii_new_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_copy_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_copy_fused_vs_dealii", 3);
+            vmult_speedup_table.set_precision("batched_copy_fused_vs_bk3", 3);
 
             vmult_norm_table.set_scientific("rel_err_dealii_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_dealii_vs_bk3", 3);
@@ -786,6 +828,10 @@ namespace multigrid
             vmult_norm_table.set_precision("rel_err_batched_view_vs_bk3", 3);
             vmult_norm_table.set_scientific("rel_err_dealii_new_vs_bk3", true);
             vmult_norm_table.set_precision("rel_err_dealii_new_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_copy_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_copy_vs_bk3", 3);
+            vmult_norm_table.set_scientific("rel_err_batched_copy_fused_vs_bk3", true);
+            vmult_norm_table.set_precision("rel_err_batched_copy_fused_vs_bk3", 3);
 
             std::cout << "-- vmult timing comparison --" << std::endl;
             vmult_timing_table.write_text(std::cout);
@@ -861,6 +907,8 @@ main(int argc, char *argv[])
         maxsize = std::atoll(argv[4]);
       if (argc > 5)
         use_doubling_mesh = argv[5][0] == 'd';
+      if (argc > 6)
+        deform_grid = argv[6][0] == 'd';
 
       dimension = 3;
       AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
@@ -874,6 +922,7 @@ main(int argc, char *argv[])
                   << "Minimum size:                   " << minsize << std::endl
                   << "Maximum size:                   " << maxsize << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
+                  << "Deformed mesh:                  " << deform_grid << std::endl
                   << std::endl;
 
       // if (dimension == 2)
