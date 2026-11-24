@@ -1,5 +1,6 @@
 // Portable::ElasticityOperator (FESystem of dim FE_Q) on a curved, sheared
-// mesh: vmult, Tvmult, vmult_dealii, vmult_batched, vmult_dummy and compute_diagonal()
+// mesh: vmult, Tvmult, vmult_dealii, vmult_batched, vmult_fused, vmult_dummy and
+// compute_diagonal()
 // against the CPU FEValues reference of deformed_mesh_util.h.
 
 #include <deal.II/base/function.h>
@@ -90,6 +91,7 @@ test(const bool overlap)
   check("Tvmult", [&](VectorType &d, const VectorType &s) { op.Tvmult(d, s); });
   check("vmult_dealii", [&](VectorType &d, const VectorType &s) { op.vmult_dealii(d, s); });
   check("vmult_batched", [&](VectorType &d, const VectorType &s) { op.vmult_batched(d, s); });
+  check("vmult_fused", [&](VectorType &d, const VectorType &s) { op.vmult_fused(d, s); });
   check("vmult_dummy",
         [&](VectorType &d, const VectorType &s) { op.vmult_dummy(d, s, true, true); });
 

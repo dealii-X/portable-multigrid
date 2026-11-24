@@ -54,13 +54,15 @@ namespace Portable
 
   // Cell operator (grad v, material.stress(grad u)). FEEvaluationType is
   // Portable::FEEvaluation (one cell per team) or its batched counterpart
-  // (a batch of cells per team); the stress need not be symmetric.
+  // (a batch of cells per team); the stress need not be symmetric. fused:
+  // the stress is computed inside the batched evaluate_and_apply().
   template <int dim,
             int fe_degree,
             int n_q_points_1d,
             typename Number,
             typename Material,
-            typename FEEvaluationType>
+            typename FEEvaluationType,
+            bool fused = false>
   class LocalElasticityOperator
   {
   public:
@@ -80,11 +82,18 @@ namespace Portable
       FEEvaluationType fe_eval(data);
 
       fe_eval.read_dof_values(src);
-      fe_eval.evaluate(EvaluationFlags::gradients);
 
-      data->for_each_quad_point(
-        [&](const int &q_point)
-        { fe_eval.submit_gradient(material.stress(fe_eval.get_gradient(q_point)), q_point); });
+      if constexpr (fused)
+        fe_eval.evaluate_and_apply(EvaluationFlags::gradients,
+                                   [&](const Tensor<2, dim, Number> &grad_u, const int)
+                                   { return material.stress(grad_u); });
+      else
+        {
+          fe_eval.evaluate(EvaluationFlags::gradients);
+          data->for_each_quad_point(
+            [&](const int &q_point)
+            { fe_eval.submit_gradient(material.stress(fe_eval.get_gradient(q_point)), q_point); });
+        }
 
       fe_eval.integrate(EvaluationFlags::gradients);
       fe_eval.distribute_local_to_global(dst);
