@@ -1,0 +1,25 @@
+
+DEAL::degree = 1, n_q_points_1d = 3, teams = 1
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 4, teams = 1
+DEAL::OK
+DEAL::degree = 3, n_q_points_1d = 5, teams = 1
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 3, teams = 1
+DEAL::OK
+DEAL::degree = 1, n_q_points_1d = 4, teams = 1
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 5, teams = 1
+DEAL::OK
+DEAL::degree = 1, n_q_points_1d = 3, teams = 2
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 4, teams = 2
+DEAL::OK
+DEAL::degree = 3, n_q_points_1d = 5, teams = 2
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 3, teams = 2
+DEAL::OK
+DEAL::degree = 1, n_q_points_1d = 4, teams = 2
+DEAL::OK
+DEAL::degree = 2, n_q_points_1d = 5, teams = 2
+DEAL::OK

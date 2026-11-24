@@ -50,6 +50,7 @@ set(_benchmarks
   bp4
   bp_35
   comm_microbench
+  elasticity_benchmark_kernel
   hanging_nodes_comparison
   hanging_nodes_operator
   mg_transfer_comparison
