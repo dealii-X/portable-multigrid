@@ -39,6 +39,61 @@ namespace Portable
 
 
 
+  // Saint Venant-Kirchhoff hyperelasticity: the first Piola-Kirchhoff stress
+  // P = F S with F = I + grad u, E = (F^T F - I) / 2 and
+  // S = lambda tr(E) I + 2 mu E. The operator is then the nonlinear residual
+  // R(u), not a linear map.
+  template <int dim, typename Number>
+  struct SaintVenantKirchhoffMaterial
+  {
+    Number lambda = 1.;
+    Number mu     = 1.;
+
+    DEAL_II_HOST_DEVICE Tensor<2, dim, Number>
+    stress(const Tensor<2, dim, Number> &grad_u) const
+    {
+      Tensor<2, dim, Number> F = grad_u;
+      for (unsigned int d = 0; d < dim; ++d)
+        F[d][d] += Number(1.);
+
+      // S = 2 E = F^T F - I first
+      Tensor<2, dim, Number> S;
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+          {
+            Number sum = 0.;
+            for (unsigned int k = 0; k < dim; ++k)
+              sum += F[k][i] * F[k][j];
+            S[i][j] = sum;
+          }
+      Number trace_E = 0.;
+      for (unsigned int d = 0; d < dim; ++d)
+        {
+          S[d][d] -= Number(1.);
+          trace_E += Number(0.5) * S[d][d];
+        }
+      for (unsigned int i = 0; i < dim; ++i)
+        {
+          for (unsigned int j = 0; j < dim; ++j)
+            S[i][j] *= mu;
+          S[i][i] += lambda * trace_E;
+        }
+
+      Tensor<2, dim, Number> P;
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+          {
+            Number sum = 0.;
+            for (unsigned int k = 0; k < dim; ++k)
+              sum += F[i][k] * S[k][j];
+            P[i][j] = sum;
+          }
+      return P;
+    }
+  };
+
+
+
   // stress = grad u, the vector Laplacian; for tests.
   template <int dim, typename Number>
   struct IdentityMaterial
