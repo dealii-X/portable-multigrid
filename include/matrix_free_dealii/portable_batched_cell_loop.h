@@ -1,7 +1,9 @@
 // Copy of Portable::internal::batched::cell_loop() and its launch rules from the deal.II branch
 // portable-batched-cell-loop (include/deal.II/matrix_free/
 // portable_matrix_free.templates.h), in namespace Copy, so that it does not depend on
-// the version of the installed deal.II. Keep in sync with the branch.
+// the version of the installed deal.II. Difference to the branch: cell_loop()
+// exchanges the ghost values, as MatrixFree::cell_loop() does. Keep the rest in
+// sync with the branch.
 
 #ifndef matrix_free_dealii_portable_batched_cell_loop_h
 #define matrix_free_dealii_portable_batched_cell_loop_h
@@ -265,9 +267,11 @@ namespace Copy
          * Batched counterpart of MatrixFree::cell_loop() for the first
          * DoFHandler of @p matrix_free: apply @p func, as described in
          * ApplyKernel, to batches of cells with the launch parameters of
-         * compute_batch_size() and make_team_policy(). Only the locally owned
-         * entries of the vectors are accessed and no ghost values are
-         * exchanged.
+         * compute_batch_size() and make_team_policy(). As in
+         * MatrixFree::cell_loop(), the ghost values of @p src are updated
+         * before and the contributions to ghost entries of @p dst are sent to
+         * their owners after the loop, overlapped with the computation if
+         * @p matrix_free was set up for it.
          */
         template <int dim, typename Number, typename Functor>
         void
@@ -289,39 +293,78 @@ namespace Copy
                         n_max_dof_handlers>
             colored_data;
 
-          for (unsigned int color = 0; color < n_colors; ++color)
-            {
-              colored_data[0] = matrix_free.get_data(color);
-              if (colored_data[0].n_cells == 0)
-                continue;
+          // helper to process one color
+          auto do_color = [&](const unsigned int color) {
+            if (color >= n_colors)
+              return;
 
-              const int batch_size =
-                compute_batch_size<dim, Number>(Functor::n_q_points,
-                                                n_dof_handler,
-                                                colored_data,
-                                                requested_batch_size);
+            colored_data[0] = matrix_free.get_data(color);
+            if (colored_data[0].n_cells == 0)
+              return;
 
-              const ApplyKernel<dim, Number, Functor> apply_kernel{
-                func,
-                n_dof_handler,
-                colored_data,
-                batch_size,
-                DeviceVector<Number>(src.get_values(), src.locally_owned_size()),
-                DeviceVector<Number>(dst.get_values(), dst.locally_owned_size())};
-
-              Kokkos::parallel_for(
-                "Copy::MatrixFree::batched_cell_loop color " +
-                  std::to_string(color),
-                make_team_policy<dim, Number>(exec,
-                                              apply_kernel,
-                                              Functor::n_q_points,
-                                              batch_size,
+            const int batch_size =
+              compute_batch_size<dim, Number>(Functor::n_q_points,
                                               n_dof_handler,
                                               colored_data,
-                                              requested_team_size),
-                apply_kernel);
+                                              requested_batch_size);
+
+            const ApplyKernel<dim, Number, Functor> apply_kernel{
+              func,
+              n_dof_handler,
+              colored_data,
+              batch_size,
+              DeviceVector<Number>(src.get_values(), src.locally_owned_size()),
+              DeviceVector<Number>(dst.get_values(), dst.locally_owned_size())};
+
+            Kokkos::parallel_for(
+              "Copy::MatrixFree::batched_cell_loop color " +
+                std::to_string(color),
+              make_team_policy<dim, Number>(exec,
+                                            apply_kernel,
+                                            Functor::n_q_points,
+                                            batch_size,
+                                            n_dof_handler,
+                                            colored_data,
+                                            requested_team_size),
+              apply_kernel);
+          };
+
+          if (matrix_free.get_vector_partitioner() == nullptr)
+            {
+              for (unsigned int color = 0; color < n_colors; ++color)
+                do_color(color);
+              exec.fence();
             }
-          Kokkos::fence();
+          else if (matrix_free.use_overlap_communication_computation())
+            {
+              // as in MatrixFree::distributed_cell_loop(): the cells of
+              // colors 0 and 2 touch no ghost entries
+              src.update_ghost_values_start(0);
+              do_color(0);
+              src.update_ghost_values_finish();
+
+              do_color(1);
+              // no MPI communication of dst before the kernel is done
+              exec.fence();
+
+              dst.compress_start(0, VectorOperation::add);
+              do_color(2);
+              dst.compress_finish(VectorOperation::add);
+
+              src.zero_out_ghost_values();
+            }
+          else
+            {
+              src.update_ghost_values();
+
+              for (unsigned int color = 0; color < n_colors; ++color)
+                do_color(color);
+
+              exec.fence();
+              dst.compress(VectorOperation::add);
+
+              src.zero_out_ghost_values();
+            }
         }
       } // namespace batched
     } // namespace internal
