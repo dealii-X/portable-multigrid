@@ -124,7 +124,7 @@ namespace Portable
              (vec.get_partitioner() ? vec.get_partitioner()->n_ghost_indices() : 0);
     }
 
-    // batched cell loop over one color, no fence
+    // batched cell loop over one color for vmult_dummy(), no fence
     void
     launch_color(const unsigned int          color,
                  const DeviceVector<number> &src,
@@ -237,7 +237,14 @@ namespace Portable
     VectorType       &dst,
     const VectorType &src) const
   {
-    vmult_dummy(dst, src, true, true);
+    dst = 0.;
+
+    Copy::Portable::internal::batched::cell_loop(matrix_free,
+                                                 BatchedLocalOperator(material),
+                                                 src,
+                                                 dst);
+
+    matrix_free.copy_constrained_values(src, dst);
   }
 
 
