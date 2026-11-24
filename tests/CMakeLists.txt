@@ -75,6 +75,22 @@ if(NOT DEFINED DEAL_II_WITH_PORTABLE_BATCHED)
 endif()
 message(STATUS "Portable::internal::batched: ${DEAL_II_WITH_PORTABLE_BATCHED}")
 
+# PrecomputedData::first_cell in Portable::MatrixFree (deal.II master since
+# d5a0bc9d31): tests with "with_portable_first_cell=on" in the name of
+# their output file only run then (Copy::Portable::internal::batched::
+# FEEvaluation, written for that data layout)
+if(NOT DEFINED DEAL_II_WITH_PORTABLE_FIRST_CELL)
+  set(DEAL_II_WITH_PORTABLE_FIRST_CELL OFF)
+  set(_header "${DEAL_II_PATH}/${DEAL_II_INCLUDE_RELDIR}/deal.II/matrix_free/portable_matrix_free.h")
+  if(EXISTS "${_header}")
+    file(STRINGS "${_header}" _first_cell REGEX "unsigned int first_cell;")
+    if(_first_cell)
+      set(DEAL_II_WITH_PORTABLE_FIRST_CELL ON)
+    endif()
+  endif()
+endif()
+message(STATUS "Portable::MatrixFree::PrecomputedData::first_cell: ${DEAL_II_WITH_PORTABLE_FIRST_CELL}")
+
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../include

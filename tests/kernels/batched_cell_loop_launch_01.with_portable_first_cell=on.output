@@ -1,0 +1,113 @@
+
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=84 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=84 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=13 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=13 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=33 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=33 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=10 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=10 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=3 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=3 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=4 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=4 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=auto requested_team_size=auto: batch_size=1 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=auto requested_team_size=1: batch_size=1 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=1 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=auto requested_team_size=auto: batch_size=84 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=auto requested_team_size=1: batch_size=84 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=1 n_q_points_1d=2 n_components=1 colors=6 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=auto requested_team_size=auto: batch_size=13 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=auto requested_team_size=1: batch_size=13 launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=2 degree=4 n_q_points_1d=5 n_components=1 colors=6 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=auto requested_team_size=auto: batch_size=33 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=auto requested_team_size=1: batch_size=33 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=1 n_q_points_1d=2 n_components=1 colors=14 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=auto requested_team_size=auto: batch_size=10 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=auto requested_team_size=1: batch_size=10 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=1 colors=14 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=auto requested_team_size=auto: batch_size=3 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=auto requested_team_size=1: batch_size=3 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=3 n_components=3 colors=14 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=auto requested_team_size=auto: batch_size=4 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=auto requested_team_size=1: batch_size=4 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=2 n_q_points_1d=4 n_components=1 colors=14 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=auto requested_team_size=auto: batch_size=1 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=auto requested_team_size=1: batch_size=1 launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=1 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=1 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=7 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=7 requested_team_size=1: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=69 requested_team_size=auto: launch=OK cells visited once 64/64
+DEAL::dim=3 degree=4 n_q_points_1d=5 n_components=3 colors=14 requested_batch_size=69 requested_team_size=1: launch=OK cells visited once 64/64
