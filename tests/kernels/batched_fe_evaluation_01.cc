@@ -68,6 +68,10 @@ main()
   run<3, 1, 2, Helmholtz>();
   run<3, 2, 3, Helmholtz>();
 
+  // general kernel: too many points for the transformation to collocation
+  run<2, 1, 3, Helmholtz>();
+  run<3, 1, 3, Helmholtz>();
+
   // collocation
   run<2, 2, 3, Helmholtz>(true);
   run<3, 2, 3, Helmholtz>(true);

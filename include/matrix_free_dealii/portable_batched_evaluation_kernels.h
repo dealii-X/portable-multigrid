@@ -2,7 +2,11 @@
 // batched evaluation kernels) and of use_collocation_evaluation() from the deal.II branch
 // portable-batched-cell-loop (include/deal.II/matrix_free/
 // portable_evaluation_kernels.h), in namespace Copy, so that it does not depend on
-// the version of the installed deal.II. Keep in sync with the branch.
+// the version of the installed deal.II. Differences to the branch,
+// for tensor_symmetric elements that FEEvaluation evaluates with the general
+// kernel: SharedData::reinit() also stages shape_gradients, and
+// SharedData::scratch_pad_size() gives the scratch pad the size that kernel
+// needs. Keep the rest in sync with the branch.
 
 #ifndef matrix_free_dealii_portable_batched_evaluation_kernels_h
 #define matrix_free_dealii_portable_batched_evaluation_kernels_h
@@ -85,6 +89,46 @@ namespace Copy
                          Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
 
           /**
+           * Size of the scratch pad of one cell. PrecomputedData::
+           * scratch_pad_size is the one of the collocation kernels for
+           * tensor_symmetric elements; if the number of quadrature points is
+           * too large for the transformation to collocation, FEEvaluation
+           * uses the general kernel, which needs more in 3d.
+           */
+          DEAL_II_HOST_DEVICE
+          static unsigned int
+          scratch_pad_size(
+            const unsigned int n_q_points_per_cell,
+            const typename MatrixFree<dim, Number>::PrecomputedData &gpu_data)
+          {
+            unsigned int size = gpu_data.scratch_pad_size;
+
+            if (gpu_data.element_type <= ::dealii::internal::MatrixFreeFunctions::
+                                           ElementType::tensor_symmetric)
+              {
+                unsigned int n_q_points_1d = 1;
+                while (Utilities::pow(n_q_points_1d, dim) < n_q_points_per_cell)
+                  ++n_q_points_1d;
+                const unsigned int n_dofs_1d =
+                  gpu_data.shape_values.size() / n_q_points_1d;
+
+                if (n_dofs_1d != n_q_points_1d &&
+                    !use_collocation_evaluation(n_dofs_1d - 1, n_q_points_1d))
+                  {
+                    const unsigned int general_size =
+                      (dim == 1) ? n_q_points_1d :
+                      (dim == 2) ? n_dofs_1d * n_q_points_1d :
+                                   n_dofs_1d * n_q_points_1d *
+                                     (n_dofs_1d + n_q_points_1d);
+                    if (general_size > size)
+                      size = general_size;
+                  }
+              }
+
+            return size;
+          }
+
+          /**
            * Allocate Kokkos Views for a batch of @p batch_size cells and copy
            * the shape data from the precomputed data to shared memory. The
            * values, gradients and scratch pad of the cells are stored cell
@@ -109,7 +153,9 @@ namespace Copy
                                             gpu_data.n_components);
             scratch_pad =
               SharedViewScratchPad(team_handle.team_shmem(),
-                                   batch_size * gpu_data.scratch_pad_size);
+                                   batch_size *
+                                     scratch_pad_size(n_q_points_per_cell,
+                                                      gpu_data));
 
             // For symmetric collocation elements, the shape_values are the
             // identity and do not need to be stored in shared memory
@@ -127,8 +173,11 @@ namespace Copy
               }
 
             // For symmetric elements, we need to store the shape gradients in the
-            // collocation space for faster evaluation. For other elements, we
-            // store the shape gradients in the reference space.
+            // collocation space for faster evaluation. They also get the shape
+            // gradients in the reference space, since FEEvaluation uses the
+            // general kernel for them if the number of quadrature points is
+            // too large for the transformation to collocation, see
+            // use_collocation_evaluation().
             if (gpu_data.element_type <= ::dealii::internal::MatrixFreeFunctions::
                                            ElementType::tensor_symmetric)
               {
@@ -143,7 +192,9 @@ namespace Copy
                     co_shape_gradients(i) = gpu_data.co_shape_gradients[i];
                   });
               }
-            else
+
+            if (gpu_data.element_type >= ::dealii::internal::MatrixFreeFunctions::
+                                           ElementType::tensor_symmetric)
               {
                 shape_gradients =
                   SharedViewShapeData(team_handle.team_shmem(),
@@ -178,8 +229,8 @@ namespace Copy
               SharedViewGradients::shmem_size(n_points,
                                               dim,
                                               gpu_data.n_components) +
-              SharedViewScratchPad::shmem_size(batch_size *
-                                               gpu_data.scratch_pad_size);
+              SharedViewScratchPad::shmem_size(
+                batch_size * scratch_pad_size(n_q_points_per_cell, gpu_data));
 
             if (gpu_data.element_type >= ElementType::tensor_symmetric)
               result +=
@@ -188,7 +239,8 @@ namespace Copy
             if (gpu_data.element_type <= ElementType::tensor_symmetric)
               result += SharedViewShapeData::shmem_size(
                 gpu_data.co_shape_gradients.size());
-            else
+
+            if (gpu_data.element_type >= ElementType::tensor_symmetric)
               result +=
                 SharedViewShapeData::shmem_size(gpu_data.shape_gradients.size());
 

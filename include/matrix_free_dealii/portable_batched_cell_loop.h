@@ -107,7 +107,8 @@ namespace Copy
           for (unsigned int d = 0; d < n_dof_handler; ++d)
             cell_data_bytes += (precomputed_data[d].n_components * (1 + dim) *
                                   n_q_points_per_cell +
-                                precomputed_data[d].scratch_pad_size) *
+                                SharedData<dim, Number>::scratch_pad_size(
+                                  n_q_points_per_cell, precomputed_data[d])) *
                                sizeof(Number);
 
           int batch_size =
