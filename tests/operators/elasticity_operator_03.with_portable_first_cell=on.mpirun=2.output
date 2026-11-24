@@ -1,0 +1,75 @@
+
+DEAL:0::dim = 2, fe_degree = 1
+DEAL:0::rigid body mode 0: OK
+DEAL:0::rigid body mode 1: OK
+DEAL:0::rigid body mode 2: OK
+DEAL:0::symmetry: OK
+DEAL:0::identity material = vector Laplacian: OK
+DEAL:0::dim = 2, fe_degree = 2
+DEAL:0::rigid body mode 0: OK
+DEAL:0::rigid body mode 1: OK
+DEAL:0::rigid body mode 2: OK
+DEAL:0::symmetry: OK
+DEAL:0::identity material = vector Laplacian: OK
+DEAL:0::dim = 2, fe_degree = 3
+DEAL:0::rigid body mode 0: OK
+DEAL:0::rigid body mode 1: OK
+DEAL:0::rigid body mode 2: OK
+DEAL:0::symmetry: OK
+DEAL:0::identity material = vector Laplacian: OK
+DEAL:0::dim = 3, fe_degree = 1
+DEAL:0::rigid body mode 0: OK
+DEAL:0::rigid body mode 1: OK
+DEAL:0::rigid body mode 2: OK
+DEAL:0::rigid body mode 3: OK
+DEAL:0::rigid body mode 4: OK
+DEAL:0::rigid body mode 5: OK
+DEAL:0::symmetry: OK
+DEAL:0::identity material = vector Laplacian: OK
+DEAL:0::dim = 3, fe_degree = 2
+DEAL:0::rigid body mode 0: OK
+DEAL:0::rigid body mode 1: OK
+DEAL:0::rigid body mode 2: OK
+DEAL:0::rigid body mode 3: OK
+DEAL:0::rigid body mode 4: OK
+DEAL:0::rigid body mode 5: OK
+DEAL:0::symmetry: OK
+DEAL:0::identity material = vector Laplacian: OK
+
+DEAL:1::dim = 2, fe_degree = 1
+DEAL:1::rigid body mode 0: OK
+DEAL:1::rigid body mode 1: OK
+DEAL:1::rigid body mode 2: OK
+DEAL:1::symmetry: OK
+DEAL:1::identity material = vector Laplacian: OK
+DEAL:1::dim = 2, fe_degree = 2
+DEAL:1::rigid body mode 0: OK
+DEAL:1::rigid body mode 1: OK
+DEAL:1::rigid body mode 2: OK
+DEAL:1::symmetry: OK
+DEAL:1::identity material = vector Laplacian: OK
+DEAL:1::dim = 2, fe_degree = 3
+DEAL:1::rigid body mode 0: OK
+DEAL:1::rigid body mode 1: OK
+DEAL:1::rigid body mode 2: OK
+DEAL:1::symmetry: OK
+DEAL:1::identity material = vector Laplacian: OK
+DEAL:1::dim = 3, fe_degree = 1
+DEAL:1::rigid body mode 0: OK
+DEAL:1::rigid body mode 1: OK
+DEAL:1::rigid body mode 2: OK
+DEAL:1::rigid body mode 3: OK
+DEAL:1::rigid body mode 4: OK
+DEAL:1::rigid body mode 5: OK
+DEAL:1::symmetry: OK
+DEAL:1::identity material = vector Laplacian: OK
+DEAL:1::dim = 3, fe_degree = 2
+DEAL:1::rigid body mode 0: OK
+DEAL:1::rigid body mode 1: OK
+DEAL:1::rigid body mode 2: OK
+DEAL:1::rigid body mode 3: OK
+DEAL:1::rigid body mode 4: OK
+DEAL:1::rigid body mode 5: OK
+DEAL:1::symmetry: OK
+DEAL:1::identity material = vector Laplacian: OK
+
