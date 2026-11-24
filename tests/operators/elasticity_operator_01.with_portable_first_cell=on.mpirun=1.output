@@ -55,3 +55,17 @@ DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
 DEAL:0::compute_diagonal: OK
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 3
+DEAL:0::n_dofs = 162
+DEAL:0::vmult: OK
+DEAL:0::Tvmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::compute_diagonal: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 3
+DEAL:0::n_dofs = 375
+DEAL:0::vmult: OK
+DEAL:0::Tvmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::compute_diagonal: OK

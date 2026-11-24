@@ -115,4 +115,7 @@ test_all(const bool overlap)
   // fe_degree + 2 points, the quadrature of the benchmark kernel
   test<2, 2, 4>(overlap);
   test<3, 2, 4>(overlap);
+  // general kernel: too many points for the transformation to collocation
+  test<2, 1, 3>(overlap);
+  test<3, 1, 3>(overlap);
 }
