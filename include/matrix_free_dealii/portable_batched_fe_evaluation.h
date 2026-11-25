@@ -166,6 +166,22 @@ namespace Copy
             const QuadOperation                   &q_op);
 
           /**
+           * As evaluate_and_apply(), but on the reference cell: @p op gets the
+           * gradient in reference coordinates, grad_ref[component][direction],
+           * the cell index cell (PrecomputedData::first_cell plus the cell
+           * within the color) and the quadrature point q within the cell, and
+           * returns flux[component][direction], which is stored for
+           * integrate() as it is, without inverse Jacobian or JxW. For
+           * operators that bring their own geometry, e.g. the symmetric
+           * G = JxW J^{-1} J^{-T} of the Laplacian.
+           */
+          template <typename ReferenceOperation>
+          DEAL_II_HOST_DEVICE void
+          evaluate_and_apply_in_reference(
+            const EvaluationFlags::EvaluationFlags evaluation_flag,
+            const ReferenceOperation              &op);
+
+          /**
            * Same as Portable::FEEvaluation::get_value().
            */
           DEAL_II_HOST_DEVICE value_type
@@ -789,6 +805,73 @@ namespace Copy
               evaluate(evaluation_flag);
               data->for_each_quad_point([&](const int &q_point) {
                 submit_gradient(q_op(get_gradient(q_point), q_point), q_point);
+              });
+            }
+        }
+
+
+
+        template <int dim,
+                  int fe_degree,
+                  int n_q_points_1d,
+                  int n_components_,
+                  typename Number>
+        template <typename ReferenceOperation>
+        DEAL_II_HOST_DEVICE void
+        FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::
+          evaluate_and_apply_in_reference(
+            const EvaluationFlags::EvaluationFlags evaluation_flag,
+            const ReferenceOperation              &op)
+        {
+          using ElementType =
+            ::dealii::internal::MatrixFreeFunctions::ElementType;
+
+          Assert(evaluation_flag == EvaluationFlags::gradients,
+                 ExcNotImplemented());
+
+          const auto apply =
+            [&](const int     q_point,
+                const Number (&grad_ref)[n_components_][dim]) {
+              Number flux[n_components_][dim];
+              op(grad_ref,
+                 precomputed_data->first_cell + cell_id(q_point),
+                 cell_q_point(q_point),
+                 flux);
+              for (unsigned int c = 0; c < n_components_; ++c)
+                for (unsigned int d = 0; d < dim; ++d)
+                  shared_data->gradients(q_point, d, c) = flux[c][d];
+            };
+
+          if (fe_degree >= 0 && fe_degree + 1 == n_q_points_1d &&
+              precomputed_data->element_type ==
+                ElementType::tensor_symmetric_collocation)
+            {
+              FEEvaluationImplCollocation<dim, fe_degree, Number>::
+                template evaluate_gradients_and_apply<n_components_>(
+                  dof_handler_index, data, apply);
+            }
+          else if (fe_degree >= 0 &&
+                   use_collocation_evaluation(fe_degree, n_q_points_1d) &&
+                   precomputed_data->element_type <=
+                     ElementType::tensor_symmetric)
+            {
+              FEEvaluationImplTransformToCollocation<dim,
+                                                     fe_degree,
+                                                     n_q_points_1d,
+                                                     Number>::
+                template evaluate_gradients_and_apply<n_components_>(
+                  dof_handler_index, data, apply);
+            }
+          else
+            {
+              // shared_data->gradients holds the reference gradients
+              evaluate(evaluation_flag);
+              data->for_each_quad_point([&](const int &q_point) {
+                Number grad_ref[n_components_][dim];
+                for (unsigned int c = 0; c < n_components_; ++c)
+                  for (unsigned int d = 0; d < dim; ++d)
+                    grad_ref[c][d] = shared_data->gradients(q_point, d, c);
+                apply(q_point, grad_ref);
               });
             }
         }
