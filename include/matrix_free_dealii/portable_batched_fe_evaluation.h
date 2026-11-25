@@ -293,6 +293,35 @@ namespace Copy
           }
 
           /**
+           * The inverse Jacobian at quadrature point @p q_point. All entries
+           * are loaded unconditionally and the off-diagonal ones of Cartesian
+           * cells set to zero afterwards: with loads that do not depend on the
+           * cell type, nvcc reuses them between get_gradient() and
+           * submit_gradient() of the same point (with a Cartesian/general
+           * branch it loads them twice). The general formula on the zeroed
+           * entries gives the same results as the diagonal one.
+           */
+          DEAL_II_HOST_DEVICE void
+          load_inverse_jacobian(const int q_point,
+                                Number (&inv_jac)[dim][dim]) const
+          {
+            const int          cell = cell_id(q_point);
+            const unsigned int index =
+              precomputed_data->inv_jacobian_index(cell, cell_q_point(q_point));
+            const bool is_cartesian =
+              precomputed_data->cell_type(cell) ==
+              ::dealii::internal::MatrixFreeFunctions::cartesian;
+            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                {
+                  const Number value =
+                    precomputed_data->inv_jacobian(index, d_1, d_2);
+                  inv_jac[d_1][d_2] =
+                    (d_1 == d_2 || !is_cartesian) ? value : Number(0);
+                }
+          }
+
+          /**
            * submit_gradient(q_op(get_gradient(q_point), q_point), q_point)
            * with get_gradient() computed from the reference gradient
            * @p grad_ref ([component][direction]) instead of the one stored in
@@ -890,54 +919,19 @@ namespace Copy
           AssertIndexRange(q_point, n_q_points_per_cell_range);
           Assert(precomputed_data->inv_jacobian.size() > 0,
                  ExcMessage("get_gradient() requires precomputed inv_jacobian"));
+
+          Number inv_jac[dim][dim];
+          load_inverse_jacobian(q_point, inv_jac);
+
           gradient_type grad;
-
-          const int          cell = cell_id(q_point);
-          const unsigned int inv_jac_idx =
-            precomputed_data->inv_jacobian_index(cell, cell_q_point(q_point));
-          if (precomputed_data->cell_type(cell) ==
-              ::dealii::internal::MatrixFreeFunctions::cartesian)
-            {
-              if constexpr (n_components_ == 1)
-                {
-                  for (unsigned int d = 0; d < dim; ++d)
-                    grad[d] = precomputed_data->inv_jacobian(inv_jac_idx, d, d) *
-                              shared_data->gradients(q_point, d, 0);
-                }
-              else
-                {
-                  for (unsigned int c = 0; c < n_components; ++c)
-                    for (unsigned int d = 0; d < dim; ++d)
-                      grad[c][d] =
-                        precomputed_data->inv_jacobian(inv_jac_idx, d, d) *
-                        shared_data->gradients(q_point, d, c);
-                }
-            }
-          else if constexpr (n_components_ == 1)
-            {
-              for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-                {
-                  Number tmp = 0.;
-                  for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                    tmp += precomputed_data->inv_jacobian(inv_jac_idx, d_2, d_1) *
-                           shared_data->gradients(q_point, d_2, 0);
-                  grad[d_1] = tmp;
-                }
-            }
-          else
-            {
-              for (unsigned int c = 0; c < n_components; ++c)
-                for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-                  {
-                    Number tmp = 0.;
-                    for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                      tmp +=
-                        precomputed_data->inv_jacobian(inv_jac_idx, d_2, d_1) *
-                        shared_data->gradients(q_point, d_2, c);
-                    grad[c][d_1] = tmp;
-                  }
-            }
-
+          for (unsigned int c = 0; c < n_components_; ++c)
+            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+              {
+                Number tmp = 0.;
+                for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                  tmp += inv_jac[d_2][d_1] * shared_data->gradients(q_point, d_2, c);
+                entry(grad, c, d_1) = tmp;
+              }
           return grad;
         }
 
@@ -959,54 +953,20 @@ namespace Copy
           Assert(precomputed_data->JxW.size() > 0,
                  ExcMessage("submit_gradient() requires precomputed JxW"));
 
-          const int          cell = cell_id(q_point);
-          const int          q    = cell_q_point(q_point);
-          const unsigned int inv_jac_idx =
-            precomputed_data->inv_jacobian_index(cell, q);
-          const Number JxW = precomputed_data->JxW_value(cell, q);
-          if (precomputed_data->cell_type(cell) ==
-              ::dealii::internal::MatrixFreeFunctions::cartesian)
-            {
-              if constexpr (n_components_ == 1)
-                {
-                  for (unsigned int d = 0; d < dim; ++d)
-                    shared_data->gradients(q_point, d, 0) =
-                      precomputed_data->inv_jacobian(inv_jac_idx, d, d) *
-                      gradient[d] * JxW;
-                }
-              else
-                {
-                  for (unsigned int c = 0; c < n_components; ++c)
-                    for (unsigned int d = 0; d < dim; ++d)
-                      shared_data->gradients(q_point, d, c) =
-                        precomputed_data->inv_jacobian(inv_jac_idx, d, d) *
-                        gradient[c][d] * JxW;
-                }
-            }
-          else if constexpr (n_components_ == 1)
-            {
-              for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-                {
-                  Number tmp = 0.;
-                  for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                    tmp += precomputed_data->inv_jacobian(inv_jac_idx, d_1, d_2) *
-                           gradient[d_2];
-                  shared_data->gradients(q_point, d_1, 0) = tmp * JxW;
-                }
-            }
-          else
-            {
-              for (unsigned int c = 0; c < n_components; ++c)
-                for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
-                  {
-                    Number tmp = 0.;
-                    for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
-                      tmp +=
-                        precomputed_data->inv_jacobian(inv_jac_idx, d_1, d_2) *
-                        gradient[c][d_2];
-                    shared_data->gradients(q_point, d_1, c) = tmp * JxW;
-                  }
-            }
+          Number inv_jac[dim][dim];
+          load_inverse_jacobian(q_point, inv_jac);
+          const Number JxW =
+            precomputed_data->JxW_value(cell_id(q_point), cell_q_point(q_point));
+
+          gradient_type grad = gradient;
+          for (unsigned int c = 0; c < n_components_; ++c)
+            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+              {
+                Number tmp = 0.;
+                for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                  tmp += inv_jac[d_1][d_2] * entry(grad, c, d_2);
+                shared_data->gradients(q_point, d_1, c) = tmp * JxW;
+              }
         }
 
 
