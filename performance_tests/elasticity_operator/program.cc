@@ -12,7 +12,7 @@
 // split once more), deformed so that every cell is a general one and all
 // variants read the geometry per quadrature point; homogeneous Dirichlet
 // conditions on the boundary. Times are the maximum over the ranks, after
-// warm-up; |A src| relative to vmult_dealii checks that the variants agree.
+// warm-up; |A src - A_dealii src| / |A_dealii src| checks that the variants agree.
 // All variants but vmult_dealii (one cell per team) run with the same batch:
 // cells_per_batch, or with 0 the benchmark's rule (10 kB of shared values per
 // batch, 1 to 32 cells). Every line prints the batch it ran with.
@@ -132,9 +132,10 @@ run(const double target_n_dofs, const int n_repetitions, const unsigned int cell
   const Material material{1.7, 0.6};
   const Operator op(dof_handler, constraints, material, false, cells_per_batch);
 
-  VectorType src, dst;
+  VectorType src, dst, dst_ref;
   op.initialize_dof_vector(src);
   op.initialize_dof_vector(dst);
+  op.initialize_dof_vector(dst_ref);
   {
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> host(src.get_partitioner());
     for (unsigned int i = 0; i < host.locally_owned_size(); ++i)
@@ -193,16 +194,21 @@ run(const double target_n_dofs, const int n_repetitions, const unsigned int cell
       const double t_min    = times.front();
       const double t_median = times[times.size() / 2];
 
-      const double norm = dst.l2_norm();
+      // the first variant (vmult_dealii) is the reference
       if (reference_norm == 0.)
-        reference_norm = norm;
+        {
+          dst_ref        = dst;
+          reference_norm = dst_ref.l2_norm();
+        }
+      dst -= dst_ref;
+      const double difference = dst.l2_norm() / reference_norm;
 
       pcout << "  " << std::left << std::setw(16) << name << std::right << " batch " << std::setw(2)
             << batch << " median " << std::setw(9) << std::setprecision(4) << 1e3 * t_median
             << " ms, min " << std::setw(9) << 1e3 * t_min << " ms, " << std::setw(7)
             << std::setprecision(4) << 1e-9 * n_dofs / t_median
-            << " GDoF/s (median), |A src| rel. diff " << std::scientific << std::setprecision(2)
-            << std::abs(norm - reference_norm) / reference_norm << std::defaultfloat << std::endl;
+            << " GDoF/s (median), rel. difference " << std::scientific << std::setprecision(2)
+            << difference << std::defaultfloat << std::endl;
     }
   pcout << std::endl;
 
