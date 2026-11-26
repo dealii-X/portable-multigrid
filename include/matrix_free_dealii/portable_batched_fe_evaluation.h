@@ -397,21 +397,35 @@ namespace Copy
         FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::
           read_dof_values(const DeviceVector<Number> &src)
         {
-          constexpr int n_dofs = tensor_dofs_per_component;
+          constexpr int n_dofs    = tensor_dofs_per_component;
+          constexpr int n_dofs_1d = fe_degree + 1;
+          constexpr int n_lines   = n_dofs / n_dofs_1d;
 
+          // One thread per line of dofs along the last direction, with a
+          // compile-time loop over the line: all its index and value loads
+          // are in flight at once (as in the BK3 kernels), instead of one
+          // index-then-value round trip per dof.
           Kokkos::parallel_for(
-            Kokkos::TeamVectorRange(data->team_member, batch_size * n_dofs),
-            [&](const int &i) {
-              const int cell = first_cell_id + i / n_dofs;
-              const int dof  = i % n_dofs;
+            Kokkos::TeamVectorRange(data->team_member, batch_size * n_lines),
+            [&](const int &t) {
+              const int b    = t / n_lines;
+              const int line = t % n_lines;
+              const int cell = first_cell_id + b;
               for (unsigned int c = 0; c < n_components_; ++c)
                 {
-                  const types::global_dof_index index =
-                    precomputed_data->local_to_global(dof + n_dofs * c, cell);
-                  // Dirichlet constrained DoFs read as zero
-                  shared_data->values(i, c) =
-                    (index == numbers::invalid_unsigned_int) ? Number(0) :
-                                                               src[index];
+                  types::global_dof_index index[n_dofs_1d];
+                  for (int k = 0; k < n_dofs_1d; ++k)
+                    index[k] = precomputed_data->local_to_global(
+                      line + k * n_lines + n_dofs * c, cell);
+                  Number value[n_dofs_1d];
+                  for (int k = 0; k < n_dofs_1d; ++k)
+                    // Dirichlet constrained DoFs read as zero
+                    value[k] = (index[k] == numbers::invalid_unsigned_int) ?
+                                 Number(0) :
+                                 src[index[k]];
+                  for (int k = 0; k < n_dofs_1d; ++k)
+                    shared_data->values(b * n_dofs + line + k * n_lines, c) =
+                      value[k];
                 }
             });
           typename SharedData<dim, Number>::SharedViewScratchPad

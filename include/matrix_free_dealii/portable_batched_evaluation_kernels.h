@@ -157,14 +157,32 @@ namespace Copy
                                      scratch_pad_size(n_q_points_per_cell,
                                                       gpu_data));
 
+            // The shape data Views are created from the scratch space in any
+            // case, with size 0 if unused: assigned only under a run-time
+            // condition, nvcc loses their shared address space (generic LD).
+            // A size-0 request does not advance the scratch space.
+            using ElementType = ::dealii::internal::MatrixFreeFunctions::ElementType;
+            const bool needs_shape_values =
+              gpu_data.element_type >= ElementType::tensor_symmetric;
+            const bool needs_co_shape_gradients =
+              gpu_data.element_type <= ElementType::tensor_symmetric;
+            const bool needs_shape_gradients =
+              gpu_data.element_type >= ElementType::tensor_symmetric;
+
+            shape_values = SharedViewShapeData(
+              team_handle.team_shmem(),
+              needs_shape_values ? gpu_data.shape_values.size() : 0);
+            co_shape_gradients = SharedViewShapeData(
+              team_handle.team_shmem(),
+              needs_co_shape_gradients ? gpu_data.co_shape_gradients.size() : 0);
+            shape_gradients = SharedViewShapeData(
+              team_handle.team_shmem(),
+              needs_shape_gradients ? gpu_data.shape_gradients.size() : 0);
+
             // For symmetric collocation elements, the shape_values are the
             // identity and do not need to be stored in shared memory
-            if (gpu_data.element_type >= ::dealii::internal::MatrixFreeFunctions::
-                                           ElementType::tensor_symmetric)
+            if (needs_shape_values)
               {
-                shape_values = SharedViewShapeData(team_handle.team_shmem(),
-                                                   gpu_data.shape_values.size());
-
                 Kokkos::parallel_for(Kokkos::TeamVectorRange(
                                        team_handle, gpu_data.shape_values.size()),
                                      [&](const int i) {
@@ -178,13 +196,8 @@ namespace Copy
             // general kernel for them if the number of quadrature points is
             // too large for the transformation to collocation, see
             // use_collocation_evaluation().
-            if (gpu_data.element_type <= ::dealii::internal::MatrixFreeFunctions::
-                                           ElementType::tensor_symmetric)
+            if (needs_co_shape_gradients)
               {
-                co_shape_gradients =
-                  SharedViewShapeData(team_handle.team_shmem(),
-                                      gpu_data.co_shape_gradients.size());
-
                 Kokkos::parallel_for(
                   Kokkos::TeamVectorRange(team_handle,
                                           gpu_data.co_shape_gradients.size()),
@@ -193,13 +206,8 @@ namespace Copy
                   });
               }
 
-            if (gpu_data.element_type >= ::dealii::internal::MatrixFreeFunctions::
-                                           ElementType::tensor_symmetric)
+            if (needs_shape_gradients)
               {
-                shape_gradients =
-                  SharedViewShapeData(team_handle.team_shmem(),
-                                      gpu_data.shape_gradients.size());
-
                 Kokkos::parallel_for(
                   Kokkos::TeamVectorRange(team_handle,
                                           gpu_data.shape_gradients.size()),

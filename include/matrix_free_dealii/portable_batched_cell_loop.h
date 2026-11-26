@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "matrix_free_dealii/portable_batched_evaluation_kernels.h"
 
@@ -220,11 +221,10 @@ namespace Copy
           {
             Kokkos::Array<SharedData<dim, Number>, n_max_dof_handlers>
               shared_data;
-            for (unsigned int d = 0; d < n_dof_handler; ++d)
-              shared_data[d].reinit(team_member,
-                                    Functor::n_q_points,
-                                    batch_size,
-                                    precomputed_data[d]);
+            reinit_shared_data(
+              team_member,
+              shared_data,
+              std::make_index_sequence<n_max_dof_handlers>());
             // reinit() stages the shape data without a trailing barrier
             team_member.team_barrier();
 
@@ -249,6 +249,28 @@ namespace Copy
                 DeviceVector<Number> nonconstdst = dst;
                 func(&data, src, nonconstdst);
               }
+          }
+
+          // compile-time indices only: indexing shared_data at run time
+          // puts the whole array on the stack (1 kB of local memory per
+          // thread). Entry 0 unconditionally: under a run-time condition nvcc
+          // loses the shared address space of its Views (generic LD/ST).
+          template <std::size_t... d>
+          DEAL_II_HOST_DEVICE void
+          reinit_shared_data(
+            const TeamHandle &team_member,
+            Kokkos::Array<SharedData<dim, Number>, n_max_dof_handlers>
+              &shared_data,
+            std::index_sequence<d...>) const
+          {
+            Assert(n_dof_handler > 0, ExcInternalError());
+            ((d == 0 || d < n_dof_handler ?
+                shared_data[d].reinit(team_member,
+                                      Functor::n_q_points,
+                                      batch_size,
+                                      precomputed_data[d]) :
+                void()),
+             ...);
           }
 
           Functor            func;
