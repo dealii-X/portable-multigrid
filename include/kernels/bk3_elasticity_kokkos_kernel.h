@@ -102,6 +102,12 @@ namespace BK3
         return nbatches;
       }
 
+      unsigned int
+      elements_per_batch() const
+      {
+        return nelmtPerBatch;
+      }
+
       // threads per team: one per pencil (nelmtPerBatch * nq^2) unless a
       // smaller team is requested; one on a host backend
       unsigned int

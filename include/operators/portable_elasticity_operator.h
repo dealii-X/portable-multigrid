@@ -145,10 +145,13 @@ namespace Portable
   public:
     using VectorType = LinearAlgebra::distributed::Vector<number, MemorySpace::Default>;
 
+    // cells_per_batch: the batch of vmult_batched(), vmult_fused() and the
+    // benchmark and BK3 kernels; 0 = the benchmark's rule for all of them
     ElasticityOperator(const DoFHandler<dim>           &dof_handler,
                        const AffineConstraints<number> &constraints,
                        const Material                  &material,
-                       const bool                       overlap_communication_computation);
+                       const bool                       overlap_communication_computation,
+                       const unsigned int               cells_per_batch = 0);
 
     void
     vmult(VectorType &dst, const VectorType &src) const override;
@@ -167,7 +170,7 @@ namespace Portable
 
     // the BK3-style counterpart of the benchmark kernel
     // (kernels/bk3_elasticity_kokkos_kernel.h: shape data in shared memory,
-    // gather and scatter as steps of their own, BK3's batches and teams)
+    // gather and scatter as steps of their own, BK3's persistent teams)
     void
     vmult_bk3(VectorType &dst, const VectorType &src) const;
 
@@ -220,6 +223,16 @@ namespace Portable
     bool
     use_overlap_communication_computation() const override;
 
+    // cells per batch on color 0 (vmult_dealii(): 1)
+    unsigned int
+    cells_per_batch_batched() const;
+
+    unsigned int
+    cells_per_batch_benchmark() const;
+
+    unsigned int
+    cells_per_batch_bk3() const;
+
   private:
     using BatchedFEEvaluation =
       Copy::Portable::internal::batched::FEEvaluation<dim, fe_degree, n_q_points_1d, dim, number>;
@@ -267,6 +280,9 @@ namespace Portable
 
     MatrixFree<dim, number> matrix_free;
 
+    // cells per batch of all batched variants
+    unsigned int requested_batch_size;
+
     // per color, for vmult_benchmark()
     std::vector<BenchmarkKernel>                                            benchmark_kernels;
     std::vector<BK3Kernel>                                                  bk3_kernels;
@@ -287,8 +303,11 @@ namespace Portable
     const DoFHandler<dim>           &dof_handler,
     const AffineConstraints<number> &constraints,
     const Material                  &material,
-    const bool                       overlap_communication_computation)
-    : material(material)
+    const bool                       overlap_communication_computation,
+    const unsigned int               cells_per_batch)
+    : requested_batch_size(cells_per_batch > 0 ? cells_per_batch :
+                                                 BenchmarkKernel::default_elements_per_batch())
+    , material(material)
   {
     AssertDimension(dof_handler.get_fe().n_components(), dim);
 
@@ -318,18 +337,10 @@ namespace Portable
           {
             const auto data = matrix_free.get_data(color);
 
-            benchmark_kernels.emplace_back(data.n_cells,
-                                           BenchmarkKernel::default_elements_per_batch(),
-                                           basis,
-                                           dbasis,
-                                           material.lambda,
-                                           material.mu);
-            bk3_kernels.emplace_back(data.n_cells,
-                                     BK3Kernel::default_elements_per_batch(),
-                                     basis,
-                                     dbasis,
-                                     material.lambda,
-                                     material.mu);
+            benchmark_kernels.emplace_back(
+              data.n_cells, requested_batch_size, basis, dbasis, material.lambda, material.mu);
+            bk3_kernels.emplace_back(
+              data.n_cells, requested_batch_size, basis, dbasis, material.lambda, material.mu);
             // both kernels read G of their padded last batch
             benchmark_geometry.push_back(internal::benchmark_geometry<dim, number, n_q_points_1d>(
               data,
@@ -395,10 +406,8 @@ namespace Portable
       colored_data;
     colored_data[0] = matrix_free.get_data(color);
 
-    const int batch_size =
-      batched::compute_batch_size<dim, number>(BatchedLocalOperator::n_q_points,
-                                               n_dof_handler,
-                                               colored_data);
+    const int batch_size = batched::compute_batch_size<dim, number>(
+      BatchedLocalOperator::n_q_points, n_dof_handler, colored_data, requested_batch_size);
 
     const batched::ApplyKernel<dim, number, BatchedLocalOperator> apply_kernel{
       BatchedLocalOperator(material), n_dof_handler, colored_data, batch_size, src, dst};
@@ -423,10 +432,8 @@ namespace Portable
   {
     dst = 0.;
 
-    Copy::Portable::internal::batched::cell_loop(matrix_free,
-                                                 BatchedLocalOperator(material),
-                                                 src,
-                                                 dst);
+    Copy::Portable::internal::batched::cell_loop(
+      matrix_free, BatchedLocalOperator(material), src, dst, requested_batch_size);
 
     matrix_free.copy_constrained_values(src, dst);
   }
@@ -506,10 +513,8 @@ namespace Portable
   {
     dst = 0.;
 
-    Copy::Portable::internal::batched::cell_loop(matrix_free,
-                                                 FusedLocalOperator(material),
-                                                 src,
-                                                 dst);
+    Copy::Portable::internal::batched::cell_loop(
+      matrix_free, FusedLocalOperator(material), src, dst, requested_batch_size);
 
     matrix_free.copy_constrained_values(src, dst);
   }
@@ -736,6 +741,39 @@ namespace Portable
     use_overlap_communication_computation() const
   {
     return matrix_free.use_overlap_communication_computation();
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  unsigned int
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::cells_per_batch_batched()
+    const
+  {
+    Kokkos::Array<typename MatrixFree<dim, number>::PrecomputedData, n_max_dof_handlers>
+      colored_data;
+    colored_data[0] = matrix_free.get_data(0);
+    return Copy::Portable::internal::batched::compute_batch_size<dim, number>(
+      BatchedLocalOperator::n_q_points, 1, colored_data, requested_batch_size);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  unsigned int
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::cells_per_batch_benchmark()
+    const
+  {
+    return benchmark_kernels.empty() ? 0 : benchmark_kernels[0].elements_per_batch();
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  unsigned int
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::cells_per_batch_bk3() const
+  {
+    return bk3_kernels.empty() ? 0 : bk3_kernels[0].elements_per_batch();
   }
 
 } // namespace Portable
