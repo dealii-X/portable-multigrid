@@ -719,6 +719,10 @@ namespace Portable
       plain_dof_indices_fine;
 
     std::vector<Kokkos::View<number **, MemorySpace::Default::kokkos_space>> weights_view_kokkos;
+
+    // vector-valued elements: the kernels see each (cell, component) as a
+    // scalar cell, column cell * n_components + c of the index arrays
+    unsigned int n_components = 1;
   };
 
   template <int dim, int p_coarse, int p_fine, typename number>
@@ -784,7 +788,7 @@ namespace Portable
               this->dof_indices_coarse[color],
               this->plain_dof_indices_fine[color],
               this->weights_view_kokkos[color],
-              n_cells,
+              n_cells * n_components,
               numBlocks,
               threadsPerBlock);
           }
@@ -883,7 +887,7 @@ namespace Portable
               this->dof_indices_coarse[color],
               this->plain_dof_indices_fine[color],
               this->weights_view_kokkos[color],
-              n_cells,
+              n_cells * n_components,
               numBlocks,
               threadsPerBlock);
           }
@@ -1052,6 +1056,14 @@ namespace Portable
       lex_numbering_coarse = shape_info.lexicographic_numbering;
     }
 
+    // ShapeInfo numbers the components one after the other
+    n_components = fe_fine.n_components();
+    AssertDimension(fe_coarse.n_components(), n_components);
+    AssertDimension(lex_numbering_fine.size(), n_dofs_per_cell_fine);
+    AssertDimension(lex_numbering_coarse.size(), n_dofs_per_cell_coarse);
+    const unsigned int n_scalar_dofs_fine   = n_dofs_per_cell_fine / n_components;
+    const unsigned int n_scalar_dofs_coarse = n_dofs_per_cell_coarse / n_components;
+
     // lexicographic fine DoF indices, cell after cell in colored-graph order
     std::vector<types::global_dof_index> fine_indices_lex;
 
@@ -1132,15 +1144,17 @@ namespace Portable
                 Kokkos::View<number **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("weights_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
-                  n_dofs_per_cell_fine,
-                  graph.size());
+                  n_scalar_dofs_fine,
+                  graph.size() * n_components);
 
               auto weights_view_host = Kokkos::create_mirror_view(weights_view_kokkos[color]);
 
               for (unsigned int cell_id = 0; cell_id < graph.size(); ++cell_id)
-                for (unsigned int i = 0; i < n_dofs_per_cell_fine; ++i)
-                  weights_view_host(i, cell_id) =
-                    weight_vector[fine_indices_lex[(first_cell + cell_id) * n_dofs_per_cell_fine + i]];
+                for (unsigned int c = 0; c < n_components; ++c)
+                  for (unsigned int i = 0; i < n_scalar_dofs_fine; ++i)
+                    weights_view_host(i, cell_id * n_components + c) =
+                      weight_vector[fine_indices_lex[(first_cell + cell_id) * n_dofs_per_cell_fine +
+                                                     c * n_scalar_dofs_fine + i]];
               Kokkos::deep_copy(weights_view_kokkos[color], weights_view_host);
               Kokkos::fence();
             }
@@ -1168,8 +1182,8 @@ namespace Portable
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("dof_indices_coarse_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
-                  n_dofs_per_cell_coarse,
-                  n_cells);
+                  n_scalar_dofs_coarse,
+                  n_cells * n_components);
 
               auto dof_indices_coarse_host =
                 Kokkos::create_mirror_view(this->dof_indices_coarse[color]);
@@ -1196,10 +1210,13 @@ namespace Portable
                       const auto subdomain_local_dof =
                         subdomain_dof_indices_coarse[lex_numbering_coarse[i]];
 
+                      const unsigned int column =
+                        cell_id * n_components + i / n_scalar_dofs_coarse;
                       if (constraints_coarse->is_constrained(subdomain_local_dof))
-                        dof_indices_coarse_host(i, cell_id) = numbers::invalid_unsigned_int;
+                        dof_indices_coarse_host(i % n_scalar_dofs_coarse, column) =
+                          numbers::invalid_unsigned_int;
                       else
-                        dof_indices_coarse_host(i, cell_id) = global_dof;
+                        dof_indices_coarse_host(i % n_scalar_dofs_coarse, column) = global_dof;
                     }
                 }
               Kokkos::deep_copy(this->dof_indices_coarse[color], dof_indices_coarse_host);
@@ -1227,8 +1244,8 @@ namespace Portable
                 Kokkos::View<unsigned int **, MemorySpace::Default::kokkos_space>(
                   Kokkos::view_alloc("plain_dof_indices_fine_" + std::to_string(color),
                                      Kokkos::WithoutInitializing),
-                  n_dofs_per_cell_fine,
-                  n_cells);
+                  n_scalar_dofs_fine,
+                  n_cells * n_components);
 
               auto plain_dof_indices_fine_host =
                 Kokkos::create_mirror_view(this->plain_dof_indices_fine[color]);
@@ -1238,7 +1255,8 @@ namespace Portable
                   {
                     const types::global_dof_index index =
                       fine_indices_lex[(first_cell + cell_id) * n_dofs_per_cell_fine + i];
-                    plain_dof_indices_fine_host(i, cell_id) =
+                    plain_dof_indices_fine_host(i % n_scalar_dofs_fine,
+                                                cell_id * n_components + i / n_scalar_dofs_fine) =
                       partitioner_fine ? partitioner_fine->global_to_local(index) : index;
                   }
               Kokkos::deep_copy(this->plain_dof_indices_fine[color], plain_dof_indices_fine_host);
