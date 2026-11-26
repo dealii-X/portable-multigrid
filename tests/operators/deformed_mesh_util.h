@@ -12,6 +12,8 @@
 #include <deal.II/base/logstream.h>
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/quadrature_lib.h>
+#include <deal.II/base/symmetric_tensor.h>
+#include <deal.II/base/tensor.h>
 
 #include <deal.II/distributed/tria.h>
 
@@ -243,6 +245,109 @@ namespace deformed_mesh_test
                         grads[i * n_components + c] * grads[j * n_components + c];
                     cell_matrix(i, j) += grad_i_dot_grad_j * fe_values.JxW(q);
                   }
+            }
+
+          cell->get_dof_indices(local_dof_indices);
+
+          for (unsigned int j = 0; j < dofs_per_cell; ++j)
+            x_local(j) = constraints.is_constrained(local_dof_indices[j]) ?
+                           0. :
+                           src_host(local_dof_indices[j]);
+
+          cell_matrix.vmult(y_local, x_local);
+
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            if (!constraints.is_constrained(local_dof_indices[i]))
+              {
+                dst_host(local_dof_indices[i]) += y_local(i);
+                diag_host(local_dof_indices[i]) += cell_matrix(i, i);
+              }
+        }
+
+    dst_host.compress(VectorOperation::add);
+    diag_host.compress(VectorOperation::add);
+
+    for (const auto i : locally_owned_dofs)
+      if (constraints.is_constrained(i))
+        {
+          dst_host(i)  = src_host(i);
+          diag_host(i) = 1.;
+        }
+
+    LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+    for (const auto i : locally_owned_dofs)
+      rw(i) = static_cast<Number>(dst_host(i));
+    dst_device.import_elements(rw, VectorOperation::insert);
+
+    for (const auto i : locally_owned_dofs)
+      rw(i) = static_cast<Number>(diag_host(i));
+    diag_device.import_elements(rw, VectorOperation::insert);
+  }
+
+
+
+  // CPU reference for linear elasticity, lambda (div u, div v) + 2 mu
+  // (eps(u), eps(v)): dst = A src and diag = diag(A), with FEValues in double
+  // and the Dirichlet convention of reference_laplace().
+  template <int dim, typename Number>
+  void
+  reference_elasticity(const Mapping<dim>              &mapping,
+                       const DoFHandler<dim>           &dof_handler,
+                       const AffineConstraints<Number> &constraints,
+                       const unsigned int               n_q_points_1d,
+                       const double                     lambda,
+                       const double                     mu,
+                       const IndexSet                  &locally_owned_dofs,
+                       const IndexSet                  &locally_relevant_dofs,
+                       const MPI_Comm                   mpi_communicator,
+                       const DeviceVectorType<Number>  &src_device,
+                       DeviceVectorType<Number>        &dst_device,
+                       DeviceVectorType<Number>        &diag_device)
+  {
+    using HostVector = LinearAlgebra::distributed::Vector<double, MemorySpace::Host>;
+
+    HostVector src_host(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    {
+      LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+      rw.import_elements(src_device, VectorOperation::insert);
+      for (const auto i : locally_owned_dofs)
+        src_host(i) = rw(i);
+    }
+    src_host.update_ghost_values();
+
+    HostVector dst_host(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+    HostVector diag_host(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+
+    const FiniteElement<dim> &fe = dof_handler.get_fe();
+    AssertDimension(fe.n_components(), dim);
+    const QGauss<dim> quadrature(n_q_points_1d);
+    FEValues<dim>     fe_values(mapping, fe, quadrature, update_gradients | update_JxW_values);
+
+    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
+
+    FullMatrix<double>                   cell_matrix(dofs_per_cell, dofs_per_cell);
+    Vector<double>                       x_local(dofs_per_cell), y_local(dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+    std::vector<Tensor<2, dim>>          grads(dofs_per_cell);
+
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          cell_matrix = 0.;
+
+          for (const unsigned int q : fe_values.quadrature_point_indices())
+            {
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int c = 0; c < dim; ++c)
+                  grads[i][c] = fe_values.shape_grad_component(i, q, c);
+
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                  cell_matrix(i, j) +=
+                    (lambda * trace(grads[i]) * trace(grads[j]) +
+                     2. * mu * scalar_product(symmetrize(grads[i]), symmetrize(grads[j]))) *
+                    fe_values.JxW(q);
             }
 
           cell->get_dof_indices(local_dof_indices);
