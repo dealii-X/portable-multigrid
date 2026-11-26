@@ -178,6 +178,22 @@ namespace Portable
     void
     vmult_fused(VectorType &dst, const VectorType &src) const;
 
+    // R(u) as vmult_batched() / vmult_fused(), storing grad u at all
+    // quadrature points for vmult_linearized()
+    void
+    evaluate_residual(VectorType &residual, const VectorType &u);
+
+    void
+    evaluate_residual_fused(VectorType &residual, const VectorType &u);
+
+    // the operator linearized at the u of the last evaluate_residual*() call,
+    // as vmult_batched() / vmult_fused()
+    void
+    vmult_linearized(VectorType &dst, const VectorType &src) const;
+
+    void
+    vmult_linearized_fused(VectorType &dst, const VectorType &src) const;
+
     void
     vmult_dummy(VectorType       &dst,
                 const VectorType &src,
@@ -253,6 +269,24 @@ namespace Portable
                               Material,
                               FEEvaluation<dim, fe_degree, n_q_points_1d, dim, number>>;
 
+    template <bool fused, bool linearize>
+    using LinearizationLocalOperator = LocalElasticityLinearizationOperator<dim,
+                                                                            fe_degree,
+                                                                            n_q_points_1d,
+                                                                            number,
+                                                                            Material,
+                                                                            BatchedFEEvaluation,
+                                                                            fused,
+                                                                            linearize>;
+
+    template <bool fused>
+    void
+    residual_and_store(VectorType &residual, const VectorType &u);
+
+    template <bool fused>
+    void
+    linearized_vmult(VectorType &dst, const VectorType &src) const;
+
     // owned + ghost entries, what a DeviceVector over vec.get_values() spans
     static unsigned int
     mpi_local_size(const VectorType &vec)
@@ -288,6 +322,12 @@ namespace Portable
     std::vector<BK3Kernel>                                                  bk3_kernels;
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> benchmark_geometry;
 
+    // grad u of the last evaluate_residual*()
+    QuadraturePointGradients<dim, number> linearization_gradients;
+
+    // quadrature points of all colors
+    std::size_t n_q_points_total = 0;
+
     // matrix_free's colored graph without the FilteredIterator wrapper
     typename OperatorInfoBase<dim>::ColoredGraph colored_graph;
 
@@ -320,6 +360,9 @@ namespace Portable
     matrix_free.reinit(
       mapping, dof_handler, constraints, QGauss<1>(n_q_points_1d), additional_data);
     colored_graph = make_colored_graph<dim>(matrix_free.get_colored_graph());
+    for (unsigned int color = 0; color < colored_graph.size(); ++color)
+      n_q_points_total += static_cast<std::size_t>(matrix_free.get_data(color).n_cells) *
+                          Utilities::pow(n_q_points_1d, dim);
 
     if constexpr (has_benchmark_kernel)
       {
@@ -515,6 +558,100 @@ namespace Portable
 
     Copy::Portable::internal::batched::cell_loop(
       matrix_free, FusedLocalOperator(material), src, dst, requested_batch_size);
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::evaluate_residual(
+    VectorType       &residual,
+    const VectorType &u)
+  {
+    residual_and_store<false>(residual, u);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::evaluate_residual_fused(
+    VectorType       &residual,
+    const VectorType &u)
+  {
+    residual_and_store<true>(residual, u);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::vmult_linearized(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    linearized_vmult<false>(dst, src);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::vmult_linearized_fused(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    linearized_vmult<true>(dst, src);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  template <bool fused>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::residual_and_store(
+    VectorType       &residual,
+    const VectorType &u)
+  {
+    if (linearization_gradients.values.extent(0) != n_q_points_total)
+      linearization_gradients.values =
+        typename QuadraturePointGradients<dim, number>::ViewType(
+          "ElasticityOperator linearization gradients", n_q_points_total);
+
+    residual = 0.;
+
+    Copy::Portable::internal::batched::cell_loop(
+      matrix_free,
+      LinearizationLocalOperator<fused, false>(material, linearization_gradients),
+      u,
+      residual,
+      requested_batch_size);
+
+    matrix_free.copy_constrained_values(u, residual);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  template <bool fused>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::linearized_vmult(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    AssertThrow(linearization_gradients.values.extent(0) == n_q_points_total,
+                ExcMessage("vmult_linearized() needs evaluate_residual() first"));
+
+    dst = 0.;
+
+    Copy::Portable::internal::batched::cell_loop(
+      matrix_free,
+      LinearizationLocalOperator<fused, true>(material, linearization_gradients),
+      src,
+      dst,
+      requested_batch_size);
 
     matrix_free.copy_constrained_values(src, dst);
   }

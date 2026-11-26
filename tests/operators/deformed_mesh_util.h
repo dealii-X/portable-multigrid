@@ -482,6 +482,109 @@ namespace deformed_mesh_test
 
 
 
+  // CPU reference for the Saint Venant-Kirchhoff residual linearized at u,
+  // applied to du: (grad v, G S + F dS) with G = grad du,
+  // dS = lambda tr(dE) I + 2 mu dE and dE = (G^T F + F^T G) / 2, in the
+  // Dirichlet convention of reference_laplace() (dst[c] = du[c]).
+  template <int dim, typename Number>
+  void
+  reference_svk_linearized(const Mapping<dim>              &mapping,
+                           const DoFHandler<dim>           &dof_handler,
+                           const AffineConstraints<Number> &constraints,
+                           const unsigned int               n_q_points_1d,
+                           const double                     lambda,
+                           const double                     mu,
+                           const IndexSet                  &locally_owned_dofs,
+                           const IndexSet                  &locally_relevant_dofs,
+                           const MPI_Comm                   mpi_communicator,
+                           const DeviceVectorType<Number>  &u_device,
+                           const DeviceVectorType<Number>  &du_device,
+                           DeviceVectorType<Number>        &dst_device)
+  {
+    using HostVector = LinearAlgebra::distributed::Vector<double, MemorySpace::Host>;
+
+    const auto to_host = [&](const DeviceVectorType<Number> &device)
+    {
+      HostVector host(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+      LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+      rw.import_elements(device, VectorOperation::insert);
+      for (const auto i : locally_owned_dofs)
+        host(i) = rw(i);
+      host.update_ghost_values();
+      return host;
+    };
+    const HostVector u_host  = to_host(u_device);
+    const HostVector du_host = to_host(du_device);
+
+    HostVector dst_host(locally_owned_dofs, locally_relevant_dofs, mpi_communicator);
+
+    const FiniteElement<dim> &fe = dof_handler.get_fe();
+    AssertDimension(fe.n_components(), dim);
+    const QGauss<dim> quadrature(n_q_points_1d);
+    FEValues<dim>     fe_values(mapping, fe, quadrature, update_gradients | update_JxW_values);
+
+    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
+
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+    std::vector<double>                  u_local(dofs_per_cell), du_local(dofs_per_cell);
+    Vector<double>                       y_local(dofs_per_cell);
+    std::vector<Tensor<2, dim>>          grads(dofs_per_cell);
+    const Tensor<2, dim>                 identity = unit_symmetric_tensor<dim>();
+
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          cell->get_dof_indices(local_dof_indices);
+          for (unsigned int j = 0; j < dofs_per_cell; ++j)
+            {
+              const bool constrained = constraints.is_constrained(local_dof_indices[j]);
+              u_local[j]             = constrained ? 0. : u_host(local_dof_indices[j]);
+              du_local[j]            = constrained ? 0. : du_host(local_dof_indices[j]);
+            }
+          y_local = 0.;
+
+          for (const unsigned int q : fe_values.quadrature_point_indices())
+            {
+              Tensor<2, dim> grad_u, G;
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                {
+                  for (unsigned int c = 0; c < dim; ++c)
+                    grads[i][c] = fe_values.shape_grad_component(i, q, c);
+                  grad_u += u_local[i] * grads[i];
+                  G += du_local[i] * grads[i];
+                }
+
+              const Tensor<2, dim> F  = identity + grad_u;
+              const Tensor<2, dim> E  = 0.5 * (transpose(F) * F - identity);
+              const Tensor<2, dim> S  = lambda * trace(E) * identity + 2. * mu * E;
+              const Tensor<2, dim> dE = 0.5 * (transpose(G) * F + transpose(F) * G);
+              const Tensor<2, dim> dS = lambda * trace(dE) * identity + 2. * mu * dE;
+              const Tensor<2, dim> dP = G * S + F * dS;
+
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                y_local(i) += scalar_product(grads[i], dP) * fe_values.JxW(q);
+            }
+
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            if (!constraints.is_constrained(local_dof_indices[i]))
+              dst_host(local_dof_indices[i]) += y_local(i);
+        }
+
+    dst_host.compress(VectorOperation::add);
+
+    for (const auto i : locally_owned_dofs)
+      if (constraints.is_constrained(i))
+        dst_host(i) = du_host(i);
+
+    LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+    for (const auto i : locally_owned_dofs)
+      rw(i) = static_cast<Number>(dst_host(i));
+    dst_device.import_elements(rw, VectorOperation::insert);
+  }
+
+
+
   // max_i |1 / inverse_diagonal_i - diag_ref_i| / |diag_ref_i| over the
   // owned DoFs, reduced over the communicator.
   template <typename Number>
