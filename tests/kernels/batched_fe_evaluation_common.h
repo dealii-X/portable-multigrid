@@ -33,6 +33,10 @@
 //  - static void apply(fe_eval, q_point, coefficient) on the device;
 //  - static void reference(fe_values, q, coefficient, u, local_dst), which
 //    adds the contribution of quadrature point q for the local dof values u.
+// or, for a gradient-only operator applied through evaluate_and_apply(),
+// instead of apply():
+//  - static constexpr bool fused = true;
+//  - static gradient_type flux(gradient, coefficient) on the device.
 
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/utilities.h>
@@ -137,6 +141,17 @@ coefficient_value(const Point<dim> &p)
 
 
 
+template <typename Operator, typename = void>
+struct is_fused : std::false_type
+{};
+
+template <typename Operator>
+struct is_fused<Operator, std::void_t<decltype(Operator::fused)>>
+  : std::bool_constant<Operator::fused>
+{};
+
+
+
 // The operator on the cells of one batch, with the signature expected by
 // Copy::Portable::internal::batched::cell_loop().
 template <int dim, int fe_degree, int n_q_points_1d, typename Operator>
@@ -159,18 +174,32 @@ struct BatchedLocalOperator
                                               Number>
       fe_eval(data);
 
+    // position of a point in a field with n_q_points entries per cell
+    const auto position = [&](const int q_point) {
+      return fe_eval.get_current_cell_index(q_point) * n_q_points +
+             q_point % n_q_points;
+    };
+
     fe_eval.read_dof_values(src);
-    fe_eval.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
 
-    data->for_each_quad_point([&](const int &q_point) {
-      // position of the point in a field with n_q_points entries per cell
-      const int position =
-        fe_eval.get_current_cell_index(q_point) * n_q_points +
-        q_point % n_q_points;
-      Operator::apply(fe_eval, q_point, coefficient(position));
-    });
+    if constexpr (is_fused<Operator>::value)
+      {
+        fe_eval.evaluate_and_apply(
+          EvaluationFlags::gradients,
+          [&](const auto &gradient, const int q_point) {
+            return Operator::flux(gradient, coefficient(position(q_point)));
+          });
+        fe_eval.integrate(EvaluationFlags::gradients);
+      }
+    else
+      {
+        fe_eval.evaluate(EvaluationFlags::values | EvaluationFlags::gradients);
+        data->for_each_quad_point([&](const int &q_point) {
+          Operator::apply(fe_eval, q_point, coefficient(position(q_point)));
+        });
+        fe_eval.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
+      }
 
-    fe_eval.integrate(EvaluationFlags::values | EvaluationFlags::gradients);
     fe_eval.distribute_local_to_global(dst);
   }
 

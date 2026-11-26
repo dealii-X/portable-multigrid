@@ -748,6 +748,37 @@ namespace Copy
               }
           }
 
+          /**
+           * The gradients of evaluate() handed to op(point, grad) instead of
+           * being stored, see EvaluatorTensorProduct::co_gradient_and_apply().
+           */
+          template <int n_components, typename PointOperation>
+          DEAL_II_HOST_DEVICE static void
+          evaluate_gradients_and_apply(
+            const unsigned int              dof_handler_index,
+            const BatchedData<dim, Number> *data,
+            const PointOperation           &op)
+          {
+            auto scratch_for_eval =
+              Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
+                              Kokkos::make_pair(0, 0));
+
+            EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
+                                   dim,
+                                   fe_degree + 1,
+                                   fe_degree + 1,
+                                   Number>
+              eval(data->team_member,
+                   SharedView(), // shape_values are identity
+                   SharedView(), // shape_gradients are not used
+                   data->shared_data[dof_handler_index].co_shape_gradients,
+                   scratch_for_eval,
+                   data->batch_size());
+
+            eval.template co_gradient_and_apply<n_components>(
+              data->shared_data[dof_handler_index].values, op);
+          }
+
 
           DEAL_II_HOST_DEVICE static void
           integrate(const unsigned int                     dof_handler_index,
@@ -906,6 +937,75 @@ namespace Copy
                 if (evaluation_flag & EvaluationFlags::gradients)
                   eval.template co_gradient<false, false>(u, grad_u);
               }
+          }
+
+          /**
+           * The values of evaluate() at the quadrature points, then their
+           * gradients handed to op(point, grad) instead of being stored, see
+           * EvaluatorTensorProduct::co_gradient_and_apply().
+           */
+          template <int n_components, typename PointOperation>
+          DEAL_II_HOST_DEVICE static void
+          evaluate_gradients_and_apply(
+            const unsigned int              dof_handler_index,
+            const BatchedData<dim, Number> *data,
+            const PointOperation           &op)
+          {
+            const int batch_size = data->batch_size();
+
+            auto scratch_for_eval =
+              Kokkos::subview(data->shared_data[dof_handler_index].scratch_pad,
+                              Kokkos::make_pair(0, 0));
+
+            EvaluatorTensorProduct<EvaluatorVariant::evaluate_general,
+                                   dim,
+                                   fe_degree + 1,
+                                   n_q_points_1d,
+                                   Number>
+              eval(data->team_member,
+                   data->shared_data[dof_handler_index].shape_values,
+                   SharedView(), // shape_gradients are not used
+                   data->shared_data[dof_handler_index].co_shape_gradients,
+                   scratch_for_eval,
+                   batch_size);
+
+            const auto &temp = data->shared_data[dof_handler_index].scratch_pad;
+            for (int c = 0; c < n_components; ++c)
+              {
+                auto u =
+                  Kokkos::subview(data->shared_data[dof_handler_index].values,
+                                  Kokkos::ALL,
+                                  c);
+
+                if constexpr (dim == 1)
+                  {
+                    eval.template value<0, true, false, false>(u, temp);
+                    populate_view<false>(data->team_member,
+                                         u,
+                                         temp,
+                                         batch_size *
+                                           data->n_q_points_per_cell);
+                  }
+                else if constexpr (dim == 2)
+                  {
+                    eval.template value<0, true, false, false>(u, temp);
+                    eval.template value<1, true, false, false>(temp, u);
+                  }
+                else
+                  {
+                    eval.template value<0, true, false, false>(u, temp);
+                    eval.template value<1, true, false, false>(temp, u);
+                    eval.template value<2, true, false, false>(u, temp);
+                    populate_view<false>(data->team_member,
+                                         u,
+                                         temp,
+                                         batch_size *
+                                           data->n_q_points_per_cell);
+                  }
+              }
+
+            eval.template co_gradient_and_apply<n_components>(
+              data->shared_data[dof_handler_index].values, op);
           }
 
 

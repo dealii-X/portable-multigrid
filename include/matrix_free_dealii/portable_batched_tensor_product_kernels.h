@@ -1017,6 +1017,22 @@ namespace Copy
           DEAL_II_HOST_DEVICE void
           co_gradient(const ViewTypeIn in, ViewTypeOut out) const;
 
+          /**
+           * Collocation gradient of the @p n_components fields in(point, c),
+           * handed to a point operation instead of being stored: for every
+           * quadrature point of the batch, op(point, grad) is called with
+           * grad[c][d] the derivative of component c in reference direction d.
+           * The loop is the one of co_gradient(), with the fibers of all
+           * components in registers. Ends with a team barrier. The operation
+           * must not write to @p in.
+           */
+          template <int n_components,
+                    typename ViewTypeIn,
+                    typename PointOperation>
+          DEAL_II_HOST_DEVICE void
+          co_gradient_and_apply(const ViewTypeIn      in,
+                                const PointOperation &op) const;
+
         private:
           const TeamHandle &team_member;
           ShapeDataType     shape_values;
@@ -1279,6 +1295,82 @@ namespace Copy
                       else
                         out(elmnt_idx * n_q_points + q_point) = result;
                     }
+                }
+            });
+
+          team_member.team_barrier();
+        }
+
+        template <int dim, int n_rows, int n_columns, typename Number>
+        template <int n_components,
+                  typename ViewTypeIn,
+                  typename PointOperation>
+        DEAL_II_HOST_DEVICE void
+        EvaluatorTensorProduct<evaluate_general, dim, n_rows, n_columns, Number>::
+          co_gradient_and_apply(const ViewTypeIn      in,
+                                const PointOperation &op) const
+        {
+          static_assert(ViewTypeIn::rank == 2,
+                        "in must be the values (point, component)");
+
+          constexpr int n_q_points        = Utilities::pow(n_columns, dim);
+          constexpr int co_dimension_size = Utilities::pow(n_columns, dim - 1);
+          constexpr int n_cached_rows     = dim > 1 ? dim - 1 : 1;
+
+          Kokkos::parallel_for(
+            Kokkos::TeamVectorRange(team_member,
+                                    batch_size * co_dimension_size),
+            [&](const int tid) {
+              const int elmnt_idx = tid / co_dimension_size;
+              const int reminder  = tid % co_dimension_size;
+
+              // as in co_gradient(): the derivative rows of the directions
+              // d < dim - 1, here with the fibers of all components along the
+              // last direction
+              int    idx_d[n_cached_rows], stride_d[n_cached_rows];
+              Number reg[n_cached_rows][n_columns];
+              Number fiber[n_components][n_columns];
+
+              for (int d = 0; d < dim - 1; ++d)
+                {
+                  stride_d[d] = Utilities::pow(n_columns, d);
+                  idx_d[d]    = (reminder / stride_d[d]) % n_columns;
+                  for (int n = 0; n < n_columns; ++n)
+                    reg[d][n] = co_shape_gradients(n * n_columns + idx_d[d]);
+                }
+              for (int c = 0; c < n_components; ++c)
+                for (int n = 0; n < n_columns; ++n)
+                  fiber[c][n] = in(elmnt_idx * n_q_points + reminder +
+                                     n * co_dimension_size,
+                                   c);
+
+              for (int last = 0; last < n_columns; ++last)
+                {
+                  const int q_point = reminder + last * co_dimension_size;
+                  const int point   = elmnt_idx * n_q_points + q_point;
+
+                  Number grad[n_components][dim];
+                  for (int c = 0; c < n_components; ++c)
+                    {
+                      for (int d = 0; d < dim - 1; ++d)
+                        {
+                          const int in_base = elmnt_idx * n_q_points +
+                                              q_point - idx_d[d] * stride_d[d];
+                          Number    res_d   = 0;
+                          for (int n = 0; n < n_columns; ++n)
+                            res_d +=
+                              reg[d][n] * in(in_base + n * stride_d[d], c);
+                          grad[c][d] = res_d;
+                        }
+
+                      Number res_d = 0;
+                      for (int n = 0; n < n_columns; ++n)
+                        res_d += co_shape_gradients(n * n_columns + last) *
+                                 fiber[c][n];
+                      grad[c][dim - 1] = res_d;
+                    }
+
+                  op(point, grad);
                 }
             });
 

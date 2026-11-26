@@ -17,6 +17,8 @@
 #include "kernels/portable_local_laplace_operator.h"
 #include "kernels/portable_local_laplace_operator_batched.h"
 #include "kernels/portable_local_laplace_operator_batched_view.h"
+#include "matrix_free_dealii/portable_batched_cell_loop.h"
+#include "matrix_free_dealii/portable_batched_fe_evaluation.h"
 #include "matrix_free_dealii/portable_fe_evaluation.h"
 #include "matrix_free_dealii/portable_matrix_free.h"
 #include "matrix_free_dealii/portable_matrix_free.templates.h"
@@ -68,6 +70,47 @@ namespace Portable
 
 
 
+  // (grad v, grad u) with the batched FEEvaluation of
+  // matrix_free_dealii/portable_batched_fe_evaluation.h, a batch of cells per
+  // team; fused: the quadrature step inside evaluate_and_apply(). Needs
+  // PrecomputedData::first_cell in deal.II.
+  template <int dim, int fe_degree_, int n_q_points_1d_, typename number, bool fused>
+  class LocalLaplaceOperatorBatchedCopy
+  {
+  public:
+    static constexpr unsigned int n_q_points = Utilities::pow(n_q_points_1d_, dim);
+
+    using FEEvaluationType =
+      ::Copy::Portable::internal::batched::FEEvaluation<dim, fe_degree_, n_q_points_1d_, 1, number>;
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const typename FEEvaluationType::data_type *data,
+               const DeviceVector<number>                 &src,
+               DeviceVector<number>                       &dst) const
+    {
+      FEEvaluationType fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+
+      if constexpr (fused)
+        fe_eval.evaluate_and_apply(EvaluationFlags::gradients,
+                                   [](const Tensor<1, dim, number> &grad_u, const int)
+                                   { return grad_u; });
+      else
+        {
+          fe_eval.evaluate(EvaluationFlags::gradients);
+          data->for_each_quad_point(
+            [&](const int &q_point)
+            { fe_eval.submit_gradient(fe_eval.get_gradient(q_point), q_point); });
+        }
+
+      fe_eval.integrate(EvaluationFlags::gradients);
+      fe_eval.distribute_local_to_global(dst);
+    }
+  };
+
+
+
   template <int dim, int fe_degree, typename number>
   class LaplaceOperator
     : public LaplaceOperatorBase<dim,
@@ -113,6 +156,19 @@ namespace Portable
 
     void
     vmult_dealii_new(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    // the batched FEEvaluation copied from deal.II
+    // (LocalLaplaceOperatorBatchedCopy), without and with evaluate_and_apply();
+    // need PrecomputedData::first_cell in deal.II
+    void
+    vmult_batched(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    void
+    vmult_fused(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
@@ -319,6 +375,36 @@ namespace Portable
     matrix_free_new.cell_loop(cell_operator, src, dst);
 
     matrix_free_new.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_batched(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+    ::Copy::Portable::internal::batched::cell_loop(
+      matrix_free,
+      LocalLaplaceOperatorBatchedCopy<dim, fe_degree, fe_degree + 1, number, false>(),
+      src,
+      dst);
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_fused(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+    ::Copy::Portable::internal::batched::cell_loop(
+      matrix_free,
+      LocalLaplaceOperatorBatchedCopy<dim, fe_degree, fe_degree + 1, number, true>(),
+      src,
+      dst);
+    matrix_free.copy_constrained_values(src, dst);
   }
 
   template <int dim, int fe_degree, typename number>

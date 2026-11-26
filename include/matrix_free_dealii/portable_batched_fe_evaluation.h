@@ -151,6 +151,21 @@ namespace Copy
           integrate(const EvaluationFlags::EvaluationFlags integration_flag);
 
           /**
+           * The same as evaluate(EvaluationFlags::gradients) followed by
+           * submit_gradient(q_op(get_gradient(q_point), q_point), q_point) for
+           * every quadrature point, but with the collocation and the
+           * transform-to-collocation kernels the operation is applied inside
+           * the last pass of the evaluation, without storing the gradients.
+           * q_op must only depend on the data of its quadrature point. Only
+           * EvaluationFlags::gradients is supported.
+           */
+          template <typename QuadOperation>
+          DEAL_II_HOST_DEVICE void
+          evaluate_and_apply(
+            const EvaluationFlags::EvaluationFlags evaluation_flag,
+            const QuadOperation                   &q_op);
+
+          /**
            * Same as Portable::FEEvaluation::get_value().
            */
           DEAL_II_HOST_DEVICE value_type
@@ -258,6 +273,85 @@ namespace Copy
           cell_q_point(const int q_point) const
           {
             return q_point % static_cast<int>(n_q_points_per_cell);
+          }
+
+          /**
+           * Entry (@p c, @p d) of a gradient_type.
+           */
+          DEAL_II_HOST_DEVICE static Number &
+          entry(gradient_type &g, const unsigned int c, const unsigned int d)
+          {
+            if constexpr (n_components_ == 1)
+              {
+                (void)c;
+                return g[d];
+              }
+            else
+              {
+                return g[c][d];
+              }
+          }
+
+          /**
+           * submit_gradient(q_op(get_gradient(q_point), q_point), q_point)
+           * with get_gradient() computed from the reference gradient
+           * @p grad_ref ([component][direction]) instead of the one stored in
+           * shared_data, and the inverse Jacobian loaded once for both.
+           */
+          template <typename QuadOperation>
+          DEAL_II_HOST_DEVICE void
+          apply_at_point(const Number (&grad_ref)[n_components_][dim],
+                         const int            q_point,
+                         const QuadOperation &q_op) const
+          {
+            const int          cell = cell_id(q_point);
+            const int          q    = cell_q_point(q_point);
+            const unsigned int inv_jac_idx =
+              precomputed_data->inv_jacobian_index(cell, q);
+            const bool is_cartesian =
+              precomputed_data->cell_type(cell) ==
+              ::dealii::internal::MatrixFreeFunctions::cartesian;
+
+            Number inv_jac[dim][dim];
+            for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+              for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                inv_jac[d_1][d_2] =
+                  (d_1 == d_2 || !is_cartesian) ?
+                    precomputed_data->inv_jacobian(inv_jac_idx, d_1, d_2) :
+                    Number(0);
+
+            // as get_gradient()
+            gradient_type grad;
+            for (unsigned int c = 0; c < n_components_; ++c)
+              for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+                {
+                  Number tmp = 0.;
+                  if (is_cartesian)
+                    tmp = inv_jac[d_1][d_1] * grad_ref[c][d_1];
+                  else
+                    for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                      tmp += inv_jac[d_2][d_1] * grad_ref[c][d_2];
+                  entry(grad, c, d_1) = tmp;
+                }
+
+            gradient_type flux = q_op(grad, q_point);
+
+            // as submit_gradient()
+            const Number JxW = precomputed_data->JxW_value(cell, q);
+            for (unsigned int c = 0; c < n_components_; ++c)
+              for (unsigned int d_1 = 0; d_1 < dim; ++d_1)
+                {
+                  if (is_cartesian)
+                    shared_data->gradients(q_point, d_1, c) =
+                      inv_jac[d_1][d_1] * entry(flux, c, d_1) * JxW;
+                  else
+                    {
+                      Number tmp = 0.;
+                      for (unsigned int d_2 = 0; d_2 < dim; ++d_2)
+                        tmp += inv_jac[d_1][d_2] * entry(flux, c, d_2);
+                      shared_data->gradients(q_point, d_1, c) = tmp * JxW;
+                    }
+                }
           }
 
           /**
@@ -610,6 +704,63 @@ namespace Copy
               Kokkos::abort(
                 "The element type is not yet supported by the portable "
                 "matrix-free module.");
+            }
+        }
+
+
+
+        template <int dim,
+                  int fe_degree,
+                  int n_q_points_1d,
+                  int n_components_,
+                  typename Number>
+        template <typename QuadOperation>
+        DEAL_II_HOST_DEVICE void
+        FEEvaluation<dim, fe_degree, n_q_points_1d, n_components_, Number>::
+          evaluate_and_apply(
+            const EvaluationFlags::EvaluationFlags evaluation_flag,
+            const QuadOperation                   &q_op)
+        {
+          using ElementType =
+            ::dealii::internal::MatrixFreeFunctions::ElementType;
+
+          Assert(evaluation_flag == EvaluationFlags::gradients,
+                 ExcNotImplemented());
+
+          // writes shared_data->gradients, which the fused pass does not read
+          const auto apply =
+            [&](const int     q_point,
+                const Number (&grad_ref)[n_components_][dim]) {
+              apply_at_point(grad_ref, q_point, q_op);
+            };
+
+          // the dispatch of evaluate()
+          if (fe_degree >= 0 && fe_degree + 1 == n_q_points_1d &&
+              precomputed_data->element_type ==
+                ElementType::tensor_symmetric_collocation)
+            {
+              FEEvaluationImplCollocation<dim, fe_degree, Number>::
+                template evaluate_gradients_and_apply<n_components_>(
+                  dof_handler_index, data, apply);
+            }
+          else if (fe_degree >= 0 &&
+                   use_collocation_evaluation(fe_degree, n_q_points_1d) &&
+                   precomputed_data->element_type <=
+                     ElementType::tensor_symmetric)
+            {
+              FEEvaluationImplTransformToCollocation<dim,
+                                                     fe_degree,
+                                                     n_q_points_1d,
+                                                     Number>::
+                template evaluate_gradients_and_apply<n_components_>(
+                  dof_handler_index, data, apply);
+            }
+          else
+            {
+              evaluate(evaluation_flag);
+              data->for_each_quad_point([&](const int &q_point) {
+                submit_gradient(q_op(get_gradient(q_point), q_point), q_point);
+              });
             }
         }
 

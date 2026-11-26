@@ -164,6 +164,10 @@ namespace Portable
     void
     vmult_benchmark(VectorType &dst, const VectorType &src) const;
 
+    // vmult_batched() with the stress computed inside evaluate_and_apply()
+    void
+    vmult_fused(VectorType &dst, const VectorType &src) const;
+
     void
     vmult_dummy(VectorType       &dst,
                 const VectorType &src,
@@ -214,6 +218,13 @@ namespace Portable
       Copy::Portable::internal::batched::FEEvaluation<dim, fe_degree, n_q_points_1d, dim, number>;
     using BatchedLocalOperator =
       LocalElasticityOperator<dim, fe_degree, n_q_points_1d, number, Material, BatchedFEEvaluation>;
+    using FusedLocalOperator = LocalElasticityOperator<dim,
+                                                       fe_degree,
+                                                       n_q_points_1d,
+                                                       number,
+                                                       Material,
+                                                       BatchedFEEvaluation,
+                                                       true>;
     using CellLocalOperator =
       LocalElasticityOperator<dim,
                               fe_degree,
@@ -430,6 +441,24 @@ namespace Portable
 
     dst.compress(VectorOperation::add);
     src.zero_out_ghost_values();
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::vmult_fused(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    dst = 0.;
+
+    Copy::Portable::internal::batched::cell_loop(matrix_free,
+                                                 FusedLocalOperator(material),
+                                                 src,
+                                                 dst);
 
     matrix_free.copy_constrained_values(src, dst);
   }

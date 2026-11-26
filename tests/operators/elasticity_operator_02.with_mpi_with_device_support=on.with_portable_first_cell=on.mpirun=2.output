@@ -5,6 +5,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 3
@@ -13,6 +14,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 2, fe_degree = 3, n_q_points_1d = 4
@@ -21,6 +23,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2
@@ -29,6 +32,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3
@@ -37,6 +41,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 4
@@ -45,6 +50,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 4
@@ -53,6 +59,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4
@@ -61,6 +68,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 3
@@ -69,6 +77,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 3
@@ -77,6 +86,7 @@ DEAL:0::vmult: OK
 DEAL:0::Tvmult: OK
 DEAL:0::vmult_dealii: OK
 DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
 DEAL:0::vmult_dummy: OK
 DEAL:0::compute_diagonal: OK
 
@@ -86,6 +96,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 2, fe_degree = 2, n_q_points_1d = 3
@@ -94,6 +105,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 2, fe_degree = 3, n_q_points_1d = 4
@@ -102,6 +114,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 3, fe_degree = 1, n_q_points_1d = 2
@@ -110,6 +123,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 3, fe_degree = 2, n_q_points_1d = 3
@@ -118,6 +132,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 3, fe_degree = 3, n_q_points_1d = 4
@@ -126,6 +141,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 2, fe_degree = 2, n_q_points_1d = 4
@@ -134,6 +150,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 3, fe_degree = 2, n_q_points_1d = 4
@@ -142,6 +159,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 2, fe_degree = 1, n_q_points_1d = 3
@@ -150,6 +168,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 DEAL:1::dim = 3, fe_degree = 1, n_q_points_1d = 3
@@ -158,6 +177,7 @@ DEAL:1::vmult: OK
 DEAL:1::Tvmult: OK
 DEAL:1::vmult_dealii: OK
 DEAL:1::vmult_batched: OK
+DEAL:1::vmult_fused: OK
 DEAL:1::vmult_dummy: OK
 DEAL:1::compute_diagonal: OK
 
