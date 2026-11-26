@@ -194,6 +194,11 @@ namespace Portable
     void
     vmult_linearized_fused(VectorType &dst, const VectorType &src) const;
 
+    // the diagonal of the operator linearized at the u of the last
+    // evaluate_residual*() call, 1 on the constrained DoFs
+    void
+    compute_linearized_diagonal(VectorType &diagonal) const;
+
     void
     vmult_dummy(VectorType       &dst,
                 const VectorType &src,
@@ -741,6 +746,25 @@ namespace Portable
     VectorType &vec) const
   {
     matrix_free.initialize_dof_vector(vec);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::compute_linearized_diagonal(
+    VectorType &diagonal) const
+  {
+    AssertThrow(linearization_gradients.values.extent(0) == n_q_points_total,
+                ExcMessage("compute_linearized_diagonal() needs evaluate_residual() first"));
+
+    initialize_dof_vector(diagonal);
+
+    const ElasticityLinearizedOperatorQuad<dim, fe_degree, n_q_points_1d, number, Material>
+      operator_quad(material, linearization_gradients);
+
+    MatrixFreeTools::compute_diagonal<dim, fe_degree, n_q_points_1d, dim, number>(
+      matrix_free, diagonal, operator_quad, EvaluationFlags::gradients, EvaluationFlags::gradients);
   }
 
 

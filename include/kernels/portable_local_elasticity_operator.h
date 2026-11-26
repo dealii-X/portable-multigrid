@@ -361,6 +361,37 @@ namespace Portable
     Material material;
   };
 
+  // The linearized form at one quadrature point, at the grad u stored by
+  // evaluate_residual(), for MatrixFreeTools::compute_diagonal().
+  template <int dim, int fe_degree, int n_q_points_1d, typename Number, typename Material>
+  class ElasticityLinearizedOperatorQuad
+  {
+  public:
+    static constexpr unsigned int n_q_points = Utilities::pow(n_q_points_1d, dim);
+
+    DEAL_II_HOST_DEVICE
+    ElasticityLinearizedOperatorQuad(const Material                              &material,
+                                     const QuadraturePointGradients<dim, Number> &gradients)
+      : material(material)
+      , gradients(gradients)
+    {}
+
+    DEAL_II_HOST_DEVICE void
+    operator()(Portable::FEEvaluation<dim, fe_degree, n_q_points_1d, dim, Number> *fe_eval,
+               const int                                                           q_point) const
+    {
+      const std::size_t point =
+        static_cast<std::size_t>(fe_eval->get_current_cell_index()) * n_q_points + q_point;
+      fe_eval->submit_gradient(
+        material.linearized_stress(gradients.get(point), fe_eval->get_gradient(q_point)),
+        q_point);
+    }
+
+  private:
+    Material                              material;
+    QuadraturePointGradients<dim, Number> gradients;
+  };
+
 } // namespace Portable
 
 DEAL_II_NAMESPACE_CLOSE
