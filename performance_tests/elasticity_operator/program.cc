@@ -5,6 +5,9 @@
 //   vmult_batched    the batched FEEvaluation of this repository
 //   vmult_fused      vmult_batched with the stress inside evaluate_and_apply()
 //   vmult_benchmark  the kernel of the dealii-X benchmarks
+//   vmult_bk3        the BK3-style counterpart of the benchmark kernel (shape
+//                    data in shared memory, separate gather and scatter, BK3's
+//                    batches and persistent teams), strided loops
 // The mesh is a box of 2^k cubes (k = 3 refinements + 0, 1 or 2 directions
 // split once more), deformed so that every cell is a general one and all
 // variants read the geometry per quadrature point; homogeneous Dirichlet
@@ -156,7 +159,8 @@ run(const double target_n_dofs, const int n_repetitions)
     {"vmult_dealii", [&]() { op.vmult_dealii(dst, src); }},
     {"vmult_batched", [&]() { op.vmult_batched(dst, src); }},
     {"vmult_fused", [&]() { op.vmult_fused(dst, src); }},
-    {"vmult_benchmark", [&]() { op.vmult_benchmark(dst, src); }}};
+    {"vmult_benchmark", [&]() { op.vmult_benchmark(dst, src); }},
+    {"vmult_bk3", [&]() { op.vmult_bk3(dst, src); }}};
 
   double reference_norm = 0.;
   for (const auto &[name, vmult] : variants)
