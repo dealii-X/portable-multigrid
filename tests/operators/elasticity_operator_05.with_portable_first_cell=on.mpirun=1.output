@@ -1,0 +1,57 @@
+
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 2
+DEAL:0::n_dofs = 162
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 3
+DEAL:0::n_dofs = 578
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 2, fe_degree = 3, n_q_points_1d = 4
+DEAL:0::n_dofs = 1250
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2
+DEAL:0::n_dofs = 375
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3
+DEAL:0::n_dofs = 2187
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 3, fe_degree = 3, n_q_points_1d = 4
+DEAL:0::n_dofs = 6591
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4
+DEAL:0::n_dofs = 2187
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 3
+DEAL:0::n_dofs = 375
+DEAL:0::nonlinear part above 1e-2: true
+DEAL:0::vmult: OK
+DEAL:0::vmult_dealii: OK
+DEAL:0::vmult_batched: OK
+DEAL:0::vmult_fused: OK

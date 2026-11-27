@@ -1,0 +1,135 @@
+
+DEAL:0::dim = 2, fe_degree = 1, n_q_points_1d = 2
+DEAL:0::n_dofs = 162
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:0::dim = 2, fe_degree = 2, n_q_points_1d = 3
+DEAL:0::n_dofs = 578
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 2
+DEAL:0::n_dofs = 375
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 3
+DEAL:0::n_dofs = 2187
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:0::dim = 3, fe_degree = 2, n_q_points_1d = 4
+DEAL:0::n_dofs = 2187
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:0::dim = 3, fe_degree = 1, n_q_points_1d = 3
+DEAL:0::n_dofs = 375
+DEAL:0::evaluate_residual_fused: OK
+DEAL:0::evaluate_residual: OK
+DEAL:0::vmult_linearized: OK
+DEAL:0::vmult_linearized_fused: OK
+DEAL:0::vmult_linearized after evaluate_residual_fused: OK
+DEAL:0::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:0::central difference error ratio eps / (eps / 2): 4.00
+DEAL:0::symmetry: OK
+DEAL:0::vmult_linearized at u = 0 against linear elasticity: OK
+
+DEAL:1::dim = 2, fe_degree = 1, n_q_points_1d = 2
+DEAL:1::n_dofs = 162
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:1::dim = 2, fe_degree = 2, n_q_points_1d = 3
+DEAL:1::n_dofs = 578
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:1::dim = 3, fe_degree = 1, n_q_points_1d = 2
+DEAL:1::n_dofs = 375
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:1::dim = 3, fe_degree = 2, n_q_points_1d = 3
+DEAL:1::n_dofs = 2187
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:1::dim = 3, fe_degree = 2, n_q_points_1d = 4
+DEAL:1::n_dofs = 2187
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+DEAL:1::dim = 3, fe_degree = 1, n_q_points_1d = 3
+DEAL:1::n_dofs = 375
+DEAL:1::evaluate_residual_fused: OK
+DEAL:1::evaluate_residual: OK
+DEAL:1::vmult_linearized: OK
+DEAL:1::vmult_linearized_fused: OK
+DEAL:1::vmult_linearized after evaluate_residual_fused: OK
+DEAL:1::vmult_linearized_fused after evaluate_residual_fused: OK
+DEAL:1::central difference error ratio eps / (eps / 2): 4.00
+DEAL:1::symmetry: OK
+DEAL:1::vmult_linearized at u = 0 against linear elasticity: OK
+
