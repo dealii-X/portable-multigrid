@@ -199,6 +199,18 @@ namespace Portable
     void
     compute_linearized_diagonal(VectorType &diagonal) const;
 
+    // the linearization point for vmult_linearized_recompute*(), copied
+    void
+    set_linearization_point(const VectorType &u);
+
+    // vmult_linearized() / vmult_linearized_fused() with grad u recomputed from
+    // u instead of stored: twice the team memory, no stored grad u
+    void
+    vmult_linearized_recompute(VectorType &dst, const VectorType &src) const;
+
+    void
+    vmult_linearized_recompute_fused(VectorType &dst, const VectorType &src) const;
+
     void
     vmult_dummy(VectorType       &dst,
                 const VectorType &src,
@@ -292,6 +304,10 @@ namespace Portable
     void
     linearized_vmult(VectorType &dst, const VectorType &src) const;
 
+    template <bool fused>
+    void
+    linearized_vmult_recompute(VectorType &dst, const VectorType &src) const;
+
     // owned + ghost entries, what a DeviceVector over vec.get_values() spans
     static unsigned int
     mpi_local_size(const VectorType &vec)
@@ -329,6 +345,9 @@ namespace Portable
 
     // grad u of the last evaluate_residual*()
     QuadraturePointGradients<dim, number> linearization_gradients;
+
+    // u of set_linearization_point()
+    VectorType linearization_point;
 
     // quadrature points of all colors
     std::size_t n_q_points_total = 0;
@@ -657,6 +676,114 @@ namespace Portable
       src,
       dst,
       requested_batch_size);
+
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::set_linearization_point(
+    const VectorType &u)
+  {
+    if (linearization_point.size() != u.size())
+      initialize_dof_vector(linearization_point);
+    linearization_point = u;
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::vmult_linearized_recompute(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    linearized_vmult_recompute<false>(dst, src);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::
+    vmult_linearized_recompute_fused(VectorType &dst, const VectorType &src) const
+  {
+    linearized_vmult_recompute<true>(dst, src);
+  }
+
+
+
+  template <int dim, int fe_degree, typename number, typename Material, int n_q_points_1d>
+  template <bool fused>
+  void
+  ElasticityOperator<dim, fe_degree, number, Material, n_q_points_1d>::linearized_vmult_recompute(
+    VectorType       &dst,
+    const VectorType &src) const
+  {
+    namespace batched = Copy::Portable::internal::batched;
+    using LocalOperator =
+      LocalElasticityLinearizedRecomputeOperator<dim,
+                                                 fe_degree,
+                                                 n_q_points_1d,
+                                                 number,
+                                                 Material,
+                                                 BatchedFEEvaluation,
+                                                 fused>;
+
+    AssertThrow(linearization_point.size() == src.size(),
+                ExcMessage("vmult_linearized_recompute() needs set_linearization_point() first"));
+
+    dst = 0.;
+    src.update_ghost_values();
+    linearization_point.update_ghost_values();
+
+    const DeviceVector<number> src_device(src.get_values(), mpi_local_size(src));
+    const DeviceVector<number> dst_device(dst.get_values(), mpi_local_size(dst));
+    const DeviceVector<number> u_device(linearization_point.get_values(),
+                                        mpi_local_size(linearization_point));
+
+    MemorySpace::Default::kokkos_space::execution_space exec;
+
+    // dof handler 1: the same data as 0, for u
+    const unsigned int n_dof_handler = 2;
+    for (unsigned int color = 0; color < colored_graph.size(); ++color)
+      {
+        if (colored_graph[color].size() == 0)
+          continue;
+
+        Kokkos::Array<typename MatrixFree<dim, number>::PrecomputedData, n_max_dof_handlers>
+          colored_data;
+        colored_data[0] = matrix_free.get_data(color);
+        colored_data[1] = colored_data[0];
+
+        const int batch_size = batched::compute_batch_size<dim, number>(
+          LocalOperator::n_q_points, n_dof_handler, colored_data, requested_batch_size);
+
+        const batched::ApplyKernel<dim, number, LocalOperator> apply_kernel{
+          LocalOperator(material, u_device),
+          n_dof_handler,
+          colored_data,
+          batch_size,
+          src_device,
+          dst_device};
+
+        Kokkos::parallel_for("ElasticityOperator linearized recompute color " +
+                               std::to_string(color),
+                             batched::make_team_policy<dim, number>(exec,
+                                                                    apply_kernel,
+                                                                    LocalOperator::n_q_points,
+                                                                    batch_size,
+                                                                    n_dof_handler,
+                                                                    colored_data),
+                             apply_kernel);
+      }
+    Kokkos::fence();
+
+    dst.compress(VectorOperation::add);
+    src.zero_out_ghost_values();
+    linearization_point.zero_out_ghost_values();
 
     matrix_free.copy_constrained_values(src, dst);
   }
