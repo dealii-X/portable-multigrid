@@ -1,7 +1,8 @@
 // Portable::ElasticityOperator with the Saint Venant-Kirchhoff material: the
 // residual R(u) by evaluate_residual() and evaluate_residual_fused(), which
 // store grad u, and the operator linearized at u by vmult_linearized() and
-// vmult_linearized_fused() on the curved, sheared mesh of deformed_mesh_util.h
+// vmult_linearized_fused() (and, with grad u recomputed from u,
+// vmult_linearized_recompute{,_fused}()) on the curved, sheared mesh of deformed_mesh_util.h
 // against the CPU FEValues references. Further checks of the linearization:
 // - R is cubic in u, so the error of the central difference
 //   (R(u + eps du) - R(u - eps du)) / (2 eps) is exactly quadratic in eps:
@@ -138,6 +139,16 @@ test()
   }
   check("vmult_linearized after evaluate_residual_fused", linearized, du);
   check("vmult_linearized_fused after evaluate_residual_fused", linearized_fused, du);
+
+  op.set_linearization_point(u);
+  check(
+    "vmult_linearized_recompute",
+    [&](VectorType &d, const VectorType &s) { op.vmult_linearized_recompute(d, s); },
+    du);
+  check(
+    "vmult_linearized_recompute_fused",
+    [&](VectorType &d, const VectorType &s) { op.vmult_linearized_recompute_fused(d, s); },
+    du);
 
   // central differences of R = vmult() against vmult_linearized()
   {
