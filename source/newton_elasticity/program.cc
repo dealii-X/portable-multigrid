@@ -34,6 +34,8 @@
 // |R| <= 1e-10 |R_0| of the step. --cg-monitor=N prints the CG residual every
 // N iterations.
 //
+// CG solves to cg_tolerance |R|, but never beyond 0.1 of Newton's tolerance.
+//
 // --pmg preconditions CG by polynomial multigrid (tangent_pmg.h): degrees
 // p, p / 2, ..., 1, Chebyshev of degree --smoothing-degree (default 5), CG to
 // the relative --coarse-tol (default 1e-3) on degree 1, flexible CG outside
@@ -275,8 +277,8 @@ run(const Options &options, const Material &material, const std::string &materia
     for (const auto i : locally_owned_dofs)
       {
         const bool is_prescribed = prescribed.is_element(i);
-        rw_mask(i)    = (constraints.is_constrained(i) || is_prescribed) ? 0. : 1.;
-        rw_stretch(i) = is_prescribed ? 1. : 0.;
+        rw_mask(i)               = (constraints.is_constrained(i) || is_prescribed) ? 0. : 1.;
+        rw_stretch(i)            = is_prescribed ? 1. : 0.;
       }
     free_mask.import_elements(rw_mask, VectorOperation::insert);
     stretch_direction.import_elements(rw_stretch, VectorOperation::insert);
@@ -432,7 +434,10 @@ run(const Options &options, const Material &material, const std::string &materia
             }
 
           residual *= -1.;
-          SolverControl                control(100000, cg_tolerance * residual_norm);
+          // no more accuracy than Newton's stopping criterion needs
+          SolverControl                control(100000,
+                                std::max(cg_tolerance * residual_norm,
+                                         0.1 * newton_tolerance * reference_norm));
           SolverCG<VectorType>         cg(control);
           SolverFlexibleCG<VectorType> fcg(control);
           SolverBase<VectorType>      &solver =
