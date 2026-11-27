@@ -112,6 +112,63 @@ namespace Portable
 
 
 
+  // LocalLaplaceOperatorBatchedCopy<..., fused = true> with the geometry of
+  // the BK3 kernels: the reference flux is G grad_ref with the symmetric
+  // G = JxW J^{-1} J^{-T} stored per quadrature point (G[cell][entry][q], cells
+  // numbered by PrecomputedData::first_cell), instead of J^{-1} and JxW.
+  template <int dim, int fe_degree_, int n_q_points_1d_, typename number>
+  class LocalLaplaceOperatorBatchedCopyG
+  {
+  public:
+    static constexpr unsigned int n_q_points = Utilities::pow(n_q_points_1d_, dim);
+
+    using FEEvaluationType =
+      ::Copy::Portable::internal::batched::FEEvaluation<dim, fe_degree_, n_q_points_1d_, 1, number>;
+
+    Kokkos::View<const number *, MemorySpace::Default::kokkos_space> G;
+
+    DEAL_II_HOST_DEVICE void
+    operator()(const typename FEEvaluationType::data_type *data,
+               const DeviceVector<number>                 &src,
+               DeviceVector<number>                       &dst) const
+    {
+      constexpr int n_entries = (dim * (dim + 1)) / 2;
+
+      FEEvaluationType fe_eval(data);
+
+      fe_eval.read_dof_values(src);
+      fe_eval.evaluate_and_apply_in_reference(
+        EvaluationFlags::gradients,
+        [&](const number (&grad_ref)[1][dim], const int cell, const int q, number (&flux)[1][dim]) {
+          const std::size_t base = static_cast<std::size_t>(cell) * n_entries * n_q_points + q;
+          number            g[n_entries];
+          for (int e = 0; e < n_entries; ++e)
+            g[e] = G(base + e * n_q_points);
+          // entries (d1, d2 >= d1) row by row, as compute_G_tensors()
+          int idx = 0;
+          number sym[dim][dim];
+          for (int d1 = 0; d1 < dim; ++d1)
+            for (int d2 = d1; d2 < dim; ++d2)
+              {
+                sym[d1][d2] = g[idx];
+                sym[d2][d1] = g[idx];
+                ++idx;
+              }
+          for (int d1 = 0; d1 < dim; ++d1)
+            {
+              number tmp = 0;
+              for (int d2 = 0; d2 < dim; ++d2)
+                tmp += sym[d1][d2] * grad_ref[0][d2];
+              flux[0][d1] = tmp;
+            }
+        });
+      fe_eval.integrate(EvaluationFlags::gradients);
+      fe_eval.distribute_local_to_global(dst);
+    }
+  };
+
+
+
   template <int dim, int fe_degree, typename number>
   class LaplaceOperator
     : public LaplaceOperatorBase<dim,
@@ -194,6 +251,13 @@ namespace Portable
 
     void
     vmult_fused(
+      LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+      const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
+
+    // vmult_fused() with the geometry G of the BK3 kernels
+    // (LocalLaplaceOperatorBatchedCopyG)
+    void
+    vmult_fused_G(
       LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
       const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const;
 
@@ -329,6 +393,9 @@ namespace Portable
 
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> G_tensors;
 
+    // G_tensors of all colors in one View, cells numbered by first_cell
+    Kokkos::View<number *, MemorySpace::Default::kokkos_space> G_all_colors;
+
     unsigned int cells_per_batch = default_cells_per_batch();
   };
 
@@ -430,6 +497,22 @@ namespace Portable
     ::Copy::Portable::internal::batched::cell_loop(
       matrix_free,
       LocalLaplaceOperatorBatchedCopy<dim, fe_degree, fe_degree + 1, number, true>(),
+      src,
+      dst,
+      cells_per_batch);
+    matrix_free.copy_constrained_values(src, dst);
+  }
+
+  template <int dim, int fe_degree, typename number>
+  void
+  LaplaceOperator<dim, fe_degree, number>::vmult_fused_G(
+    LinearAlgebra::distributed::Vector<number, MemorySpace::Default>       &dst,
+    const LinearAlgebra::distributed::Vector<number, MemorySpace::Default> &src) const
+  {
+    dst = 0.;
+    ::Copy::Portable::internal::batched::cell_loop(
+      matrix_free,
+      LocalLaplaceOperatorBatchedCopyG<dim, fe_degree, fe_degree + 1, number>{G_all_colors},
       src,
       dst,
       cells_per_batch);
@@ -1215,6 +1298,31 @@ namespace Portable
             Kokkos::fence();
           }
       }
+
+    std::size_t n_entries_all = 0;
+    for (unsigned int color = 0; color < n_colors; ++color)
+      if (colored_graph[color].size() > 0)
+        {
+          const auto &data = matrix_free.get_data(color);
+          n_entries_all    = std::max<std::size_t>(n_entries_all,
+                                                 static_cast<std::size_t>(first_cell_index(data) +
+                                                                          data.n_cells) *
+                                                   symmetric_tensor_dim * n_q_points);
+        }
+    G_all_colors = Kokkos::View<number *, MemorySpace::Default::kokkos_space>(
+      Kokkos::view_alloc("G_all_colors", Kokkos::WithoutInitializing), n_entries_all);
+    for (unsigned int color = 0; color < n_colors; ++color)
+      if (colored_graph[color].size() > 0)
+        {
+          const std::size_t begin = static_cast<std::size_t>(
+                                      first_cell_index(matrix_free.get_data(color))) *
+                                    symmetric_tensor_dim * n_q_points;
+          Kokkos::deep_copy(Kokkos::subview(G_all_colors,
+                                            Kokkos::make_pair(begin,
+                                                              begin + G_tensors[color].size())),
+                            G_tensors[color]);
+        }
+    Kokkos::fence();
   }
 
 

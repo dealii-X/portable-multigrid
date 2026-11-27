@@ -1,7 +1,7 @@
 // Portable::LaplaceOperator on a curved, sheared mesh: every vmult variant
 // that runs on host and device builds, Tvmult() and compute_diagonal()
 // against the CPU FEValues reference of deformed_mesh_util.h; with
-// batched_copy only vmult_batched() and vmult_fused() (the batched
+// batched_copy only vmult_batched(), vmult_fused() and vmult_fused_G() (the batched
 // FEEvaluation copied from deal.II, which needs PrecomputedData::first_cell).
 //
 // src is zero on the Dirichlet DoFs: the deal.II cell_loop paths read src
@@ -86,6 +86,7 @@ test(const bool overlap)
     {
       check("vmult_batched", [&](VectorType &d, const VectorType &s) { op.vmult_batched(d, s); });
       check("vmult_fused", [&](VectorType &d, const VectorType &s) { op.vmult_fused(d, s); });
+      check("vmult_fused_G", [&](VectorType &d, const VectorType &s) { op.vmult_fused_G(d, s); });
       return;
     }
 

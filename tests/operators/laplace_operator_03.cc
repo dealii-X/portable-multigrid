@@ -1,5 +1,6 @@
-// Portable::LaplaceOperator::vmult_batched() and vmult_fused() (the batched
-// FEEvaluation copied from deal.II, without and with evaluate_and_apply()) on a
+// Portable::LaplaceOperator::vmult_batched(), vmult_fused() and vmult_fused_G()
+// (the batched FEEvaluation copied from deal.II, without and with
+// evaluate_and_apply(), and with the BK3 geometry G) on a
 // deformed mesh, without communication/computation overlap.
 
 #include "../tests.h"
