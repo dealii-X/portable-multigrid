@@ -33,6 +33,7 @@ set(_drivers
   geometric_multigrid
   geometric_multigrid_bk3
   geometric_multigrid_neumann
+  newton_elasticity
   ph_multigrid
   ph_multigrid_bk3
   plain_laplace_solver
