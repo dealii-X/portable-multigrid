@@ -1,0 +1,109 @@
+
+DEAL::dim = 2, jacobi
+DEAL::identity: OK
+DEAL::uniaxial stretch, rotated: OK
+DEAL::splitting 1e-8: OK
+DEAL::splitting 1e-13: OK
+DEAL::unsorted diagonal: OK
+DEAL::graded: OK
+DEAL::C = F^T F, random F 0: OK
+DEAL::C = F^T F, random F 1: OK
+DEAL::C = F^T F, random F 2: OK
+DEAL::C = F^T F, random F 3: OK
+DEAL::C = F^T F, random F 4: OK
+DEAL::C = F^T F, random F 5: OK
+DEAL::C = F^T F, random F 6: OK
+DEAL::C = F^T F, random F 7: OK
+DEAL::C = F^T F, random F 8: OK
+DEAL::C = F^T F, random F 9: OK
+DEAL::C = F^T F, random F 10: OK
+DEAL::C = F^T F, random F 11: OK
+DEAL::C = F^T F, random F 12: OK
+DEAL::C = F^T F, random F 13: OK
+DEAL::C = F^T F, random F 14: OK
+DEAL::C = F^T F, random F 15: OK
+DEAL::C = F^T F, random F 16: OK
+DEAL::C = F^T F, random F 17: OK
+DEAL::C = F^T F, random F 18: OK
+DEAL::C = F^T F, random F 19: OK
+DEAL::dim = 3, jacobi
+DEAL::identity: OK
+DEAL::uniaxial stretch, rotated: OK
+DEAL::splitting 1e-8: OK
+DEAL::splitting 1e-13: OK
+DEAL::unsorted diagonal: OK
+DEAL::graded: OK
+DEAL::C = F^T F, random F 0: OK
+DEAL::C = F^T F, random F 1: OK
+DEAL::C = F^T F, random F 2: OK
+DEAL::C = F^T F, random F 3: OK
+DEAL::C = F^T F, random F 4: OK
+DEAL::C = F^T F, random F 5: OK
+DEAL::C = F^T F, random F 6: OK
+DEAL::C = F^T F, random F 7: OK
+DEAL::C = F^T F, random F 8: OK
+DEAL::C = F^T F, random F 9: OK
+DEAL::C = F^T F, random F 10: OK
+DEAL::C = F^T F, random F 11: OK
+DEAL::C = F^T F, random F 12: OK
+DEAL::C = F^T F, random F 13: OK
+DEAL::C = F^T F, random F 14: OK
+DEAL::C = F^T F, random F 15: OK
+DEAL::C = F^T F, random F 16: OK
+DEAL::C = F^T F, random F 17: OK
+DEAL::C = F^T F, random F 18: OK
+DEAL::C = F^T F, random F 19: OK
+DEAL::dim = 2, closed form
+DEAL::identity: OK
+DEAL::uniaxial stretch, rotated: OK
+DEAL::splitting 1e-8: OK
+DEAL::splitting 1e-13: OK
+DEAL::unsorted diagonal: OK
+DEAL::graded: OK
+DEAL::C = F^T F, random F 0: OK
+DEAL::C = F^T F, random F 1: OK
+DEAL::C = F^T F, random F 2: OK
+DEAL::C = F^T F, random F 3: OK
+DEAL::C = F^T F, random F 4: OK
+DEAL::C = F^T F, random F 5: OK
+DEAL::C = F^T F, random F 6: OK
+DEAL::C = F^T F, random F 7: OK
+DEAL::C = F^T F, random F 8: OK
+DEAL::C = F^T F, random F 9: OK
+DEAL::C = F^T F, random F 10: OK
+DEAL::C = F^T F, random F 11: OK
+DEAL::C = F^T F, random F 12: OK
+DEAL::C = F^T F, random F 13: OK
+DEAL::C = F^T F, random F 14: OK
+DEAL::C = F^T F, random F 15: OK
+DEAL::C = F^T F, random F 16: OK
+DEAL::C = F^T F, random F 17: OK
+DEAL::C = F^T F, random F 18: OK
+DEAL::C = F^T F, random F 19: OK
+DEAL::dim = 3, closed form
+DEAL::identity: OK
+DEAL::uniaxial stretch, rotated: OK
+DEAL::splitting 1e-8: OK
+DEAL::splitting 1e-13: OK
+DEAL::unsorted diagonal: OK
+DEAL::graded: OK
+DEAL::C = F^T F, random F 0: OK
+DEAL::C = F^T F, random F 1: OK
+DEAL::C = F^T F, random F 2: OK
+DEAL::C = F^T F, random F 3: OK
+DEAL::C = F^T F, random F 4: OK
+DEAL::C = F^T F, random F 5: OK
+DEAL::C = F^T F, random F 6: OK
+DEAL::C = F^T F, random F 7: OK
+DEAL::C = F^T F, random F 8: OK
+DEAL::C = F^T F, random F 9: OK
+DEAL::C = F^T F, random F 10: OK
+DEAL::C = F^T F, random F 11: OK
+DEAL::C = F^T F, random F 12: OK
+DEAL::C = F^T F, random F 13: OK
+DEAL::C = F^T F, random F 14: OK
+DEAL::C = F^T F, random F 15: OK
+DEAL::C = F^T F, random F 16: OK
+DEAL::C = F^T F, random F 17: OK
+DEAL::C = F^T F, random F 18: OK
+DEAL::C = F^T F, random F 19: OK
