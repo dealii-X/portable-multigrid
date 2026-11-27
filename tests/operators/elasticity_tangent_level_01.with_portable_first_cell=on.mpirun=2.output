@@ -1,0 +1,33 @@
+
+DEAL:0::dim = 2, degree = 2, degree_coarse = 1
+DEAL:0::n_dofs = 578, prescribed = 64
+DEAL:0::vmult: OK
+DEAL:0::inverse diagonal: OK
+DEAL:0::coarse vmult: OK
+DEAL:0::dim = 3, degree = 2, degree_coarse = 1
+DEAL:0::n_dofs = 2187, prescribed = 386
+DEAL:0::vmult: OK
+DEAL:0::inverse diagonal: OK
+DEAL:0::coarse vmult: OK
+DEAL:0::dim = 3, degree = 4, degree_coarse = 2
+DEAL:0::n_dofs = 2187, prescribed = 386
+DEAL:0::vmult: OK
+DEAL:0::inverse diagonal: OK
+DEAL:0::coarse vmult: OK
+
+DEAL:1::dim = 2, degree = 2, degree_coarse = 1
+DEAL:1::n_dofs = 578, prescribed = 64
+DEAL:1::vmult: OK
+DEAL:1::inverse diagonal: OK
+DEAL:1::coarse vmult: OK
+DEAL:1::dim = 3, degree = 2, degree_coarse = 1
+DEAL:1::n_dofs = 2187, prescribed = 386
+DEAL:1::vmult: OK
+DEAL:1::inverse diagonal: OK
+DEAL:1::coarse vmult: OK
+DEAL:1::dim = 3, degree = 4, degree_coarse = 2
+DEAL:1::n_dofs = 2187, prescribed = 386
+DEAL:1::vmult: OK
+DEAL:1::inverse diagonal: OK
+DEAL:1::coarse vmult: OK
+
