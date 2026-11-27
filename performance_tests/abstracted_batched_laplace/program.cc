@@ -52,6 +52,8 @@ namespace multigrid
   // set from the 6th command line argument: 'd' deforms the mesh so that all
   // cells are general ones (per-point geometry in every variant)
   bool deform_grid = false;
+  // cells per batch of the batched variants, 0: LaplaceOperator's default
+  unsigned int cells_per_batch = 0;
 
   // We also select a mixed-precision approach as default. You can
   // independently change the number type for the outer iteration via
@@ -234,6 +236,7 @@ namespace multigrid
 
     system_matrix = std::make_unique<Portable::LaplaceOperator<dim, fe_degree, double>>(
       dof_handler, constraints, overlap_communication_computation);
+    system_matrix->set_cells_per_batch(cells_per_batch);
 
     system_matrix->initialize_dof_vector(solution_device);
     system_rhs_device.reinit(solution_device);
@@ -636,6 +639,7 @@ namespace multigrid
 
     vmult_timing_table.add_value("cells", triangulation.n_global_active_cells());
     vmult_timing_table.add_value("dofs", dof_handler.n_dofs());
+    vmult_timing_table.add_value("batch", system_matrix->get_cells_per_batch());
     vmult_timing_table.add_value("t_bk3", best_bk3);
     vmult_timing_table.add_value("t_bk3_abstracted", best_bk3_abstracted);
     vmult_timing_table.add_value("t_dealii", best_dealii);
@@ -891,7 +895,8 @@ main(int argc, char *argv[])
           if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             std::cout << "Expected at least one argument." << std::endl
                       << "Usage:" << std::endl
-                      << "./program dimension degree minsize maxsize doubling" << std::endl
+                      << "./program dimension degree minsize maxsize doubling deformed "
+                      << "cells_per_batch" << std::endl
                       << "The parameters degree to maxsize are integers, "
                       << "the last selects between a square mesh or a doubling mesh" << std::endl;
           return 1;
@@ -909,6 +914,8 @@ main(int argc, char *argv[])
         use_doubling_mesh = argv[5][0] == 'd';
       if (argc > 6)
         deform_grid = argv[6][0] == 'd';
+      if (argc > 7)
+        cells_per_batch = std::atoi(argv[7]);
 
       dimension = 3;
       AssertThrow(dimension == 2 || dimension == 3, ExcMessage("Dimension must be 2 or 3."));
@@ -923,6 +930,7 @@ main(int argc, char *argv[])
                   << "Maximum size:                   " << maxsize << std::endl
                   << "Use doubling mesh:              " << use_doubling_mesh << std::endl
                   << "Deformed mesh:                  " << deform_grid << std::endl
+                  << "Cells per batch (0: default):   " << cells_per_batch << std::endl
                   << std::endl;
 
       // if (dimension == 2)

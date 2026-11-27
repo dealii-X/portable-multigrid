@@ -7,14 +7,18 @@
 //   vmult_benchmark  the kernel of the dealii-X benchmarks
 //   vmult_bk3        the BK3-style counterpart of the benchmark kernel (shape
 //                    data in shared memory, separate gather and scatter, BK3's
-//                    batches and persistent teams), strided loops
+//                    persistent teams), strided loops
 // The mesh is a box of 2^k cubes (k = 3 refinements + 0, 1 or 2 directions
 // split once more), deformed so that every cell is a general one and all
 // variants read the geometry per quadrature point; homogeneous Dirichlet
 // conditions on the boundary. Times are the maximum over the ranks, after
-// warm-up; |A src| relative to vmult_dealii checks that the variants agree.
+// warm-up; |A src - A_dealii src| / |A_dealii src| checks that the variants agree.
+// All variants but vmult_dealii (one cell per team) run with the same batch:
+// cells_per_batch, or with 0 the benchmark's rule (10 kB of shared values per
+// batch, 1 to 32 cells). Every line prints the batch it ran with.
 //
 //   ./program degree [n_dofs (default 1e7)] [n_repetitions (default 20)]
+//             [cells_per_batch (default 0)]
 
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/function.h>
@@ -80,7 +84,7 @@ device_memory_used()
 
 template <int degree>
 int
-run(const double target_n_dofs, const int n_repetitions)
+run(const double target_n_dofs, const int n_repetitions, const unsigned int cells_per_batch)
 {
   constexpr int dim = 3;
   using Material    = Portable::LinearElasticMaterial<dim, Number>;
@@ -126,11 +130,12 @@ run(const double target_n_dofs, const int n_repetitions)
 
   const double   memory_before = device_memory_used();
   const Material material{1.7, 0.6};
-  const Operator op(dof_handler, constraints, material, false);
+  const Operator op(dof_handler, constraints, material, false, cells_per_batch);
 
-  VectorType src, dst;
+  VectorType src, dst, dst_ref;
   op.initialize_dof_vector(src);
   op.initialize_dof_vector(dst);
+  op.initialize_dof_vector(dst_ref);
   {
     LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> host(src.get_partitioner());
     for (unsigned int i = 0; i < host.locally_owned_size(); ++i)
@@ -155,15 +160,21 @@ run(const double target_n_dofs, const int n_repetitions)
         << memory_op_max * (1u << 30) / (n_dofs / double(Utilities::MPI::n_mpi_processes(comm)))
         << " bytes/dof)" << std::endl;
 
-  const std::vector<std::pair<std::string, std::function<void()>>> variants = {
-    {"vmult_dealii", [&]() { op.vmult_dealii(dst, src); }},
-    {"vmult_batched", [&]() { op.vmult_batched(dst, src); }},
-    {"vmult_fused", [&]() { op.vmult_fused(dst, src); }},
-    {"vmult_benchmark", [&]() { op.vmult_benchmark(dst, src); }},
-    {"vmult_bk3", [&]() { op.vmult_bk3(dst, src); }}};
+  struct Variant
+  {
+    std::string           name;
+    unsigned int          batch;
+    std::function<void()> vmult;
+  };
+  const std::vector<Variant> variants = {
+    {"vmult_dealii", 1, [&]() { op.vmult_dealii(dst, src); }},
+    {"vmult_batched", op.cells_per_batch_batched(), [&]() { op.vmult_batched(dst, src); }},
+    {"vmult_fused", op.cells_per_batch_batched(), [&]() { op.vmult_fused(dst, src); }},
+    {"vmult_benchmark", op.cells_per_batch_benchmark(), [&]() { op.vmult_benchmark(dst, src); }},
+    {"vmult_bk3", op.cells_per_batch_bk3(), [&]() { op.vmult_bk3(dst, src); }}};
 
   double reference_norm = 0.;
-  for (const auto &[name, vmult] : variants)
+  for (const auto &[name, batch, vmult] : variants)
     {
       for (int r = 0; r < 2; ++r)
         vmult();
@@ -183,16 +194,21 @@ run(const double target_n_dofs, const int n_repetitions)
       const double t_min    = times.front();
       const double t_median = times[times.size() / 2];
 
-      const double norm = dst.l2_norm();
+      // the first variant (vmult_dealii) is the reference
       if (reference_norm == 0.)
-        reference_norm = norm;
+        {
+          dst_ref        = dst;
+          reference_norm = dst_ref.l2_norm();
+        }
+      dst -= dst_ref;
+      const double difference = dst.l2_norm() / reference_norm;
 
-      pcout << "  " << std::left << std::setw(16) << name << std::right << " median "
-            << std::setw(9) << std::setprecision(4) << 1e3 * t_median << " ms, min " << std::setw(9)
-            << 1e3 * t_min << " ms, " << std::setw(7) << std::setprecision(4)
-            << 1e-9 * n_dofs / t_median << " GDoF/s (median), |A src| rel. diff " << std::scientific
-            << std::setprecision(2) << std::abs(norm - reference_norm) / reference_norm
-            << std::defaultfloat << std::endl;
+      pcout << "  " << std::left << std::setw(16) << name << std::right << " batch " << std::setw(2)
+            << batch << " median " << std::setw(9) << std::setprecision(4) << 1e3 * t_median
+            << " ms, min " << std::setw(9) << 1e3 * t_min << " ms, " << std::setw(7)
+            << std::setprecision(4) << 1e-9 * n_dofs / t_median
+            << " GDoF/s (median), rel. difference " << std::scientific << std::setprecision(2)
+            << difference << std::defaultfloat << std::endl;
     }
   pcout << std::endl;
 
@@ -209,24 +225,26 @@ main(int argc, char *argv[])
   if (argc < 2)
     {
       std::cerr << "usage: " << argv[0]
-                << " degree [n_dofs (default 1e7)] [n_repetitions (default 20)]" << std::endl;
+                << " degree [n_dofs (default 1e7)] [n_repetitions (default 20)]"
+                << " [cells_per_batch (default 0)]" << std::endl;
       return 1;
     }
 
-  const int    degree        = std::atoi(argv[1]);
-  const double n_dofs        = (argc > 2) ? std::atof(argv[2]) : 1e7;
-  const int    n_repetitions = (argc > 3) ? std::atoi(argv[3]) : 20;
+  const int          degree          = std::atoi(argv[1]);
+  const double       n_dofs          = (argc > 2) ? std::atof(argv[2]) : 1e7;
+  const int          n_repetitions   = (argc > 3) ? std::atoi(argv[3]) : 20;
+  const unsigned int cells_per_batch = (argc > 4) ? std::atoi(argv[4]) : 0;
 
   switch (degree)
     {
       case 1:
-        return run<1>(n_dofs, n_repetitions);
+        return run<1>(n_dofs, n_repetitions, cells_per_batch);
       case 2:
-        return run<2>(n_dofs, n_repetitions);
+        return run<2>(n_dofs, n_repetitions, cells_per_batch);
       case 3:
-        return run<3>(n_dofs, n_repetitions);
+        return run<3>(n_dofs, n_repetitions, cells_per_batch);
       case 4:
-        return run<4>(n_dofs, n_repetitions);
+        return run<4>(n_dofs, n_repetitions, cells_per_batch);
       default:
         std::cerr << "degree must be in [1, 4]" << std::endl;
         return 1;

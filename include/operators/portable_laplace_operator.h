@@ -9,6 +9,7 @@
 
 #include <deal.II/matrix_free/tools.h>
 
+#include <algorithm>
 #include <memory>
 
 #include "base/portable_laplace_operator_base.h"
@@ -120,6 +121,30 @@ namespace Portable
     LaplaceOperator(const DoFHandler<dim>           &dof_handler,
                     const AffineConstraints<number> &constraints,
                     bool                             overlap_communication_computation);
+
+    // cells per batch of the batched variants (BK3, Custom and copied batched
+    // FEEvaluation): 10 kB of shared values, (1 + dim) n_q^dim per cell as in
+    // BK3, 1 to 32 cells; the rule of the elasticity benchmark kernel
+    static unsigned int
+    default_cells_per_batch()
+    {
+      const unsigned int raw = 10000u / ((1u + dim) * Utilities::pow(fe_degree + 1, dim) *
+                                         static_cast<unsigned int>(sizeof(number)));
+      return std::clamp(raw, 1u, 32u);
+    }
+
+    // 0: default_cells_per_batch()
+    void
+    set_cells_per_batch(const unsigned int n)
+    {
+      cells_per_batch = n > 0 ? n : default_cells_per_batch();
+    }
+
+    unsigned int
+    get_cells_per_batch() const
+    {
+      return cells_per_batch;
+    }
 
     void
     vmult(
@@ -303,6 +328,8 @@ namespace Portable
       dof_indices_per_color;
 
     std::vector<Kokkos::View<number *, MemorySpace::Default::kokkos_space>> G_tensors;
+
+    unsigned int cells_per_batch = default_cells_per_batch();
   };
 
   template <int dim, int fe_degree, typename number>
@@ -388,7 +415,8 @@ namespace Portable
       matrix_free,
       LocalLaplaceOperatorBatchedCopy<dim, fe_degree, fe_degree + 1, number, false>(),
       src,
-      dst);
+      dst,
+      cells_per_batch);
     matrix_free.copy_constrained_values(src, dst);
   }
 
@@ -403,7 +431,8 @@ namespace Portable
       matrix_free,
       LocalLaplaceOperatorBatchedCopy<dim, fe_degree, fe_degree + 1, number, true>(),
       src,
-      dst);
+      dst,
+      cells_per_batch);
     matrix_free.copy_constrained_values(src, dst);
   }
 
@@ -426,8 +455,7 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    const unsigned int n_cells_per_batch = cells_per_batch;
 
 
     if (is_serial)
@@ -524,8 +552,7 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    const unsigned int n_cells_per_batch = cells_per_batch;
 
 
     if (is_serial)
@@ -766,8 +793,7 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    const unsigned int n_cells_per_batch = cells_per_batch;
 
 
     if (is_serial)
@@ -852,8 +878,7 @@ namespace Portable
 
     unsigned int numBlocks         = numbers::invalid_unsigned_int;
     unsigned int threadsPerBlock   = numbers::invalid_unsigned_int;
-    // unsigned int n_cells_per_batch = numbers::invalid_unsigned_int;
-    unsigned int n_cells_per_batch = 1;
+    const unsigned int n_cells_per_batch = cells_per_batch;
 
     if (is_serial)
       {

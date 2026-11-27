@@ -135,6 +135,12 @@ namespace Benchmark
       return nbatches;
     }
 
+    unsigned int
+    elements_per_batch() const
+    {
+      return nelmtPerBatch;
+    }
+
     // number of threads per team the kernel requires
     unsigned int
     team_size() const
