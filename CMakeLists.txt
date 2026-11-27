@@ -53,6 +53,7 @@ set(_benchmarks
   comm_microbench
   elasticity_benchmark_kernel
   elasticity_operator
+  elasticity_residual
   hanging_nodes_comparison
   hanging_nodes_operator
   mg_transfer_comparison
@@ -112,6 +113,11 @@ if(PORTABLE_MULTIGRID_BENCHMARKS)
   foreach(_dir ${_benchmarks})
     portable_multigrid_add_program(performance_tests ${_dir})
   endforeach()
+endif()
+
+if(TARGET performance_tests.elasticity_residual)
+  include(${CMAKE_SOURCE_DIR}/performance_tests/elasticity_residual/instantiations.cmake)
+  elasticity_residual_instantiations(performance_tests.elasticity_residual)
 endif()
 
 add_subdirectory(tests)
