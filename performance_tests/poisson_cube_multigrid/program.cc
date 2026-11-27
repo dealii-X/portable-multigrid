@@ -109,7 +109,9 @@ namespace multigrid
   class LaplaceProblem
   {
   public:
-    LaplaceProblem(const bool overlap_communication_computation, const std::string &json_file);
+    LaplaceProblem(const bool                     overlap_communication_computation,
+                   const std::string             &json_file,
+                   const types::global_cell_index n_cells_single_rank);
 
     void
     run(const std::size_t  min_size,
@@ -196,6 +198,9 @@ namespace multigrid
 
     const bool overlap_communication_computation;
 
+    // h-levels with fewer cells live on rank 0
+    const types::global_cell_index n_cells_single_rank;
+
     double setup_time;
 
     // JSON output: setup phases and results of the current cycle, records of
@@ -261,14 +266,17 @@ namespace multigrid
   };
 
   template <int dim, int fe_degree>
-  LaplaceProblem<dim, fe_degree>::LaplaceProblem(const bool         overlap_communication_computation,
-                                                  const std::string &json_file)
+  LaplaceProblem<dim, fe_degree>::LaplaceProblem(
+    const bool                     overlap_communication_computation,
+    const std::string             &json_file,
+    const types::global_cell_index n_cells_single_rank)
     : mpi_communicator(MPI_COMM_WORLD)
     , triangulation(mpi_communicator)
     , mapping(fe_degree)
     , fe(fe_degree)
     , dof_handler(triangulation)
     , overlap_communication_computation(overlap_communication_computation)
+    , n_cells_single_rank(n_cells_single_rank)
     , setup_time(0.)
     , json_file(json_file)
 
@@ -288,10 +296,21 @@ namespace multigrid
 
     Timer time;
 
+    const RepartitioningPolicyTools::MinimalGranularityPolicy<dim> granularity_policy(16);
     coarse_triangulations = create_refined_coarsening_sequence(
-      triangulation, RepartitioningPolicyTools::MinimalGranularityPolicy<dim>(16));
+      triangulation, SingleRankBelowPolicy<dim>(n_cells_single_rank, granularity_policy));
 
     setup_time += time.wall_time();
+
+    for (unsigned int level = 0; level < coarse_triangulations.size(); ++level)
+      {
+        const auto tria = dynamic_cast<const parallel::TriangulationBase<dim> *>(
+          coarse_triangulations[level].get());
+        const unsigned int n_ranks = Utilities::MPI::sum<unsigned int>(
+          tria->n_locally_owned_active_cells() > 0 ? 1 : 0, mpi_communicator);
+        pcout << "h-level " << level << ": " << tria->n_global_active_cells() << " cells on "
+              << n_ranks << " ranks" << std::endl;
+      }
 
     time_details << "Coarse triangulations created  (CPU/wall)" << time.cpu_time() << "s/"
                  << time.wall_time() << 's' << std::endl;
@@ -951,6 +970,7 @@ namespace multigrid
         << "\",\n  \"n_pre_smooth\": " << n_pre_smooth << ",\n  \"n_post_smooth\": " << n_post_smooth
         << ",\n  \"doubling_mesh\": " << (use_doubling_mesh ? "true" : "false")
         << ",\n  \"overlap\": " << (overlap_communication_computation ? "true" : "false")
+        << ",\n  \"n_cells_single_rank\": " << n_cells_single_rank
         << ",\n  \"cycles\": [\n";
     for (unsigned int i = 0; i < json_cycles.size(); ++i)
       out << json_cycles[i] << (i + 1 < json_cycles.size() ? ",\n" : "\n");
@@ -1102,14 +1122,16 @@ namespace multigrid
                    const unsigned int n_post_smooth,
                    const bool         use_doubling_mesh,
                    const bool         overlap_communication_computation,
-                   const std::string &json_file)
+                   const std::string &json_file,
+                   const types::global_cell_index n_cells_single_rank)
     {
       if (min_degree > max_degree)
         return;
       if (min_degree == target_degree)
         {
           LaplaceProblem<dim, min_degree> laplace_problem(overlap_communication_computation,
-                                                          json_file);
+                                                          json_file,
+                                                          n_cells_single_rank);
           laplace_problem.run(min_size, max_size, n_pre_smooth, n_post_smooth, use_doubling_mesh);
         }
       LaplaceRunTime<dim, (min_degree <= max_degree ? (min_degree + 1) : min_degree), max_degree> m(
@@ -1120,7 +1142,8 @@ namespace multigrid
         n_post_smooth,
         use_doubling_mesh,
         overlap_communication_computation,
-        json_file);
+        json_file,
+        n_cells_single_rank);
     }
   };
 } // namespace multigrid
@@ -1134,12 +1157,16 @@ main(int argc, char *argv[])
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      // --json <file> anywhere on the command line, the rest is positional
-      std::string        json_file;
-      std::vector<char *> args;
+      // --json <file> and --single-rank-cells <n> anywhere on the command
+      // line, the rest is positional
+      std::string              json_file;
+      types::global_cell_index n_cells_single_rank = 0;
+      std::vector<char *>      args;
       for (int i = 0; i < argc; ++i)
         if (std::string(argv[i]) == "--json" && i + 1 < argc)
           json_file = argv[++i];
+        else if (std::string(argv[i]) == "--single-rank-cells" && i + 1 < argc)
+          n_cells_single_rank = std::atoll(argv[++i]);
         else
           args.push_back(argv[i]);
       argc = args.size();
@@ -1159,7 +1186,7 @@ main(int argc, char *argv[])
             std::cout
               << "Expected at least one argument." << std::endl
               << "Usage:" << std::endl
-              << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling overlap_communication_computation [--json file]"
+              << "./program degree minsize maxsize n_pre_smooth n_post_smooth doubling overlap_communication_computation [--json file] [--single-rank-cells n]"
               << std::endl
               << "The parameters degree to n_post_smooth are integers, "
               << "the last selects between a square mesh or a doubling mesh" << std::endl;
@@ -1196,6 +1223,7 @@ main(int argc, char *argv[])
                   << "Use overlap_communication_computation: " << overlap_communication_computation
                   << std::endl
                   << "JSON output:                           " << json_file << std::endl
+                  << "h-levels on rank 0 below (cells):      " << n_cells_single_rank << std::endl
                   << std::endl;
 
       LaplaceRunTime<dimension, minimal_degree, maximal_degree> run(
@@ -1206,7 +1234,8 @@ main(int argc, char *argv[])
         n_post_smooth,
         use_doubling_mesh,
         overlap_communication_computation,
-        json_file);
+        json_file,
+        n_cells_single_rank);
     }
   catch (std::exception &exc)
     {
