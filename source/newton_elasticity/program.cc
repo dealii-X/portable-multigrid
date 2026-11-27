@@ -15,7 +15,7 @@
 //             [output (default 1)] [--mesh=file.msh] [--stretch=d or dx,dy,dz]
 //             [--no-predictor] [--cg-monitor=N] [--material=svk|ogden]
 //             [--ogden=mu1,alpha1,mu2,alpha2,kappa] [--pmg] [--outer=cg|fcg]
-//             [--coarse-tol=tol] [--smoothing-degree=k]
+//             [--coarse-tol=tol] [--smoothing-degree=k] [--precondition=amg]
 //
 // SVK: E = 1, nu = 0.3. Ogden (decoupled, Portable::OgdenMaterial) by default
 // the alveolar wall of Singh et al. (2024), Table 2, as in ExaDG's
@@ -38,6 +38,12 @@
 // p, p / 2, ..., 1, Chebyshev of degree --smoothing-degree (default 5), CG to
 // the relative --coarse-tol (default 1e-3) on degree 1, flexible CG outside
 // (--outer=fcg, default) or plain CG (--outer=cg).
+//
+// --precondition=amg preconditions CG by AMG4PSBLAS on the component blocks of
+// the tangent, assembled on the host per Newton iteration (deal.II with
+// AMG4PSBLAS only).
+//
+// CG never solves beyond 0.1 of Newton's tolerance.
 //
 // E.g. with alveolar_hex_small.msh (not in this repository), 55200 hexes of
 // an idealized alveolar (Kelvin foam) geometry in [0, 1]^3:
@@ -68,6 +74,15 @@
 #include <deal.II/lac/read_write_vector.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_control.h>
+
+#ifdef DEAL_II_WITH_AMG4PSBLAS
+#  include <deal.II/fe/fe_values.h>
+
+#  include <deal.II/lac/full_matrix.h>
+#  include <deal.II/lac/psblas_precondition.h>
+#  include <deal.II/lac/psblas_sparse_matrix.h>
+#  include <deal.II/lac/psblas_vector.h>
+#endif
 
 #include <deal.II/numerics/data_component_interpretation.h>
 #include <deal.II/numerics/data_out.h>
@@ -123,7 +138,129 @@ struct Options
   bool           flexible_cg      = true;
   double         coarse_tolerance = 1e-3;
   unsigned int   smoothing_degree = 5;
+  bool           amg              = false;
 };
+
+
+
+#ifdef DEAL_II_WITH_AMG4PSBLAS
+// AMG4PSBLAS on the tangent at u, assembled on the host with the couplings
+// between displacement components dropped: the aggregation is scalar, and the
+// blocks K_dd keep the aggregates within one component
+template <typename Material>
+class TangentAMG
+{
+public:
+  TangentAMG(const Mapping<dim>              &mapping,
+             const DoFHandler<dim>           &dof_handler,
+             const AffineConstraints<Number> &constraints,
+             const unsigned int               n_q_points_1d)
+    : mapping(mapping)
+    , dof_handler(dof_handler)
+    , constraints(constraints)
+    , quadrature(n_q_points_1d)
+    , comm(dof_handler.get_mpi_communicator())
+    , locally_owned_dofs(dof_handler.locally_owned_dofs())
+    , locally_relevant_dofs(DoFTools::extract_locally_relevant_dofs(dof_handler))
+    , owned_indices(locally_owned_dofs.get_index_vector())
+    , values(owned_indices.size())
+  {
+    // reinit() leaves the vectors in PSBLAS build state, in which the
+    // values set() writes are dropped at the next assembly
+    for (auto *v : {&src_psblas, &dst_psblas})
+      {
+        v->reinit(locally_owned_dofs, comm);
+        if (!psb_c_cd_is_asb(v->get_psblas_descriptor()))
+          AssertThrow(psb_c_cdasb(v->get_psblas_descriptor()) == 0,
+                      ExcMessage("psb_c_cdasb failed"));
+        AssertThrow(psb_c_dgeasb(v->get_psblas_vector(), v->get_psblas_descriptor()) == 0,
+                    ExcMessage("psb_c_dgeasb failed"));
+      }
+  }
+
+  void
+  rebuild(const Material &material, const VectorType &u)
+  {
+    LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+    rw.import_elements(u, VectorOperation::insert);
+    LinearAlgebra::distributed::Vector<Number, MemorySpace::Host> u_host(locally_owned_dofs,
+                                                                         locally_relevant_dofs,
+                                                                         comm);
+    u_host.import_elements(rw, VectorOperation::insert);
+    u_host.update_ghost_values();
+
+    const FiniteElement<dim> &fe = dof_handler.get_fe();
+    FEValues<dim> fe_values(mapping, fe, quadrature, update_gradients | update_JxW_values);
+    const FEValuesExtractors::Vector displacement(0);
+
+    const unsigned int                   dofs_per_cell = fe.n_dofs_per_cell();
+    const unsigned int                   n_q_points    = quadrature.size();
+    FullMatrix<Number>                   cell_matrix(dofs_per_cell, dofs_per_cell);
+    std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
+    std::vector<Tensor<2, dim, Number>>  grad_u(n_q_points);
+    std::vector<unsigned int>            component(dofs_per_cell);
+    for (unsigned int i = 0; i < dofs_per_cell; ++i)
+      component[i] = fe.system_to_component_index(i).first;
+
+    matrix.reinit(locally_owned_dofs, comm);
+    for (const auto &cell : dof_handler.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          fe_values[displacement].get_function_gradients(u_host, grad_u);
+          cell_matrix = 0.;
+          for (unsigned int q = 0; q < n_q_points; ++q)
+            for (unsigned int j = 0; j < dofs_per_cell; ++j)
+              {
+                const Tensor<2, dim, Number> dP =
+                  material.linearized_stress(grad_u[q], fe_values[displacement].gradient(j, q)) *
+                  fe_values.JxW(q);
+                for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                  if (component[i] == component[j])
+                    cell_matrix(i, j) +=
+                      fe_values.shape_grad_component(i, q, component[i]) * dP[component[i]];
+              }
+          cell->get_dof_indices(dof_indices);
+          constraints.distribute_local_to_global(cell_matrix, dof_indices, matrix);
+        }
+    matrix.compress();
+
+    amg.initialize(matrix, PSCToolkitWrappers::PreconditionAMG::AdditionalData());
+  }
+
+  void
+  vmult(VectorType &dst, const VectorType &src) const
+  {
+    LinearAlgebra::ReadWriteVector<Number> rw(locally_owned_dofs);
+    rw.import_elements(src, VectorOperation::insert);
+    for (unsigned int k = 0; k < values.size(); ++k)
+      values[k] = rw.local_element(k);
+    src_psblas.set(owned_indices, values);
+    src_psblas.compress(VectorOperation::insert);
+
+    amg.vmult(dst_psblas, src_psblas);
+
+    dst_psblas.extract_subvector_to(owned_indices, values);
+    for (unsigned int k = 0; k < values.size(); ++k)
+      rw.local_element(k) = values[k];
+    dst.import_elements(rw, VectorOperation::insert);
+  }
+
+private:
+  const Mapping<dim>                         &mapping;
+  const DoFHandler<dim>                      &dof_handler;
+  const AffineConstraints<Number>            &constraints;
+  const QGauss<dim>                           quadrature;
+  const MPI_Comm                              comm;
+  const IndexSet                              locally_owned_dofs;
+  const IndexSet                              locally_relevant_dofs;
+  const std::vector<types::global_dof_index>  owned_indices;
+  PSCToolkitWrappers::SparseMatrix            matrix;
+  PSCToolkitWrappers::PreconditionAMG         amg;
+  mutable PSCToolkitWrappers::Vector          src_psblas, dst_psblas;
+  mutable std::vector<Number>                 values;
+};
+#endif
 
 
 
@@ -262,6 +399,25 @@ run(const Options &options, const Material &material, const std::string &materia
             << std::endl;
     }
 
+#ifdef DEAL_II_WITH_AMG4PSBLAS
+  // the operator's constraints, the prescribed DoFs as homogeneous ones
+  std::unique_ptr<AffineConstraints<Number>> amg_constraints;
+  std::unique_ptr<TangentAMG<Material>>      amg;
+  if (options.amg)
+    {
+      amg_constraints =
+        std::make_unique<AffineConstraints<Number>>(locally_owned_dofs, locally_relevant_dofs);
+      amg_constraints->merge(constraints);
+      for (const auto i : prescribed)
+        if (locally_relevant_dofs.is_element(i) && !amg_constraints->is_constrained(i))
+          amg_constraints->constrain_dof_to_zero(i);
+      amg_constraints->close();
+      amg = std::make_unique<TangentAMG<Material>>(mapping, dof_handler, *amg_constraints, degree + 1);
+    }
+#else
+  AssertThrow(!options.amg, ExcMessage("--precondition=amg needs deal.II with AMG4PSBLAS"));
+#endif
+
   VectorType u, residual, du, force, free_mask, stretch_direction;
   for (VectorType *v : {&u, &residual, &du, &force, &free_mask, &stretch_direction})
     op.initialize_dof_vector(*v);
@@ -344,7 +500,7 @@ run(const Options &options, const Material &material, const std::string &materia
 
   const PreconditionIdentity identity;
 
-  double       time_residual = 0., time_cg = 0.;
+  double       time_residual = 0., time_cg = 0., time_amg_setup = 0.;
   unsigned int n_newton_total = 0, n_cg_total = 0, n_coarse_total = 0, n_step_cuts = 0;
 
   constexpr unsigned int max_newton       = 30;
@@ -432,7 +588,10 @@ run(const Options &options, const Material &material, const std::string &materia
             }
 
           residual *= -1.;
-          SolverControl                control(100000, cg_tolerance * residual_norm);
+          // no more accuracy than Newton's stopping criterion needs
+          SolverControl control(100000,
+                                std::max(cg_tolerance * residual_norm,
+                                         0.1 * newton_tolerance * reference_norm));
           SolverCG<VectorType>         cg(control);
           SolverFlexibleCG<VectorType> fcg(control);
           SolverBase<VectorType>      &solver =
@@ -450,7 +609,17 @@ run(const Options &options, const Material &material, const std::string &materia
               });
           du = 0.;
           Timer timer;
-          if (pmg)
+#ifdef DEAL_II_WITH_AMG4PSBLAS
+          if (amg)
+            {
+              amg->rebuild(material, u);
+              time_amg_setup += timer.wall_time();
+              timer.restart();
+              cg.solve(fine_level, du, residual, *amg);
+            }
+          else
+#endif
+            if (pmg)
             {
               pmg->update(u);
               pmg->n_coarse_iterations = 0;
@@ -502,8 +671,10 @@ run(const Options &options, const Material &material, const std::string &materia
     pcout << ", coarse CG iterations " << n_coarse_total;
   pcout << ", step cuts " << n_step_cuts << std::endl
         << "time: residual " << time_residual << " s, CG " << time_cg << " s ("
-        << (n_cg_total > 0 ? 1e3 * time_cg / n_cg_total : 0.) << " ms per CG iteration)"
-        << std::endl;
+        << (n_cg_total > 0 ? 1e3 * time_cg / n_cg_total : 0.) << " ms per CG iteration)";
+  if (options.amg)
+    pcout << ", AMG setup " << time_amg_setup << " s";
+  pcout << std::endl;
 
   return 0;
 }
@@ -541,6 +712,8 @@ main(int argc, char *argv[])
         options.material = a.substr(11);
       else if (a.rfind("--ogden=", 0) == 0)
         options.ogden_parameters = a.substr(8);
+      else if (a == "--precondition=amg")
+        options.amg = true;
       else if (a == "--pmg")
         options.pmg = true;
       else if (a == "--outer=cg")
@@ -556,6 +729,8 @@ main(int argc, char *argv[])
     }
   argc = args.size();
   argv = args.data();
+
+  AssertThrow(!(options.amg && options.pmg), ExcMessage("--pmg or --precondition=amg, not both"));
 
   const int degree = (argc > 1) ? std::atoi(argv[1]) : 2;
   if (argc > 2)
@@ -579,7 +754,8 @@ main(int argc, char *argv[])
                 << " [--mesh=file.msh] [--stretch=d or dx,dy,dz] [--no-predictor]"
                 << " [--cg-monitor=N] [--material=svk|ogden]"
                 << " [--ogden=mu1,alpha1,mu2,alpha2,kappa] [--pmg] [--outer=cg|fcg]"
-                << " [--coarse-tol=tol] [--smoothing-degree=k]" << std::endl;
+                << " [--coarse-tol=tol] [--smoothing-degree=k] [--precondition=amg]"
+                << std::endl;
     return 1;
   };
 
