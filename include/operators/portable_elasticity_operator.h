@@ -87,6 +87,28 @@ namespace Portable
 
 
 
+    // Material::stress() on the arrays of the benchmark kernels
+    template <typename number, typename Material>
+    struct BenchmarkStress
+    {
+      Material material;
+
+      DEAL_II_HOST_DEVICE void
+      operator()(const number (&grad)[3][3], number (&P)[3][3]) const
+      {
+        Tensor<2, 3, number> grad_u;
+        for (unsigned int i = 0; i < 3; ++i)
+          for (unsigned int j = 0; j < 3; ++j)
+            grad_u[i][j] = grad[i][j];
+        const Tensor<2, 3, number> stress = material.stress(grad_u);
+        for (unsigned int i = 0; i < 3; ++i)
+          for (unsigned int j = 0; j < 3; ++j)
+            P[i][j] = stress[i][j];
+      }
+    };
+
+
+
     // The geometry of the cells of one color in the layout of
     // Benchmark::LinearElasticityKernel: [cell][entry][a][b][c] with entry 0 =
     // JxW and 1 + 3 d + e = d xi_d / d x_e, x along a (the point
@@ -164,7 +186,7 @@ namespace Portable
 
     // The kernel of the dealii-X benchmarks (kernels/elasticity_benchmark_kernel.h)
     // on the geometry of matrix_free, with gather and scatter on the global
-    // vectors: dim = 3, LinearElasticMaterial, no hanging nodes.
+    // vectors: dim = 3, no hanging nodes.
     void
     vmult_benchmark(VectorType &dst, const VectorType &src) const;
 
@@ -322,16 +344,35 @@ namespace Portable
                  const DeviceVector<number> &src,
                  const DeviceVector<number> &dst) const;
 
-    using BenchmarkKernel = Benchmark::LinearElasticityKernel<number, fe_degree + 1, n_q_points_1d>;
-    using BK3Kernel       = BK3::Parallel::ElasticityKernel<number, fe_degree + 1, n_q_points_1d>;
+    // the linear material with the benchmark's own arithmetic
+    static constexpr bool is_linear_material =
+      std::is_same_v<Material, LinearElasticMaterial<dim, number>>;
+    using BenchmarkStress = std::conditional_t<is_linear_material,
+                                               Benchmark::LinearElasticStress<number>,
+                                               internal::BenchmarkStress<number, Material>>;
+
+    BenchmarkStress
+    benchmark_stress() const
+    {
+      if constexpr (is_linear_material)
+        return {material.lambda, material.mu};
+      else
+        return {material};
+    }
+    using BenchmarkKernel =
+      Benchmark::LinearElasticityKernel<number, fe_degree + 1, n_q_points_1d, BenchmarkStress>;
+    using BK3Kernel =
+      BK3::Parallel::ElasticityKernel<number, fe_degree + 1, n_q_points_1d, BenchmarkStress>;
 
     // the benchmark kernel or (bk3) its BK3-style counterpart
     template <bool bk3>
     void
     kernel_vmult(VectorType &dst, const VectorType &src) const;
 
-    static constexpr bool has_benchmark_kernel =
-      dim == 3 && std::is_same_v<Material, LinearElasticMaterial<dim, number>>;
+    static constexpr bool has_benchmark_kernel = dim == 3;
+
+    // vmult_benchmark() and the BK3 kernels do not support them
+    bool has_hanging_nodes = false;
 
     MatrixFree<dim, number> matrix_free;
 
@@ -399,15 +440,14 @@ namespace Portable
         const std::vector<number> dbasis(univariate.shape_gradients_collocation.begin(),
                                          univariate.shape_gradients_collocation.end());
 
-        bool has_hanging_nodes = false;
         for (unsigned int color = 0; color < colored_graph.size(); ++color)
           {
             const auto data = matrix_free.get_data(color);
 
             benchmark_kernels.emplace_back(
-              data.n_cells, requested_batch_size, basis, dbasis, material.lambda, material.mu);
+              data.n_cells, requested_batch_size, basis, dbasis, benchmark_stress());
             bk3_kernels.emplace_back(
-              data.n_cells, requested_batch_size, basis, dbasis, material.lambda, material.mu);
+              data.n_cells, requested_batch_size, basis, dbasis, benchmark_stress());
             // both kernels read G of their padded last batch
             benchmark_geometry.push_back(internal::benchmark_geometry<dim, number, n_q_points_1d>(
               data,
@@ -420,8 +460,6 @@ namespace Portable
               if (masks(i) != dealii::internal::MatrixFreeFunctions::ConstraintKinds::unconstrained)
                 has_hanging_nodes = true;
           }
-        AssertThrow(!has_hanging_nodes,
-                    ExcMessage("vmult_benchmark() does not support hanging nodes"));
       }
   }
 
@@ -536,8 +574,8 @@ namespace Portable
     VectorType       &dst,
     const VectorType &src) const
   {
-    static_assert(has_benchmark_kernel,
-                  "vmult_benchmark() needs dim == 3 and LinearElasticMaterial");
+    static_assert(has_benchmark_kernel, "vmult_benchmark() needs dim == 3");
+    AssertThrow(!has_hanging_nodes, ExcMessage("vmult_benchmark() does not support hanging nodes"));
 
     dst = 0.;
     src.update_ghost_values();

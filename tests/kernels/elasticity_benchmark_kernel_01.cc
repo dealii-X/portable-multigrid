@@ -81,7 +81,7 @@ test(const unsigned int n_teams)
   const std::vector<double> dbasis(univariate.shape_gradients_collocation.begin(),
                                    univariate.shape_gradients_collocation.end());
 
-  const Kernel          kernel(n_cells, 2, basis, dbasis, lambda, mu);
+  const Kernel          kernel(n_cells, 2, basis, dbasis, {lambda, mu});
   const std::size_t     n_padded = kernel.n_elements_padded();
   typename Kernel::View d_G("G", n_padded * 10 * n_points), d_in("in", n_padded * 3 * n_nodes),
     d_out("out", n_padded * 3 * n_nodes);
