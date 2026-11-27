@@ -1,9 +1,9 @@
 // Portable::ElasticityOperator with the Saint Venant-Kirchhoff material: the
 // nonlinear residual R(u) by vmult, vmult_dealii, vmult_batched and
-// vmult_fused on the curved, sheared mesh of deformed_mesh_util.h against
-// the CPU FEValues reference. u is scaled so that the strains are large
-// enough for the nonlinear part to matter, which the comparison with the
-// linear reference confirms.
+// vmult_fused (in 3d also the benchmark and BK3 kernels) on the curved, sheared mesh of
+// deformed_mesh_util.h against the CPU FEValues reference. u is scaled so that the strains are
+// large enough for the nonlinear part to matter, which the comparison with the linear reference
+// confirms.
 
 #include <deal.II/base/function.h>
 
@@ -109,6 +109,12 @@ test()
   check("vmult_dealii", [&](VectorType &d, const VectorType &s) { op.vmult_dealii(d, s); });
   check("vmult_batched", [&](VectorType &d, const VectorType &s) { op.vmult_batched(d, s); });
   check("vmult_fused", [&](VectorType &d, const VectorType &s) { op.vmult_fused(d, s); });
+  if constexpr (dim == 3)
+    {
+      check("vmult_benchmark",
+            [&](VectorType &d, const VectorType &s) { op.vmult_benchmark(d, s); });
+      check("vmult_bk3", [&](VectorType &d, const VectorType &s) { op.vmult_bk3(d, s); });
+    }
 }
 
 

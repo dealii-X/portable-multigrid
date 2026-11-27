@@ -23,6 +23,9 @@
 //   basis    [i][p] = phi_i(x_p), dbasis [n][p] = phi'_n(x_p) of the
 //            collocation basis on the quadrature points
 // Direction d = 0 of xi is the index i of the nodes and a of the points.
+// Stress: the material law, stress(grad, P) with grad[i][j] = d u_i / d x_j
+// and P the (first Piola-Kirchhoff) stress tested with grad v, not
+// necessarily symmetric; LinearElasticStress is the benchmark's.
 
 #ifndef kernels_elasticity_benchmark_kernel_h
 #define kernels_elasticity_benchmark_kernel_h
@@ -71,7 +74,34 @@ namespace Benchmark
 
 
 
-  template <typename T, const unsigned int nm, const unsigned int nq>
+  // lambda tr(eps) I + 2 mu eps, eps = sym(grad), with the benchmark's arithmetic
+  template <typename T>
+  struct LinearElasticStress
+  {
+    T lambda;
+    T mu;
+
+    KOKKOS_INLINE_FUNCTION void
+    operator()(const T (&grad)[3][3], T (&P)[3][3]) const
+    {
+      const T div_u  = grad[0][0] + grad[1][1] + grad[2][2];
+      const T two_mu = (T)2 * mu;
+
+      P[0][0] = lambda * div_u + two_mu * grad[0][0];
+      P[1][1] = lambda * div_u + two_mu * grad[1][1];
+      P[2][2] = lambda * div_u + two_mu * grad[2][2];
+      P[0][1] = P[1][0] = mu * (grad[0][1] + grad[1][0]);
+      P[0][2] = P[2][0] = mu * (grad[0][2] + grad[2][0]);
+      P[1][2] = P[2][1] = mu * (grad[1][2] + grad[2][1]);
+    }
+  };
+
+
+
+  template <typename T,
+            const unsigned int nm,
+            const unsigned int nq,
+            typename Stress = LinearElasticStress<T>>
   class LinearElasticityKernel
   {
   public:
@@ -100,14 +130,12 @@ namespace Benchmark
                            const unsigned int    nelmtPerBatch,
                            const std::vector<T> &basis,
                            const std::vector<T> &dbasis,
-                           const T               lambda,
-                           const T               mu)
+                           const Stress         &stress)
       : nelmt(nelmt)
       , nelmtPerBatch(nelmtPerBatch)
       , nbatches((nelmt + nelmtPerBatch - 1) / nelmtPerBatch)
       , d_dbasis(Kokkos::view_alloc(Kokkos::WithoutInitializing, "d_dbasis"), nq * nq)
-      , lambda(lambda)
-      , mu(mu)
+      , stress(stress)
     {
       if (basis.size() != nm * nq || dbasis.size() != nq * nq)
         throw std::invalid_argument("LinearElasticityKernel: wrong size of the 1D shape data");
@@ -166,8 +194,7 @@ namespace Benchmark
       const auto         c_basis       = this->c_basis;
       const auto         c_dbasis      = this->c_dbasis;
       const auto         d_dbasis      = this->d_dbasis;
-      const T            lambda        = this->lambda;
-      const T            mu            = this->mu;
+      const Stress       stress        = this->stress;
 
       const unsigned int threadsPerBlock = team_size();
 
@@ -351,11 +378,10 @@ namespace Benchmark
 
                   const size_t g_elem_base =
                     eb * nelmtPerBatch * 10 * nq * nq * nq + e * 10 * nq * nq * nq + q * nq + r;
-                  const T two_mu = (T)2 * mu;
-                  T       wdetJ, drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz;
-                  T       ur0, us0, ut0;
-                  T       ur1, us1, ut1;
-                  T       ur2, us2, ut2;
+                  T wdetJ, drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz;
+                  T ur0, us0, ut0;
+                  T ur1, us1, ut1;
+                  T ur2, us2, ut2;
 
 #pragma unroll
                   for (int p = 0; p < nq; ++p)
@@ -415,31 +441,28 @@ namespace Benchmark
                       T dudx21 = ur2 * drdy + us2 * dsdy + ut2 * dtdy;
                       T dudx22 = ur2 * drdz + us2 * dsdz + ut2 * dtdz;
 
-                      T div_u = dudx00 + dudx11 + dudx22;
-
-                      const T sigma_xx = lambda * div_u + two_mu * dudx00;
-                      const T sigma_yy = lambda * div_u + two_mu * dudx11;
-                      const T sigma_zz = lambda * div_u + two_mu * dudx22;
-                      const T sigma_xy = mu * (dudx01 + dudx10);
-                      const T sigma_xz = mu * (dudx02 + dudx20);
-                      const T sigma_yz = mu * (dudx12 + dudx21);
+                      const T grad[3][3] = {{dudx00, dudx01, dudx02},
+                                            {dudx10, dudx11, dudx12},
+                                            {dudx20, dudx21, dudx22}};
+                      T       P[3][3];
+                      stress(grad, P);
 
                       // Component 0 directly into shared memory for step-8
                       s_rqr[e * nq * nq * nq + p * nq * nq + q * nq + r] =
-                        wdetJ * (sigma_xx * drdx + sigma_xy * drdy + sigma_xz * drdz);
+                        wdetJ * (P[0][0] * drdx + P[0][1] * drdy + P[0][2] * drdz);
                       s_rqs[e * nq * nq * nq + p * nq * nq + q * nq + r] =
-                        wdetJ * (sigma_xx * dsdx + sigma_xy * dsdy + sigma_xz * dsdz);
+                        wdetJ * (P[0][0] * dsdx + P[0][1] * dsdy + P[0][2] * dsdz);
                       s_rqt[e * nq * nq * nq + p * nq * nq + q * nq + r] =
-                        wdetJ * (sigma_xx * dtdx + sigma_xy * dtdy + sigma_xz * dtdz);
+                        wdetJ * (P[0][0] * dtdx + P[0][1] * dtdy + P[0][2] * dtdz);
 
                       // Components 1 and 2 kept in registers for subsequent passes
-                      r_f1r[p] = wdetJ * (sigma_xy * drdx + sigma_yy * drdy + sigma_yz * drdz);
-                      r_f1s[p] = wdetJ * (sigma_xy * dsdx + sigma_yy * dsdy + sigma_yz * dsdz);
-                      r_f1t[p] = wdetJ * (sigma_xy * dtdx + sigma_yy * dtdy + sigma_yz * dtdz);
+                      r_f1r[p] = wdetJ * (P[1][0] * drdx + P[1][1] * drdy + P[1][2] * drdz);
+                      r_f1s[p] = wdetJ * (P[1][0] * dsdx + P[1][1] * dsdy + P[1][2] * dsdz);
+                      r_f1t[p] = wdetJ * (P[1][0] * dtdx + P[1][1] * dtdy + P[1][2] * dtdz);
 
-                      r_f2r[p] = wdetJ * (sigma_xz * drdx + sigma_yz * drdy + sigma_zz * drdz);
-                      r_f2s[p] = wdetJ * (sigma_xz * dsdx + sigma_yz * dsdy + sigma_zz * dsdz);
-                      r_f2t[p] = wdetJ * (sigma_xz * dtdx + sigma_yz * dtdy + sigma_zz * dtdz);
+                      r_f2r[p] = wdetJ * (P[2][0] * drdx + P[2][1] * drdy + P[2][2] * drdz);
+                      r_f2s[p] = wdetJ * (P[2][0] * dsdx + P[2][1] * dsdy + P[2][2] * dsdz);
+                      r_f2t[p] = wdetJ * (P[2][0] * dtdx + P[2][1] * dtdy + P[2][2] * dtdz);
                     }
 
                   if (one_thread_per_team) // compile-time constant
@@ -656,8 +679,7 @@ namespace Benchmark
     Kokkos::Array<T, nm * nq> c_basis;
     Kokkos::Array<T, nq * nq> c_dbasis;
     View                      d_dbasis;
-    T                         lambda;
-    T                         mu;
+    Stress                    stress;
   };
 } // namespace Benchmark
 

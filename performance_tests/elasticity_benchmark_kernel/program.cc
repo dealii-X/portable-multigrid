@@ -50,7 +50,7 @@ run(const std::size_t nelmt, const int n_repetitions, const unsigned int request
       dbasis[i * nq + p] = std::cos(i * nq + p);
 
   const unsigned int nelmtPerBatch = Kernel::default_elements_per_batch();
-  const Kernel       kernel(nelmt, nelmtPerBatch, basis, dbasis, lambda, mu);
+  const Kernel       kernel(nelmt, nelmtPerBatch, basis, dbasis, {lambda, mu});
   const std::size_t  nelmt_padded = kernel.n_elements_padded();
   const std::size_t  nbatches     = nelmt_padded / nelmtPerBatch;
   const unsigned int n_teams      = requested_teams > 0 ? requested_teams : nbatches;
