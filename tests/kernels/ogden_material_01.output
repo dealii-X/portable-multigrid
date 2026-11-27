@@ -1,0 +1,141 @@
+
+DEAL::dim = 2, eigen solver closed form
+DEAL::Mooney-Rivlin, u = 0: OK
+DEAL::Mooney-Rivlin, uniaxial stretch: OK
+DEAL::Mooney-Rivlin, uniaxial compression: OK
+DEAL::Mooney-Rivlin, nearly uniaxial: OK
+DEAL::Mooney-Rivlin, dilatation: OK
+DEAL::Mooney-Rivlin, simple shear: OK
+DEAL::Mooney-Rivlin, random 0: OK
+DEAL::Mooney-Rivlin, random 1: OK
+DEAL::Mooney-Rivlin, random 2: OK
+DEAL::Mooney-Rivlin, random 3: OK
+DEAL::Mooney-Rivlin, random 4: OK
+DEAL::Mooney-Rivlin, random 5: OK
+DEAL::Mooney-Rivlin, random 6: OK
+DEAL::Mooney-Rivlin, random 7: OK
+DEAL::Mooney-Rivlin, random 8: OK
+DEAL::Mooney-Rivlin, random 9: OK
+DEAL::Mooney-Rivlin, J < 0: NaN
+DEAL::Ogden, u = 0: OK
+DEAL::Ogden, uniaxial stretch: OK
+DEAL::Ogden, uniaxial compression: OK
+DEAL::Ogden, nearly uniaxial: OK
+DEAL::Ogden, dilatation: OK
+DEAL::Ogden, simple shear: OK
+DEAL::Ogden, random 0: OK
+DEAL::Ogden, random 1: OK
+DEAL::Ogden, random 2: OK
+DEAL::Ogden, random 3: OK
+DEAL::Ogden, random 4: OK
+DEAL::Ogden, random 5: OK
+DEAL::Ogden, random 6: OK
+DEAL::Ogden, random 7: OK
+DEAL::Ogden, random 8: OK
+DEAL::Ogden, random 9: OK
+DEAL::Ogden, J < 0: NaN
+DEAL::dim = 3, eigen solver closed form
+DEAL::Mooney-Rivlin, u = 0: OK
+DEAL::Mooney-Rivlin, uniaxial stretch: OK
+DEAL::Mooney-Rivlin, uniaxial compression: OK
+DEAL::Mooney-Rivlin, nearly uniaxial: OK
+DEAL::Mooney-Rivlin, dilatation: OK
+DEAL::Mooney-Rivlin, simple shear: OK
+DEAL::Mooney-Rivlin, random 0: OK
+DEAL::Mooney-Rivlin, random 1: OK
+DEAL::Mooney-Rivlin, random 2: OK
+DEAL::Mooney-Rivlin, random 3: OK
+DEAL::Mooney-Rivlin, random 4: OK
+DEAL::Mooney-Rivlin, random 5: OK
+DEAL::Mooney-Rivlin, random 6: OK
+DEAL::Mooney-Rivlin, random 7: OK
+DEAL::Mooney-Rivlin, random 8: OK
+DEAL::Mooney-Rivlin, random 9: OK
+DEAL::Mooney-Rivlin, J < 0: NaN
+DEAL::Ogden, u = 0: OK
+DEAL::Ogden, uniaxial stretch: OK
+DEAL::Ogden, uniaxial compression: OK
+DEAL::Ogden, nearly uniaxial: OK
+DEAL::Ogden, dilatation: OK
+DEAL::Ogden, simple shear: OK
+DEAL::Ogden, random 0: OK
+DEAL::Ogden, random 1: OK
+DEAL::Ogden, random 2: OK
+DEAL::Ogden, random 3: OK
+DEAL::Ogden, random 4: OK
+DEAL::Ogden, random 5: OK
+DEAL::Ogden, random 6: OK
+DEAL::Ogden, random 7: OK
+DEAL::Ogden, random 8: OK
+DEAL::Ogden, random 9: OK
+DEAL::Ogden, J < 0: NaN
+DEAL::dim = 2, eigen solver jacobi
+DEAL::Mooney-Rivlin, u = 0: OK
+DEAL::Mooney-Rivlin, uniaxial stretch: OK
+DEAL::Mooney-Rivlin, uniaxial compression: OK
+DEAL::Mooney-Rivlin, nearly uniaxial: OK
+DEAL::Mooney-Rivlin, dilatation: OK
+DEAL::Mooney-Rivlin, simple shear: OK
+DEAL::Mooney-Rivlin, random 0: OK
+DEAL::Mooney-Rivlin, random 1: OK
+DEAL::Mooney-Rivlin, random 2: OK
+DEAL::Mooney-Rivlin, random 3: OK
+DEAL::Mooney-Rivlin, random 4: OK
+DEAL::Mooney-Rivlin, random 5: OK
+DEAL::Mooney-Rivlin, random 6: OK
+DEAL::Mooney-Rivlin, random 7: OK
+DEAL::Mooney-Rivlin, random 8: OK
+DEAL::Mooney-Rivlin, random 9: OK
+DEAL::Mooney-Rivlin, J < 0: NaN
+DEAL::Ogden, u = 0: OK
+DEAL::Ogden, uniaxial stretch: OK
+DEAL::Ogden, uniaxial compression: OK
+DEAL::Ogden, nearly uniaxial: OK
+DEAL::Ogden, dilatation: OK
+DEAL::Ogden, simple shear: OK
+DEAL::Ogden, random 0: OK
+DEAL::Ogden, random 1: OK
+DEAL::Ogden, random 2: OK
+DEAL::Ogden, random 3: OK
+DEAL::Ogden, random 4: OK
+DEAL::Ogden, random 5: OK
+DEAL::Ogden, random 6: OK
+DEAL::Ogden, random 7: OK
+DEAL::Ogden, random 8: OK
+DEAL::Ogden, random 9: OK
+DEAL::Ogden, J < 0: NaN
+DEAL::dim = 3, eigen solver jacobi
+DEAL::Mooney-Rivlin, u = 0: OK
+DEAL::Mooney-Rivlin, uniaxial stretch: OK
+DEAL::Mooney-Rivlin, uniaxial compression: OK
+DEAL::Mooney-Rivlin, nearly uniaxial: OK
+DEAL::Mooney-Rivlin, dilatation: OK
+DEAL::Mooney-Rivlin, simple shear: OK
+DEAL::Mooney-Rivlin, random 0: OK
+DEAL::Mooney-Rivlin, random 1: OK
+DEAL::Mooney-Rivlin, random 2: OK
+DEAL::Mooney-Rivlin, random 3: OK
+DEAL::Mooney-Rivlin, random 4: OK
+DEAL::Mooney-Rivlin, random 5: OK
+DEAL::Mooney-Rivlin, random 6: OK
+DEAL::Mooney-Rivlin, random 7: OK
+DEAL::Mooney-Rivlin, random 8: OK
+DEAL::Mooney-Rivlin, random 9: OK
+DEAL::Mooney-Rivlin, J < 0: NaN
+DEAL::Ogden, u = 0: OK
+DEAL::Ogden, uniaxial stretch: OK
+DEAL::Ogden, uniaxial compression: OK
+DEAL::Ogden, nearly uniaxial: OK
+DEAL::Ogden, dilatation: OK
+DEAL::Ogden, simple shear: OK
+DEAL::Ogden, random 0: OK
+DEAL::Ogden, random 1: OK
+DEAL::Ogden, random 2: OK
+DEAL::Ogden, random 3: OK
+DEAL::Ogden, random 4: OK
+DEAL::Ogden, random 5: OK
+DEAL::Ogden, random 6: OK
+DEAL::Ogden, random 7: OK
+DEAL::Ogden, random 8: OK
+DEAL::Ogden, random 9: OK
+DEAL::Ogden, J < 0: NaN

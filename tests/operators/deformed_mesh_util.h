@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -389,23 +390,23 @@ namespace deformed_mesh_test
 
 
 
-  // CPU reference for the Saint Venant-Kirchhoff residual
-  // R(u)_i = (grad phi_i, F S) with F = I + grad u, E = (F^T F - I) / 2 and
-  // S = lambda tr(E) I + 2 mu E: dst = R(src), with FEValues in double and the
-  // Dirichlet convention of reference_laplace().
+  // CPU reference for the hyperelastic residual R(u)_i = (grad phi_i, P)
+  // with the first Piola-Kirchhoff stress P = first_piola(grad u):
+  // dst = R(src), with FEValues in double and the Dirichlet convention of
+  // reference_laplace().
   template <int dim, typename Number>
   void
-  reference_svk_residual(const Mapping<dim>              &mapping,
-                         const DoFHandler<dim>           &dof_handler,
-                         const AffineConstraints<Number> &constraints,
-                         const unsigned int               n_q_points_1d,
-                         const double                     lambda,
-                         const double                     mu,
-                         const IndexSet                  &locally_owned_dofs,
-                         const IndexSet                  &locally_relevant_dofs,
-                         const MPI_Comm                   mpi_communicator,
-                         const DeviceVectorType<Number>  &src_device,
-                         DeviceVectorType<Number>        &dst_device)
+  reference_hyperelastic_residual(
+    const Mapping<dim>                                          &mapping,
+    const DoFHandler<dim>                                       &dof_handler,
+    const AffineConstraints<Number>                             &constraints,
+    const unsigned int                                           n_q_points_1d,
+    const std::function<Tensor<2, dim>(const Tensor<2, dim> &)> &first_piola,
+    const IndexSet                                              &locally_owned_dofs,
+    const IndexSet                                              &locally_relevant_dofs,
+    const MPI_Comm                                               mpi_communicator,
+    const DeviceVectorType<Number>                              &src_device,
+    DeviceVectorType<Number>                                    &dst_device)
   {
     using HostVector = LinearAlgebra::distributed::Vector<double, MemorySpace::Host>;
 
@@ -431,7 +432,6 @@ namespace deformed_mesh_test
     std::vector<double>                  x_local(dofs_per_cell);
     Vector<double>                       y_local(dofs_per_cell);
     std::vector<Tensor<2, dim>>          grads(dofs_per_cell);
-    const Tensor<2, dim>                 identity = unit_symmetric_tensor<dim>();
 
     for (const auto &cell : dof_handler.active_cell_iterators())
       if (cell->is_locally_owned())
@@ -454,10 +454,7 @@ namespace deformed_mesh_test
                   grad_u += x_local[i] * grads[i];
                 }
 
-              const Tensor<2, dim> F = identity + grad_u;
-              const Tensor<2, dim> E = 0.5 * (transpose(F) * F - identity);
-              const Tensor<2, dim> S = lambda * trace(E) * identity + 2. * mu * E;
-              const Tensor<2, dim> P = F * S;
+              const Tensor<2, dim> P = first_piola(grad_u);
 
               for (unsigned int i = 0; i < dofs_per_cell; ++i)
                 y_local(i) += scalar_product(grads[i], P) * fe_values.JxW(q);
@@ -482,24 +479,62 @@ namespace deformed_mesh_test
 
 
 
-  // CPU reference for the Saint Venant-Kirchhoff residual linearized at u,
-  // applied to du: (grad v, G S + F dS) with G = grad du,
-  // dS = lambda tr(dE) I + 2 mu dE and dE = (G^T F + F^T G) / 2, in the
+  // CPU reference for the Saint Venant-Kirchhoff residual: P = F S with
+  // F = I + grad u, E = (F^T F - I) / 2 and S = lambda tr(E) I + 2 mu E
+  template <int dim, typename Number>
+  void
+  reference_svk_residual(const Mapping<dim>              &mapping,
+                         const DoFHandler<dim>           &dof_handler,
+                         const AffineConstraints<Number> &constraints,
+                         const unsigned int               n_q_points_1d,
+                         const double                     lambda,
+                         const double                     mu,
+                         const IndexSet                  &locally_owned_dofs,
+                         const IndexSet                  &locally_relevant_dofs,
+                         const MPI_Comm                   mpi_communicator,
+                         const DeviceVectorType<Number>  &src_device,
+                         DeviceVectorType<Number>        &dst_device)
+  {
+    const auto first_piola = [&](const Tensor<2, dim> &grad_u)
+    {
+      const Tensor<2, dim> identity = unit_symmetric_tensor<dim>();
+      const Tensor<2, dim> F        = identity + grad_u;
+      const Tensor<2, dim> E        = 0.5 * (transpose(F) * F - identity);
+      const Tensor<2, dim> S        = lambda * trace(E) * identity + 2. * mu * E;
+      return Tensor<2, dim>(F * S);
+    };
+    reference_hyperelastic_residual<dim, Number>(mapping,
+                                                 dof_handler,
+                                                 constraints,
+                                                 n_q_points_1d,
+                                                 first_piola,
+                                                 locally_owned_dofs,
+                                                 locally_relevant_dofs,
+                                                 mpi_communicator,
+                                                 src_device,
+                                                 dst_device);
+  }
+
+
+
+  // CPU reference for the hyperelastic residual linearized at u, applied to
+  // du: (grad v, dP) with dP = linearized_first_piola(grad u, grad du), in the
   // Dirichlet convention of reference_laplace() (dst[c] = du[c]).
   template <int dim, typename Number>
   void
-  reference_svk_linearized(const Mapping<dim>              &mapping,
-                           const DoFHandler<dim>           &dof_handler,
-                           const AffineConstraints<Number> &constraints,
-                           const unsigned int               n_q_points_1d,
-                           const double                     lambda,
-                           const double                     mu,
-                           const IndexSet                  &locally_owned_dofs,
-                           const IndexSet                  &locally_relevant_dofs,
-                           const MPI_Comm                   mpi_communicator,
-                           const DeviceVectorType<Number>  &u_device,
-                           const DeviceVectorType<Number>  &du_device,
-                           DeviceVectorType<Number>        &dst_device)
+  reference_hyperelastic_linearized(
+    const Mapping<dim>              &mapping,
+    const DoFHandler<dim>           &dof_handler,
+    const AffineConstraints<Number> &constraints,
+    const unsigned int               n_q_points_1d,
+    const std::function<Tensor<2, dim>(const Tensor<2, dim> &, const Tensor<2, dim> &)>
+                                   &linearized_first_piola,
+    const IndexSet                 &locally_owned_dofs,
+    const IndexSet                 &locally_relevant_dofs,
+    const MPI_Comm                  mpi_communicator,
+    const DeviceVectorType<Number> &u_device,
+    const DeviceVectorType<Number> &du_device,
+    DeviceVectorType<Number>       &dst_device)
   {
     using HostVector = LinearAlgebra::distributed::Vector<double, MemorySpace::Host>;
 
@@ -529,7 +564,6 @@ namespace deformed_mesh_test
     std::vector<double>                  u_local(dofs_per_cell), du_local(dofs_per_cell);
     Vector<double>                       y_local(dofs_per_cell);
     std::vector<Tensor<2, dim>>          grads(dofs_per_cell);
-    const Tensor<2, dim>                 identity = unit_symmetric_tensor<dim>();
 
     for (const auto &cell : dof_handler.active_cell_iterators())
       if (cell->is_locally_owned())
@@ -555,12 +589,7 @@ namespace deformed_mesh_test
                   G += du_local[i] * grads[i];
                 }
 
-              const Tensor<2, dim> F  = identity + grad_u;
-              const Tensor<2, dim> E  = 0.5 * (transpose(F) * F - identity);
-              const Tensor<2, dim> S  = lambda * trace(E) * identity + 2. * mu * E;
-              const Tensor<2, dim> dE = 0.5 * (transpose(G) * F + transpose(F) * G);
-              const Tensor<2, dim> dS = lambda * trace(dE) * identity + 2. * mu * dE;
-              const Tensor<2, dim> dP = G * S + F * dS;
+              const Tensor<2, dim> dP = linearized_first_piola(grad_u, G);
 
               for (unsigned int i = 0; i < dofs_per_cell; ++i)
                 y_local(i) += scalar_product(grads[i], dP) * fe_values.JxW(q);
@@ -581,6 +610,49 @@ namespace deformed_mesh_test
     for (const auto i : locally_owned_dofs)
       rw(i) = static_cast<Number>(dst_host(i));
     dst_device.import_elements(rw, VectorOperation::insert);
+  }
+
+
+
+  // CPU reference for the Saint Venant-Kirchhoff residual linearized at u:
+  // dP = G S + F dS with G = grad du, dS = lambda tr(dE) I + 2 mu dE and
+  // dE = (G^T F + F^T G) / 2
+  template <int dim, typename Number>
+  void
+  reference_svk_linearized(const Mapping<dim>              &mapping,
+                           const DoFHandler<dim>           &dof_handler,
+                           const AffineConstraints<Number> &constraints,
+                           const unsigned int               n_q_points_1d,
+                           const double                     lambda,
+                           const double                     mu,
+                           const IndexSet                  &locally_owned_dofs,
+                           const IndexSet                  &locally_relevant_dofs,
+                           const MPI_Comm                   mpi_communicator,
+                           const DeviceVectorType<Number>  &u_device,
+                           const DeviceVectorType<Number>  &du_device,
+                           DeviceVectorType<Number>        &dst_device)
+  {
+    const auto linearized_first_piola = [&](const Tensor<2, dim> &grad_u, const Tensor<2, dim> &G)
+    {
+      const Tensor<2, dim> identity = unit_symmetric_tensor<dim>();
+      const Tensor<2, dim> F        = identity + grad_u;
+      const Tensor<2, dim> E        = 0.5 * (transpose(F) * F - identity);
+      const Tensor<2, dim> S        = lambda * trace(E) * identity + 2. * mu * E;
+      const Tensor<2, dim> dE       = 0.5 * (transpose(G) * F + transpose(F) * G);
+      const Tensor<2, dim> dS       = lambda * trace(dE) * identity + 2. * mu * dE;
+      return Tensor<2, dim>(G * S + F * dS);
+    };
+    reference_hyperelastic_linearized<dim, Number>(mapping,
+                                                   dof_handler,
+                                                   constraints,
+                                                   n_q_points_1d,
+                                                   linearized_first_piola,
+                                                   locally_owned_dofs,
+                                                   locally_relevant_dofs,
+                                                   mpi_communicator,
+                                                   u_device,
+                                                   du_device,
+                                                   dst_device);
   }
 
 

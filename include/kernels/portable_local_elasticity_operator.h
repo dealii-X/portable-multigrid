@@ -7,6 +7,10 @@
 #include <deal.II/matrix_free/evaluation_flags.h>
 #include <deal.II/matrix_free/portable_matrix_free.h>
 
+#include <limits>
+
+#include "kernels/portable_symmetric_eigenbasis.h"
+
 DEAL_II_NAMESPACE_OPEN
 
 namespace Portable
@@ -154,6 +158,249 @@ namespace Portable
           S[i][i] += lambda * trace_E;
         }
       return S;
+    }
+  };
+
+
+
+  // Decoupled Ogden hyperelasticity (docs: lung_application ogden_material):
+  // Psi = sum_a sum_p mu_p / alpha_p (lambda_bar_a^alpha_p - 1)
+  //       + kappa / 4 (J^2 - 1 - 2 ln J), lambda_bar_a = J^(-1/3) lambda_a,
+  // P = F S. In 2D plane strain: lambda_3 = 1. NaN for J <= 0.
+  // eigen_solver: the eigenbasis of C by symmetric_eigenbasis_closed_form()
+  // or symmetric_eigenbasis() (Jacobi)
+  template <int dim, typename Number, EigenSolver eigen_solver = EigenSolver::closed_form>
+  struct OgdenMaterial
+  {
+    Number mu1    = 1.;
+    Number alpha1 = 2.;
+    Number mu2    = 0.;
+    Number alpha2 = -2.;
+    Number kappa  = 1.;
+
+    // S = sum_a s_a N_a (x) N_a, s_a = S_iso_a + p_vol / lambda_a^2
+    DEAL_II_HOST_DEVICE Tensor<2, dim, Number>
+    stress(const Tensor<2, dim, Number> &grad_u) const
+    {
+      const Principal pr = principal(grad_u);
+      if (!pr.valid)
+        return nan_tensor();
+
+      Tensor<2, dim, Number> P;
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+          {
+            Number sum = 0.;
+            for (unsigned int a = 0; a < dim; ++a)
+              sum += (pr.S_iso[a] + pr.p_vol / pr.eigen.values[a]) * pr.FN[i][a] *
+                     pr.eigen.vectors[a][j];
+            P[i][j] = sum;
+          }
+      return P;
+    }
+
+    // dP = G S + F DS, G = grad_du, DS of eqs. (11), (12) in the eigenbasis:
+    // DS = sum_ab D_ab N_a (x) N_b with M_ab = N_a . DC N_b, DC = F^T G + G^T F
+    DEAL_II_HOST_DEVICE Tensor<2, dim, Number>
+    linearized_stress(const Tensor<2, dim, Number> &grad_u,
+                      const Tensor<2, dim, Number> &grad_du) const
+    {
+      const Principal pr = principal(grad_u);
+      if (!pr.valid)
+        return nan_tensor();
+      const Tensor<1, dim, Number> &lambda_sq = pr.eigen.values;
+      const Tensor<2, dim, Number> &N         = pr.eigen.vectors;
+
+      Number GN[dim][dim];
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int a = 0; a < dim; ++a)
+          {
+            Number sum = 0.;
+            for (unsigned int k = 0; k < dim; ++k)
+              sum += grad_du[i][k] * N[a][k];
+            GN[i][a] = sum;
+          }
+      Number M[dim][dim];
+      for (unsigned int a = 0; a < dim; ++a)
+        for (unsigned int b = 0; b < dim; ++b)
+          {
+            Number sum = 0.;
+            for (unsigned int i = 0; i < dim; ++i)
+              sum += pr.FN[i][a] * GN[i][b] + GN[i][a] * pr.FN[i][b];
+            M[a][b] = sum;
+          }
+
+      // c1_ab of eq. (7)
+      Number c1[dim][dim];
+      for (unsigned int a = 0; a < dim; ++a)
+        for (unsigned int b = 0; b < dim; ++b)
+          {
+            c1[a][b] = ((a == b ? pr.gamma[a] : Number(0.)) -
+                        (pr.gamma[a] + pr.gamma[b]) / Number(3.) + pr.gamma_sum / Number(9.)) /
+                       (lambda_sq[a] * lambda_sq[b]);
+            if (a == b)
+              c1[a][b] -= Number(2.) * pr.S_iso[a] / lambda_sq[a];
+          }
+
+      // DJ / J = C^-1 : DC / 2
+      Number DJ_over_J = 0.;
+      for (unsigned int a = 0; a < dim; ++a)
+        DJ_over_J += Number(0.5) * M[a][a] / lambda_sq[a];
+
+      // volumetric part: kappa J^2 DJ/J C^-1 + p_vol DC^-1, DC^-1 = -C^-1 DC C^-1
+      const Number cbrt_eps = Kokkos::cbrt(std::numeric_limits<Number>::epsilon());
+      Number       D[dim][dim];
+      for (unsigned int a = 0; a < dim; ++a)
+        for (unsigned int b = 0; b < dim; ++b)
+          {
+            Number value = -pr.p_vol * M[a][b] / (lambda_sq[a] * lambda_sq[b]);
+            if (a == b)
+              {
+                for (unsigned int c = 0; c < dim; ++c)
+                  value += Number(0.5) * c1[a][c] * M[c][c];
+                value += kappa * pr.J * pr.J * DJ_over_J / lambda_sq[a];
+              }
+            else
+              {
+                // c2_ab of eq. (9). S_iso carries an error ~ eps mu, so the
+                // quotient has an error ~ eps mu / |lambda_b^2 - lambda_a^2|;
+                // the symmetric limit (c1_aa + c1_bb - 2 c1_ab) / 4 one of
+                // O(|lambda_b^2 - lambda_a^2|^2): switch at eps^(1/3)
+                const Number difference = lambda_sq[b] - lambda_sq[a];
+                const Number c2         = (Kokkos::abs(difference) <
+                                   cbrt_eps * Number(0.5) * (lambda_sq[a] + lambda_sq[b])) ?
+                                            Number(0.25) * (c1[a][a] + c1[b][b]) - Number(0.5) * c1[a][b] :
+                                            (pr.S_iso[b] - pr.S_iso[a]) / difference;
+                value += c2 * M[a][b];
+              }
+            D[a][b] = value;
+          }
+
+      // dP = sum_b (s_b G N_b + sum_a D_ab F N_a) (x) N_b
+      Tensor<2, dim, Number> dP;
+      for (unsigned int i = 0; i < dim; ++i)
+        {
+          Number row[dim];
+          for (unsigned int b = 0; b < dim; ++b)
+            {
+              Number sum = (pr.S_iso[b] + pr.p_vol / lambda_sq[b]) * GN[i][b];
+              for (unsigned int a = 0; a < dim; ++a)
+                sum += D[a][b] * pr.FN[i][a];
+              row[b] = sum;
+            }
+          for (unsigned int j = 0; j < dim; ++j)
+            {
+              Number sum = 0.;
+              for (unsigned int b = 0; b < dim; ++b)
+                sum += row[b] * N[b][j];
+              dP[i][j] = sum;
+            }
+        }
+      return dP;
+    }
+
+  private:
+    struct Principal
+    {
+      bool                             valid;
+      Number                           J;
+      SymmetricEigenbasis<dim, Number> eigen;
+      // FN[i][a] = (F N_a)_i
+      Number FN[dim][dim];
+      // S_iso_a of eq. (4), gamma_a of eq. (3) over all three stretches
+      Number S_iso[dim];
+      Number gamma[3];
+      Number gamma_sum;
+      // kappa / 2 (J^2 - 1), eq. (5)
+      Number p_vol;
+    };
+
+    DEAL_II_HOST_DEVICE Principal
+    principal(const Tensor<2, dim, Number> &grad_u) const
+    {
+      Principal pr;
+
+      Tensor<2, dim, Number> F = grad_u;
+      for (unsigned int d = 0; d < dim; ++d)
+        F[d][d] += Number(1.);
+      Tensor<2, dim, Number> C;
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+          {
+            Number sum = 0.;
+            for (unsigned int k = 0; k < dim; ++k)
+              sum += F[k][i] * F[k][j];
+            C[i][j] = sum;
+          }
+
+      pr.J = determinant(F);
+      // also excludes the FE_INVALID of pow(J < 0, -2/3)
+      pr.valid = (pr.J > Number(0.));
+      if (!pr.valid)
+        return pr;
+
+      if constexpr (eigen_solver == EigenSolver::closed_form)
+        {
+          pr.eigen = symmetric_eigenbasis_closed_form(C);
+        }
+      else
+        {
+          pr.eigen = symmetric_eigenbasis(C);
+        }
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int a = 0; a < dim; ++a)
+          {
+            Number sum = 0.;
+            for (unsigned int k = 0; k < dim; ++k)
+              sum += F[i][k] * pr.eigen.vectors[a][k];
+            pr.FN[i][a] = sum;
+          }
+
+      // beta_a = sum_p mu_p lambda_bar_a^alpha_p,
+      // gamma_a = sum_p mu_p alpha_p lambda_bar_a^alpha_p
+      const Number J_pow = Kokkos::pow(pr.J, Number(-2. / 3.));
+      Number       beta[3];
+      Number       beta_sum = 0.;
+      pr.gamma_sum          = 0.;
+      for (unsigned int a = 0; a < 3; ++a)
+        {
+          const Number lambda_bar_sq = J_pow * (a < dim ? pr.eigen.values[a] : Number(1.));
+          const Number pow1          = Kokkos::pow(lambda_bar_sq, Number(0.5) * alpha1);
+          const Number pow2          = Kokkos::pow(lambda_bar_sq, Number(0.5) * alpha2);
+          beta[a]                    = mu1 * pow1 + mu2 * pow2;
+          pr.gamma[a]                = mu1 * alpha1 * pow1 + mu2 * alpha2 * pow2;
+          beta_sum += beta[a];
+          pr.gamma_sum += pr.gamma[a];
+        }
+      for (unsigned int a = 0; a < dim; ++a)
+        pr.S_iso[a] = (beta[a] - beta_sum / Number(3.)) / pr.eigen.values[a];
+      pr.p_vol = Number(0.5) * kappa * (pr.J * pr.J - Number(1.));
+      return pr;
+    }
+
+    DEAL_II_HOST_DEVICE static Tensor<2, dim, Number>
+    nan_tensor()
+    {
+      Tensor<2, dim, Number> T;
+      for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+          T[i][j] = std::numeric_limits<Number>::quiet_NaN();
+      return T;
+    }
+
+    DEAL_II_HOST_DEVICE static Number
+    determinant(const Tensor<2, dim, Number> &F)
+    {
+      if constexpr (dim == 2)
+        {
+          return F[0][0] * F[1][1] - F[0][1] * F[1][0];
+        }
+      else
+        {
+          return F[0][0] * (F[1][1] * F[2][2] - F[1][2] * F[2][1]) -
+                 F[0][1] * (F[1][0] * F[2][2] - F[1][2] * F[2][0]) +
+                 F[0][2] * (F[1][0] * F[2][1] - F[1][1] * F[2][0]);
+        }
     }
   };
 
