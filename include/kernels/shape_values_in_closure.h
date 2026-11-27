@@ -68,11 +68,19 @@ namespace Custom
       launch_team_kernel(const std::string &label, const Policy &policy, const Functor &functor)
       {
         if constexpr (is_shape_values_in_closure<ShapeValuesType>::value)
+        {
+          // Kokkos passes the closure as a kernel argument only below 4 KB
+          // (CudaTraits::KernelArgumentLimit, functor + policy), above it
+          // silently from global memory.
+          static_assert(sizeof(Functor) <= 3072,
+                        "Kernel closure too large to stay a kernel argument; "
+                        "use the shape values from a device view instead.");
           Kokkos::parallel_for(
             label,
             Kokkos::Experimental::require(policy,
                                           Kokkos::Experimental::WorkItemProperty::HintLightWeight),
             functor);
+        }
         else
           Kokkos::parallel_for(label, policy, functor);
       }

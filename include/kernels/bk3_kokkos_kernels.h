@@ -1430,16 +1430,7 @@ namespace BK3
               }
           };
 
-        // The closure grows by the shape values. As a kernel argument it
-        // stays in constant memory; Kokkos' constant buffer, the default
-        // above 512 bytes, makes each launch wait for the previous kernel.
-        if constexpr (shape_values_in_closure)
-          Kokkos::parallel_for(
-            Kokkos::Experimental::require(policy,
-                                          Kokkos::Experimental::WorkItemProperty::HintLightWeight),
-            functor);
-        else
-          Kokkos::parallel_for(policy, functor);
+        internal::launch_team_kernel<ShapeValuesType>("", policy, functor);
       }
     }
 
